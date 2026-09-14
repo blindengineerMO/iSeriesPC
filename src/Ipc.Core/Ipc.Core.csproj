@@ -1,0 +1,6 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Ipc.Core</AssemblyName>
+    <RootNamespace>Ipc.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

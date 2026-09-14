@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Ipc.Rpg</AssemblyName>
+    <RootNamespace>Ipc.Rpg</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
+    <ProjectReference Include="..\Ipc.Db\Ipc.Db.csproj" />
+  </ItemGroup>
+</Project>

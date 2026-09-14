@@ -1,0 +1,9 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Ipc.Terminal</AssemblyName>
+    <RootNamespace>Ipc.Terminal</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
+  </ItemGroup>
+</Project>

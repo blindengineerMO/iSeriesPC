@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ipc.Cl/Ipc.Cl.csproj" />
+    <Project Path="src/Ipc.Db/Ipc.Db.csproj" />
+    <Project Path="src/Ipc.Rpg/Ipc.Rpg.csproj" />
+    <Project Path="src/Ipc.Console/Ipc.Console.csproj" />
+    <Project Path="src/Ipc.Core/Ipc.Core.csproj" />
+    <Project Path="src/Ipc.Services/Ipc.Services.csproj" />
+    <Project Path="src/Ipc.Terminal/Ipc.Terminal.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ipc.Core.Tests/Ipc.Core.Tests.csproj" />
+  </Folder>
+</Solution>

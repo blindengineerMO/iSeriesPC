@@ -1,0 +1,60 @@
+# Build
+bin/
+obj/
+artifacts/
+*.user
+*.suo
+.vs/
+[Bb]uild/
+Dist/
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+*.nupkg
+nuget.config
+packages/
+
+# Test results
+[Tt]est[Rr]esult*/
+*.trx
+coverage.*
+
+# Node / Vite
+node_modules/
+dist/
+.ipc
+.vite/
+
+# Native / media
+*.tap
+*.savf
+*.isav
+!tools/**/fixtures/**.savf
+!tools/**/*.savf
+!**/fixtures/**
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDE
+.idea/
+*.code-workspace
+
+# Env / secrets
+.env
+*.pem
+*.key
+!testcert.*
+
+# Logs
+logs/
+*.log
+
+# Other
+PLAN.md
+PLAN2.md
+PROJECT.md
+.github/

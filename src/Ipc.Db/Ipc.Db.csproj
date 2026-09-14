@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Ipc.Db</AssemblyName>
+    <RootNamespace>Ipc.Db</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
+    <ProjectReference Include="..\Ipc.Services\Ipc.Services.csproj" />
+  </ItemGroup>
+</Project>
