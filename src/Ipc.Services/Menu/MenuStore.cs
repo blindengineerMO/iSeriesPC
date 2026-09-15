@@ -18,27 +18,62 @@ public sealed class MenuStore
 
     public void SeedDefaults()
     {
-        Register(SystemMenus.Main(), owner: "QSYS");
-        Register(SystemMenus.Major(), owner: "QSYS");
+        foreach (var menu in SystemMenus.All())
+        {
+            var existing = TryGet(menu.Name, "QSYS");
+            if (existing is null) Register(menu, owner: "QSYS");
+            else if (SystemMenus.IsLegacyDefault(existing))
+            {
+                var descriptor = _objects.GetForAuthorization("QSYS", menu.Name, ObjectType.Menu)!;
+                if (descriptor.Owner == "QSYS" && descriptor.Source is null && descriptor.ExtendedAttributes?.ContainsKey("ipc.signature") != true) Register(menu, owner: "QSYS");
+            }
+        }
     }
 
-    public void Register(ApplicationMenu menu, string owner = "QSYS")
+    public void Register(ApplicationMenu menu, string owner = "QSYS", string? source = null, bool replace = true)
     {
+        MenuDefinition.Validate(menu);
         var library = menu.Library ?? "QSYS";
-        if (!_objects.Exists(library, menu.Name, "*MENU"))
+        var descriptor = new ObjectDescriptor
         {
-            _objects.Create(new ObjectDescriptor
-            {
-                Key = new QualifiedName(library, menu.Name),
-                ObjectType = "*MENU",
-                Owner = owner,
-                Description = menu.Title,
-                Attribute = "*SBSMENU",
-            });
-        }
-
+            Key = new QualifiedName(library, menu.Name), ObjectType = ObjectType.Menu,
+            Owner = owner, Description = menu.Title, Source = source, Attribute = "*SBSMENU",
+        };
+        descriptor.ValidateIdentity();
+        var authorization = new Ipc.Services.Security.ServiceAuthorization(_factory);
+        if (_objects.GetForAuthorization(library, menu.Name, ObjectType.Menu) is null) authorization.RequireCreate(descriptor);
+        else authorization.RequireObject(library, menu.Name, ObjectType.Menu, AuthorityBit.ObjectManagement);
+        new Ipc.Services.Work.JobLockStore(_factory).RequireAccess(library, menu.Name, ObjectType.Menu, AuthorityBit.ObjectManagement);
         using var connection = _factory.Open();
-        using var tx = connection.BeginTransaction();
+        using var tx = connection.BeginTransaction(deferred: false);
+        using (var exists = connection.CreateCommand())
+        {
+            exists.Transaction = tx;
+            exists.CommandText = "SELECT count(*) FROM sys_objects WHERE lib=$lib AND name=$name AND type='*MENU'";
+            exists.Parameters.AddWithValue("$lib", library);
+            exists.Parameters.AddWithValue("$name", menu.Name);
+            if (Convert.ToInt64(exists.ExecuteScalar()) == 0) _objects.Create(descriptor, connection, tx);
+            else
+            {
+                if (!replace) throw new CpfException("CPF7302", "Menu already exists; specify REPLACE(*YES).");
+                authorization.RequireObject(library, menu.Name, ObjectType.Menu, AuthorityBit.ObjectManagement);
+            }
+        }
+        using (var update = connection.CreateCommand())
+        {
+            update.Transaction = tx;
+            update.CommandText = """
+                UPDATE sys_objects SET description=$title,source=$source,changed=$now,attrs=json_set(json_remove(coalesce(attrs,'{}'),'$."ipc.signature"'),'$."ipc.menu.options"',$policy)
+                WHERE lib=$lib AND name=$name AND type='*MENU'
+                """;
+            update.Parameters.AddWithValue("$lib", library);
+            update.Parameters.AddWithValue("$name", menu.Name);
+            update.Parameters.AddWithValue("$title", menu.Title);
+            update.Parameters.AddWithValue("$policy", System.Text.Json.JsonSerializer.Serialize(menu.Options.ToDictionary(o => o.Number, o => o.RequiredAuthority)));
+            update.Parameters.AddWithValue("$source", (object?)source ?? DBNull.Value);
+            update.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O"));
+            update.ExecuteNonQuery();
+        }
 
         using (var upsert = connection.CreateCommand())
         {
@@ -135,23 +170,19 @@ public sealed class MenuStore
 
     private string? ResolveLibrary(string name)
     {
-        if (Load("QSYS", name) is not null)
-        {
-            return "QSYS";
-        }
-
-        using var connection = _factory.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText =
-            "SELECT library FROM sys_menus WHERE name = $name ORDER BY library LIMIT 1";
-        cmd.Parameters.AddWithValue("$name", name);
-        return cmd.ExecuteScalar() as string;
+        return new[] { "QSYS", "QGPL", "QUSRSYS" }.FirstOrDefault(library => Load(library, name) is not null);
     }
 
     private ApplicationMenu? Load(string library, string name)
     {
+        if (_objects.Get(library, name, ObjectType.Menu) is null) return null;
         using var connection = _factory.Open();
         using var tx = connection.BeginTransaction();
+
+        var descriptor = Ipc.Services.Security.ObjectSigningService.Read(connection, tx, library, name, ObjectType.Menu);
+        using (var certificates = new Ipc.Services.Security.CertificateService(_factory))
+            new Ipc.Services.Security.ObjectSigningService(_factory, new Ipc.Services.Security.ContentTrustService(_factory, certificates))
+                .RequireExecutable(descriptor, connection, tx);
 
         string? title = null;
         using (var menuCmd = connection.CreateCommand())
@@ -168,6 +199,12 @@ public sealed class MenuStore
             return null;
         }
 
+        var policy = new Dictionary<string, string>();
+        if (descriptor.ExtendedAttributes?.TryGetValue("ipc.menu.options", out var encoded) == true)
+        {
+            try { policy = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(encoded) ?? throw new CpfException("IPC0135", "Invalid menu option policy."); }
+            catch (System.Text.Json.JsonException) { throw new CpfException("IPC0135", "Invalid menu option policy."); }
+        }
         var options = new List<MenuOption>();
         using (var optionCmd = connection.CreateCommand())
         {
@@ -184,21 +221,24 @@ public sealed class MenuStore
                 options.Add(new MenuOption
                 {
                     Number = reader.GetString(0),
+                    RequiredAuthority = policy.GetValueOrDefault(reader.GetString(0), "*NONE"),
                     Text = reader.GetString(1),
                     Target = reader.GetString(2),
                     Kind = Enum.TryParse<MenuOptionKind>(reader.GetString(3), out var kind)
                         ? kind
-                        : MenuOptionKind.SubMenu,
+                        : throw new CpfException("IPC0135", "Invalid menu option kind."),
                 });
             }
         }
 
-        return new ApplicationMenu
+        var loaded = new ApplicationMenu
         {
             Name = name,
             Library = library,
             Title = title ?? string.Empty,
             Options = options,
         };
+        try { MenuDefinition.Validate(loaded); } catch (ArgumentException) { throw new CpfException("IPC0135", "Invalid stored menu definition."); }
+        return loaded;
     }
 }

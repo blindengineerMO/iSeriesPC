@@ -1,177 +1,109 @@
-using System.Text;
-
 namespace Ipc.Terminal;
 
 public sealed class FieldEditor
 {
     private readonly DisplayForm _form;
-
+    public bool InsertMode { get; private set; } = true;
     public FieldEditor(DisplayForm form)
     {
         _form = form;
-        _form.Activate(0);
+        if (_form.Fields.Count == 0) throw new ArgumentException("An editor requires at least one field.");
+        _form.Activate(Math.Max(0, _form.Fields.ToList().FindIndex(f => !f.Protect)));
     }
-
     public EditingResult Apply(char ch)
     {
-        if (char.IsControl(ch))
-        {
-            return EditingResult.Consumed;
-        }
-
+        if (!TerminalGlyph.IsSingleCell(ch)) return EditingResult.Rejected;
         var field = _form.Active.Field;
-        if (field.Protect)
-        {
-            return EditingResult.Consumed;
-        }
-
-        if (field.Usage is FieldUsage.Numeric or FieldUsage.SignedNumeric && !char.IsDigit(ch) && ch is not ('-' or '+' or '.'))
-        {
+        if (field.Protect) return EditingResult.Consumed;
+        if (field.Usage is FieldUsage.AlphaOnlyShiftLock or FieldUsage.NumericOnlyShiftLock) ch = char.ToUpperInvariant(ch);
+        if (field.Usage is FieldUsage.Numeric or FieldUsage.NumericOnlyShiftLock && !char.IsAsciiDigit(ch) && ch != '.' ||
+            field.Usage == FieldUsage.SignedNumeric && !char.IsAsciiDigit(ch) && ch is not ('-' or '+' or '.') ||
+            field.Usage is FieldUsage.Alpha or FieldUsage.AlphaOnlyShiftLock && !char.IsLetter(ch) && ch != ' ')
             return EditingResult.Rejected;
-        }
-
-        if (_form.Active.CursorOffset >= field.Length)
-        {
-            return EditingResult.Full;
-        }
-
         var offset = _form.Active.CursorOffset;
-        var padded = _form.Active.Text.PadRight(field.Length, field.Fill);
-        var inserted = InsertChar(padded, ch, offset);
-        if (inserted.Length > field.Length)
+        if (offset >= field.Length) return EditingResult.Full;
+        var text = _form.Active.Text.PadRight(Math.Max(_form.Active.Text.Length, offset), field.Fill);
+        if (InsertMode)
         {
-            inserted = inserted[..field.Length];
+            if (text.Length == field.Length && text[^1] != field.Fill) return EditingResult.Full;
+            text = text.Insert(offset, ch.ToString());
+            if (text.Length > field.Length) text = text[..field.Length];
         }
-
-        _form.WriteValue(_form.ActiveIndex, inserted);
-        _form.Active.CursorOffset = Math.Min(offset + 1, field.Length);
-        _bufferCursor();
-
+        else text = text.PadRight(Math.Max(text.Length, offset + 1), field.Fill)[..offset] + ch + (offset + 1 < text.Length ? text[(offset + 1)..] : "");
+        _form.WriteValue(_form.ActiveIndex, text); _form.Active.CursorOffset = offset + 1; PaintCursor();
         return _form.Active.CursorOffset >= field.Length && field.AutoEnter ? EditingResult.AcceptedAndMoved : EditingResult.Accepted;
     }
-
     public void ApplyEdit(CursorEdit edit)
     {
-        var value = _form.Active;
-        var field = value.Field;
-
+        var value = _form.Active; var field = value.Field;
         switch (edit)
         {
+            case CursorEdit.Insert: InsertMode = !InsertMode; break;
             case CursorEdit.FieldBackspace:
-            case CursorEdit.Delete when edit == CursorEdit.Delete && value.CursorOffset > 0:
-                DeleteAt(value);
+                if (!field.Protect && value.CursorOffset > 0) Remove(value.CursorOffset - 1, move: true);
                 break;
-            case CursorEdit.CursorLeft:
-                if (value.CursorOffset > 0)
-                {
-                    value.CursorOffset--;
-                    _bufferCursor();
-                }
+            case CursorEdit.Delete:
+                if (!field.Protect) Remove(value.CursorOffset, move: false);
                 break;
-            case CursorEdit.CursorRight:
-                if (value.CursorOffset < field.Length)
-                {
-                    value.CursorOffset++;
-                    _bufferCursor();
-                }
+            case CursorEdit.FieldEraseToEnd:
+                if (!field.Protect) EraseToEnd();
                 break;
-            case CursorEdit.NextField:
-            case CursorEdit.Tab:
-                Advance(1);
-                break;
-            case CursorEdit.PreviousField:
-            case CursorEdit.BackTab:
-                if (_form.ActiveIndex > 0)
-                {
-                    _form.Activate(_form.ActiveIndex - 1);
-                    _bufferCursor();
-                }
-                break;
+            case CursorEdit.Home: value.CursorOffset = 0; PaintCursor(); break;
+            case CursorEdit.End: value.CursorOffset = value.Text.Length; PaintCursor(); break;
+            case CursorEdit.CursorLeft: value.CursorOffset = Math.Max(0, value.CursorOffset - 1); PaintCursor(); break;
+            case CursorEdit.CursorRight: value.CursorOffset = Math.Min(field.Length, value.CursorOffset + 1); PaintCursor(); break;
+            case CursorEdit.CursorUp: Vertical(-1); break;
+            case CursorEdit.CursorDown: Vertical(1); break;
+            case CursorEdit.NextField: case CursorEdit.Tab: Advance(1); break;
+            case CursorEdit.PreviousField: case CursorEdit.BackTab: Advance(-1); break;
             case CursorEdit.FieldExit:
-                if (value.CursorOffset > 0 && value.CursorOffset < field.Length)
-                {
-                    value.CursorOffset = field.Length;
-                    _bufferCursor();
-                }
-                else
-                {
-                    Advance(1);
-                }
-                break;
-            default:
-                break;
+                if (!field.Protect) EraseToEnd();
+                Advance(1); break;
         }
     }
-
     public KeyPress? TranslateSequence(string sequence)
     {
-        if (string.IsNullOrEmpty(sequence))
-        {
-            return null;
-        }
-
-        if (sequence.Length == 1 && !char.IsControl(sequence[0]))
-        {
-            Apply(sequence[0]);
-            return new KeyPress(AidKey.None, CursorEdit.None, sequence[0]);
-        }
-
-        return null;
+        var key = KeyTranslator.Translate(sequence, sequence.Length == 1 ? sequence[0] : null);
+        if (key is { Character: not '\0' } character) Apply(character.Character);
+        return key;
     }
-
-    private void DeleteAt(FieldValue value)
+    private void Remove(int offset, bool move)
     {
-        if (value.CursorOffset == 0)
-        {
-            return;
-        }
-
-        var text = value.Text;
-        value.Text = text[..(value.CursorOffset - 1)] + text[value.CursorOffset..];
-        value.CursorOffset = Math.Max(0, value.CursorOffset - 1);
-        _form.WriteValue(_form.ActiveIndex, value.Text);
-        _bufferCursor();
+        var value = _form.Active; var cursor = value.CursorOffset;
+        var text = value.Text.PadRight(Math.Max(value.Text.Length, offset + 1), value.Field.Fill);
+        _form.WriteValue(_form.ActiveIndex, text.Remove(offset, 1)); value.CursorOffset = move ? offset : cursor; PaintCursor();
     }
-
+    private void EraseToEnd()
+    {
+        var value = _form.Active; var cursor = value.CursorOffset;
+        _form.WriteValue(_form.ActiveIndex, value.Text[..Math.Min(cursor, value.Text.Length)]);
+        value.CursorOffset = cursor; PaintCursor();
+    }
     private void Advance(int delta)
     {
-        if (_form.ActiveIndex + delta < _form.Fields.Count)
+        var count = _form.Fields.Count;
+        for (var step = 1; step <= count; step++)
         {
-            _form.Activate(_form.ActiveIndex + delta);
-            _bufferCursor();
-        }
-        else
-        {
-            _form.Activate(0);
-            _bufferCursor();
+            var index = _form.ActiveIndex + step * delta;
+            if (delta < 0 && index < 0) return;
+            index %= count;
+            if (_form.Fields[index].Protect) continue;
+            _form.Activate(index); _form.Active.CursorOffset = 0; PaintCursor(); return;
         }
     }
-
-    private void _bufferCursor()
+    private void Vertical(int direction)
     {
-        var field = _form.Active.Field;
-        _form.Activate(_form.ActiveIndex);
-        _form.CursorPosition(field.Row, field.Column + Math.Min(_form.Active.CursorOffset, field.Length));
+        var current = _form.Active; var column = current.Field.Column + current.CursorOffset;
+        var candidates = _form.Fields.Select((f, i) => (Field: f, Index: i)).Where(p => !p.Field.Protect && (p.Field.Row - current.Field.Row) * direction > 0)
+            .OrderBy(p => Math.Abs(p.Field.Row - current.Field.Row)).ThenBy(p => Math.Abs(p.Field.Column - column)).ToArray();
+        if (candidates.Length == 0) return;
+        var target = candidates[0]; _form.Activate(target.Index); _form.Active.CursorOffset = Math.Clamp(column - target.Field.Column, 0, target.Field.Length - 1); PaintCursor();
     }
-
-    private static string InsertChar(string text, char ch, int offset)
+    private void PaintCursor()
     {
-        if (offset >= text.Length)
-        {
-            return text + ch;
-        }
-
-        var sb = new StringBuilder(text);
-        sb.Insert(offset, ch);
-        return sb.ToString();
+        var value = _form.Active; _form.RepaintActive();
+        _form.CursorPosition(value.Field.Row, value.Field.Column + Math.Clamp(value.CursorOffset - value.ViewOffset, 0, value.Field.VisibleLength - 1));
     }
 }
 
-public enum EditingResult
-{
-    Accepted,
-    AcceptedAndMoved,
-    Consumed,
-    Rejected,
-    Full,
-}
+public enum EditingResult { Accepted, AcceptedAndMoved, Consumed, Rejected, Full }

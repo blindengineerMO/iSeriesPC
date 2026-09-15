@@ -18,6 +18,8 @@ public sealed class MenuOption
     public required string Target { get; init; }
 
     public MenuOptionKind Kind { get; init; } = MenuOptionKind.SubMenu;
+
+    public string RequiredAuthority { get; init; } = "*NONE";
 }
 
 public sealed class ApplicationMenu
@@ -43,9 +45,20 @@ public static class MenuNames
     public const string SignOn = "QDSIGNON";
 }
 
-public static class SystemMenus
+public static partial class SystemMenus
 {
-    public static ApplicationMenu Main() => new()
+    public static ApplicationMenu SystemRequest() => new()
+    {
+        Name = "SYSREQ", Library = "QSYS", Title = "System Request",
+        Options = new[] {
+            new MenuOption { Number = "1", Text = "Transfer to alternate job", Target = "TFRSECJOB", Kind = MenuOptionKind.Command },
+            new MenuOption { Number = "3", Text = "Display current job", Target = "DSPJOB", Kind = MenuOptionKind.Command },
+            new MenuOption { Number = "6", Text = "Select group job", Target = "TFRGRPJOB GRPJOB(*SELECT)", Kind = MenuOptionKind.Command },
+            new MenuOption { Number = "90", Text = "Sign off all jobs", Target = "SIGNOFF", Kind = MenuOptionKind.SignOff },
+        },
+    };
+
+    public static ApplicationMenu LegacyMain() => new()
     {
         Name = MenuNames.Main,
         Library = "QSYS",
@@ -68,7 +81,7 @@ public static class SystemMenus
         },
     };
 
-    public static ApplicationMenu Major() => new()
+    public static ApplicationMenu LegacyMajor() => new()
     {
         Name = MenuNames.Major,
         Library = "QSYS",

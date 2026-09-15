@@ -75,7 +75,7 @@ public sealed class LibraryManager
         }
     }
 
-    public void CreateLibrary(string name, string type = "*PROD", string? description = null)
+    public void CreateLibrary(string name, string type = "*PROD", string? description = null, string owner = "QSECOFR")
     {
         if (!ObjectName.IsValid(name))
         {
@@ -99,7 +99,7 @@ public sealed class LibraryManager
             ObjectType = ObjectType.Library,
             Attribute = type,
             Description = description,
-            Owner = "QSECOFR",
+            Owner = owner,
         });
     }
 

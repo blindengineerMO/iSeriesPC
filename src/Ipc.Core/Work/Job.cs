@@ -4,6 +4,7 @@ public enum JobType
 {
     System,
     Interactive,
+    Communication,
     Batch,
     Autostart,
     Prestart,
@@ -21,6 +22,8 @@ public enum JobStatus
     Completed,
     Ended,
 }
+
+public enum JobExecutionState { Queued, Running, Succeeded, Failed, Cancelled, Interrupted }
 
 public enum JobCompletion
 {
@@ -41,6 +44,7 @@ public sealed class Job
     public JobType Type { get; init; } = JobType.Batch;
 
     public JobStatus Status { get; set; } = JobStatus.Submitted;
+    public JobExecutionState ExecutionState { get; set; } = JobExecutionState.Queued;
 
     public string? Subsystem { get; set; }
 
@@ -49,6 +53,7 @@ public sealed class Job
     public int Priority { get; set; } = 9;
 
     public string? UserProfile { get; set; }
+    public string? AuthSessionId { get; init; }
 
     public string? CurrentLibrary { get; set; }
 
@@ -69,6 +74,12 @@ public sealed class Job
     public string? Description { get; set; }
 
     public string? RoutingData { get; set; }
+    public string? JobDescription { get; init; }
+    public string? JobClass { get; set; }
+    public int RunPriority { get; set; } = 50;
+    public int TimeSliceMilliseconds { get; set; } = 2000;
+    public string? RoutingProgram { get; set; }
+    public string? StartupError { get; set; }
 
     public JobCompletion? CompletionCode { get; set; }
 
@@ -112,4 +123,5 @@ public static class JobKeys
     public const string InteractiveSubsystem = "QINTER";
     public const string BatchSubsystem = "QBATCH";
     public const string SystemSubsystem = "QSYS";
+    public const string CommunicationSubsystem = "QSERVER";
 }

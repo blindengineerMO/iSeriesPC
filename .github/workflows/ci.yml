@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+      - name: Install Linux authentication test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server libpam-modules openssl
+      - name: Restore
+        run: dotnet restore iSeriesPC.sln --locked-mode
+      - name: Check compatibility inventory
+        run: python3 tools/compatibility-report.py --check
+      - name: Build
+        run: dotnet build iSeriesPC.sln --no-restore -c Release
+      - name: Test
+        run: dotnet test iSeriesPC.sln --no-build -c Release --logger "trx;LogFileName=results.trx"
+      - name: Real terminal smoke test
+        run: python3 tools/pty-smoke.py
+      - name: Compiled display and keyboard PTY acceptance
+        run: python3 tools/pty-display-smoke.py
+      - name: Terminal signal and failure lifecycle
+        run: python3 tools/pty-lifecycle-smoke.py
+      - name: Real SSH and PAM smoke test
+        run: python3 tools/ssh-smoke.py
+      - name: Kerberos LDAP and SSSD integration
+        run: python3 tools/kerberos-smoke.py
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: '**/*.trx'

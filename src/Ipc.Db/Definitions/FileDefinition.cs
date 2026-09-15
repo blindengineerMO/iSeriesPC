@@ -47,6 +47,12 @@ public sealed class FieldSpec
 
     public int Decimals { get; init; }
 
+    public int DeclaredDigits { get; init; }
+
+    public bool CurrentDatetimeDefault { get; init; }
+
+    public FieldDefault? DefaultValue { get; set; }
+
     public int Position { get; set; }
 
     public bool VariableLength { get; set; }
@@ -62,7 +68,12 @@ public sealed class FieldSpec
     public string? Text { get; init; }
 
     public bool IsNumeric => Type is FieldType.Zoned or FieldType.Packed or FieldType.Binary or FieldType.Float;
+
+    [JsonIgnore]
+    public int StorageLength => Type == FieldType.Packed ? checked((Length + 2) / 2) : checked(Length + (VariableLength ? 2 : 0));
 }
+
+public sealed record FieldDefault(string? Value);
 
 public sealed class RecordFormat
 {
@@ -81,14 +92,18 @@ public sealed class RecordFormat
         foreach (var field in Fields)
         {
             field.Position = offset;
-            offset += field.Length;
+            offset = checked(offset + field.StorageLength);
         }
 
         RecordLength = offset - 1;
+        BufferLayoutVersion = 2;
     }
 
     [JsonInclude]
     public int RecordLength { get; private set; }
+
+    [JsonInclude]
+    public int BufferLayoutVersion { get; private set; } = 1;
 }
 
 public sealed class FileDefinition
@@ -96,6 +111,12 @@ public sealed class FileDefinition
     public required string Name { get; init; }
 
     public required FileAttribute Attribute { get; init; }
+
+    public bool Unique { get; init; }
+
+    public bool ExcludeNullKeys { get; init; }
+
+    public int MaximumMembers { get; set; } = 32767;
 
     public List<RecordFormat> Formats { get; set; } = new();
 
@@ -106,6 +127,8 @@ public sealed class FileDefinition
 
     public int Ccsid { get; init; } = 37;
 
+    public LogicalFileDefinition? Logical { get; set; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -114,9 +137,19 @@ public sealed class FileDefinition
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 
-    public static FileDefinition FromJson(string json) =>
-        JsonSerializer.Deserialize<FileDefinition>(json, JsonOptions)
-        ?? throw new InvalidOperationException("Invalid file definition.");
+    public static FileDefinition FromJson(string json)
+    {
+        var definition = JsonSerializer.Deserialize<FileDefinition>(json, JsonOptions) ?? throw new InvalidOperationException("Invalid file definition.");
+        foreach (var format in definition.Formats)
+        {
+            // Version 1 counted decimal digits as bytes and omitted VARLEN prefixes.
+            // Member tables contain typed SQL values, so adapting buffer metadata
+            // does not rewrite data or claim compatibility with old binary buffers.
+            if (format.BufferLayoutVersion == 1) format.AssignPositions();
+            else if (format.BufferLayoutVersion != 2) throw new InvalidDataException("Unsupported record buffer layout version.");
+        }
+        return definition;
+    }
 }
 
 public enum FileAttribute

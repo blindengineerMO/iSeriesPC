@@ -25,27 +25,29 @@ public interface IObjectStore
 
 public sealed class InMemoryObjectStore : IObjectStore
 {
-    private readonly ConcurrentDictionary<QualifiedName, ObjectDescriptor> _objects =
+    private readonly ConcurrentDictionary<(QualifiedName Name, string Type), ObjectDescriptor> _objects =
         new();
 
     public long ObjectCount => _objects.Count;
 
-    public void Create(ObjectDescriptor descriptor) =>
-        _objects.TryAdd(descriptor.Key, descriptor);
+    public void Create(ObjectDescriptor descriptor)
+    {
+        descriptor.ValidateIdentity();
+        if (!_objects.TryAdd((descriptor.Key, descriptor.ObjectType), descriptor.Snapshot()))
+            throw new InvalidOperationException($"Object {descriptor.Key} {descriptor.ObjectType} already exists.");
+    }
 
     public void Delete(string library, string name, string type) =>
-        _objects.TryRemove(new QualifiedName(library, name), out _);
+        _objects.TryRemove((new QualifiedName(library, name), type), out _);
 
     public bool Exists(string library, string name, string type) =>
-        _objects.TryGetValue(new QualifiedName(library, name), out var d) &&
-        d.ObjectType == type;
+        _objects.ContainsKey((new QualifiedName(library, name), type));
 
     public ObjectDescriptor? Get(string library, string name, string type)
     {
-        if (_objects.TryGetValue(new QualifiedName(library, name), out var d) &&
-            d.ObjectType == type)
+        if (_objects.TryGetValue((new QualifiedName(library, name), type), out var d))
         {
-            return d;
+            return d.Snapshot();
         }
 
         return null;
@@ -58,8 +60,12 @@ public sealed class InMemoryObjectStore : IObjectStore
 
     public void Update(ObjectDescriptor descriptor)
     {
+        descriptor.ValidateIdentity();
         descriptor.Touch();
-        _objects[descriptor.Key] = descriptor;
+        var key = (descriptor.Key, descriptor.ObjectType);
+        while (_objects.TryGetValue(key, out var current))
+            if (_objects.TryUpdate(key, descriptor.Snapshot(), current)) return;
+        throw new Ipc.Core.Messages.CpfException("CPF9801", $"Object {descriptor.Key} {descriptor.ObjectType} not found.");
     }
 
     public IReadOnlyList<ObjectDescriptor> Find(
@@ -70,6 +76,7 @@ public sealed class InMemoryObjectStore : IObjectStore
             .Where(d => owner is null || d.Owner == owner)
             .Where(d => namePattern is null || NamePattern.Matches(d.Name, namePattern))
             .OrderBy(d => d.Name, StringComparer.Ordinal)
+            .Select(d => d.Snapshot())
             .ToList();
 
     public IReadOnlyList<string> ListLibraries() =>

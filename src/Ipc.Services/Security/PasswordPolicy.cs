@@ -11,7 +11,7 @@ public sealed class PasswordPolicy
         _registry = registry;
     }
 
-    public int MaximumLength { get; } = 10;
+    public int MaximumLength => _registry.Get(SystemValueNames.PasswordSystemLevel).Value is "0" or "1" ? 10 : 128;
 
     public int MinimumLength => ParseInt(_registry.Get(SystemValueNames.PasswordMinimumLength).Value, 6);
 
@@ -24,6 +24,7 @@ public sealed class PasswordPolicy
     public IReadOnlyList<string> Validate(string password)
     {
         var issues = new List<string>();
+        if (password.Any(char.IsControl)) issues.Add("Password cannot contain control characters.");
 
         if (password.Length < MinimumLength)
         {

@@ -15,10 +15,32 @@ public enum ClStatementKind
     SendProgramMessage,
     Command,
     EndProgram,
+    Branch,
+    ForBegin,
+    ForEnd,
+    ReceiveFile,
+    CloseFile,
+    NoOp,
 }
 
 public sealed class ClStatement
 {
+    public Ipc.Core.Compilation.SourceLocation? Location { get; set; }
+
+    public bool FileVariable { get; init; }
+    public string? OpenId { get; init; }
+    public List<ClMessageMonitor> Monitors { get; } = new();
+    public string MessageType { get; init; } = "*INFO";
+    public string? MessageId { get; init; }
+
+    public ClExpression? Expression { get; set; }
+    public ClExpression? TerminalExpression { get; set; }
+    public ClExpression? TargetExpression { get; set; }
+    public string? DeclarationType { get; init; }
+    public string? DeclarationLength { get; init; }
+    public long Increment { get; init; } = 1;
+    public int LoopHead { get; init; } = -1;
+
     public ClStatementKind Kind { get; init; }
 
     public string? VariableName { get; init; }

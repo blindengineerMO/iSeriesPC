@@ -76,7 +76,7 @@ public class DbTests : IDisposable
 
         Assert.True(definition.PrimaryFormat.Find("STATUS")!.NullCapable);
         Assert.Equal(FieldType.Logic, definition.PrimaryFormat.Find("ACTIVE")!.Type);
-        Assert.Equal(47, definition.PrimaryFormat.RecordLength);
+        Assert.Equal(40, definition.PrimaryFormat.RecordLength);
     }
 
     [Fact]
@@ -191,7 +191,7 @@ public class DbTests : IDisposable
         Assert.True((bool)first["ACTIVE"]!);
 
         var second = rows[1];
-        Assert.Equal(string.Empty, second["STATUS"]);
+        Assert.Null(second["STATUS"]);
         Assert.False((bool)second["ACTIVE"]!);
     }
 
@@ -324,7 +324,7 @@ public class DbTests : IDisposable
         commands.Execute($"ADDSRCPFM FILE(QGPL/QDDS) MBR(QDDS) DATA('{DdsLine("CNAME", "A", "20", "")}')");
         commands.Execute($"ADDSRCPFM FILE(QGPL/QDDS) MBR(QDDS) DATA('{DdsLine("BALANCE", "P", "7 2", "")}')");
 
-        var create = commands.Execute("CRTPF FILE(QGPL/CUST) SRCFILE(QGPL/QDDS) SRCMBR(QDDS) TEXT('Customers')");
+        var create = commands.Execute("CRTPF FILE(QGPL/CUST) SRCFILE(QGPL/QDDS) SRCMBR(QDDS) MAXMBRS(2) TEXT('Customers')");
         Assert.False(create.IsError);
         Assert.Contains("CUST", create.Message);
 
@@ -351,7 +351,7 @@ public class DbTests : IDisposable
         var addMember = commands.Execute("ADDPFM FILE(QGPL/CUST) MBR(DEMO)");
         Assert.False(addMember.IsError);
 
-        var copy = commands.Execute("CPYF FROMFILE(QGPL/CUST) TOFILE(QGPL/CUST) FROMMBR(CUST) TOMBR(DEMO)");
+        var copy = commands.Execute("CPYF FROMFILE(QGPL/CUST) TOFILE(QGPL/CUST) FROMMBR(CUST) TOMBR(DEMO) MBROPT(*ADD)");
         Assert.False(copy.IsError);
         Assert.Contains("2 records", copy.Message);
         Assert.Equal(2, _files.RowCount("QGPL", "CUST", "DEMO"));

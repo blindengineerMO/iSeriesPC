@@ -12,9 +12,9 @@ public sealed class DdsCompileException : Exception
 
 public sealed class DdsCompiler
 {
-    public FileDefinition CompilePhysical(string name, string source, int ccsid = 37)
+    public FileDefinition CompilePhysical(string name, string source, int ccsid = 37, string sourceName = "*SOURCE")
     {
-        var definition = Compile(name, source, FileAttribute.Physical, ccsid);
+        var definition = Compile(name, source, FileAttribute.Physical, ccsid, sourceName);
         if (definition.Formats.Count == 0)
         {
             throw new DdsCompileException("No record formats were declared for file " + name + ".");
@@ -23,8 +23,10 @@ public sealed class DdsCompiler
         return definition;
     }
 
-    public FileDefinition Compile(string name, string source, FileAttribute attribute, int ccsid = 37)
+    public FileDefinition Compile(string name, string source, FileAttribute attribute, int ccsid = 37, string sourceName = "*SOURCE")
     {
+        if (attribute == FileAttribute.Physical && source.Split('\n').Any(line => line.Length > 6 && line[5] == 'A' && line[6] != '*'))
+            return NativePhysicalDdsCompiler.Compile(name, source, ccsid, sourceName);
         var definition = new FileDefinition { Name = name, Attribute = attribute, Ccsid = ccsid };
         var lines = source.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         RecordFormat? record = null;
@@ -89,7 +91,7 @@ public sealed class DdsCompiler
                     continue;
                 }
 
-                var field = ParseField(nameSlot, raw, keywords);
+                var field = ParseField(nameSlot, raw, keywords, ccsid);
                 ApplyFieldKeywords(field, keywords);
                 if (record.Find(field.Name) is not null)
                 {
@@ -117,7 +119,7 @@ public sealed class DdsCompiler
         return definition;
     }
 
-    private static FieldSpec ParseField(string name, string raw, IReadOnlyList<KeywordToken> keywords)
+    private static FieldSpec ParseField(string name, string raw, IReadOnlyList<KeywordToken> keywords, int ccsid)
     {
         var typeChar = raw.Length >= 35 ? raw[34] : ' ';
         var type = ParseType(typeChar);
@@ -140,7 +142,7 @@ public sealed class DdsCompiler
             Type = type,
             Length = length,
             Decimals = decimals,
-            Ccsid = Ccsid(keywords) ?? 37,
+            Ccsid = Ccsid(keywords) ?? ccsid,
             Text = FindText(keywords),
         };
     }

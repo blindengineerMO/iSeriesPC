@@ -1,0 +1,2466 @@
+{
+  "schemaVersion": 1,
+  "reviewed": "2026-09-14",
+  "requirements": [
+    {
+      "id": "WP00-01",
+      "source": "PLAN.md \u00a76 WP0",
+      "requirement": "Create repo layout, `.gitignore`, `.editorconfig`, `Directory.Build.props` (`net8.0`, `RollForward=LatestMajor`, `LangVersion=12`, nullable, implicit usings, warnings-as-errors off), solution `iSeriesPC.sln`.",
+      "status": "partial",
+      "implementation": [
+        "Directory.Build.props",
+        "iSeriesPC.sln",
+        "global.json"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SmokeTests.cs"
+      ],
+      "documentation": [
+        "docs/build-baseline.md"
+      ],
+      "evidence": "SDK 8.0.425 and .sln verified; remaining project layout is tracked in later WPs."
+    },
+    {
+      "id": "WP00-02",
+      "source": "PLAN.md \u00a76 WP0",
+      "requirement": "README.md seed with summary/architecture/install/usage/API stubs (kept live thereafter).",
+      "status": "partial",
+      "implementation": [
+        "Directory.Build.props",
+        "iSeriesPC.sln",
+        "global.json"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SmokeTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP00-03",
+      "source": "PLAN.md \u00a76 WP0",
+      "requirement": "Docs skeleton (`docs/*` stubs referenced above).",
+      "status": "partial",
+      "implementation": [
+        "Directory.Build.props",
+        "iSeriesPC.sln",
+        "global.json"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SmokeTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP00-04",
+      "source": "PLAN.md \u00a76 WP0",
+      "requirement": "CI workflow (GitHub Actions: build, test on ubuntu-24.04, dotnet 8).",
+      "status": "partial",
+      "implementation": [
+        "Directory.Build.props",
+        "iSeriesPC.sln",
+        "global.json"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SmokeTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP00-05",
+      "source": "PLAN.md \u00a76 WP0",
+      "requirement": "Baseline: `dotnet build` + `dotnet test` green with no source.",
+      "status": "partial",
+      "implementation": [
+        "Directory.Build.props",
+        "iSeriesPC.sln",
+        "global.json"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SmokeTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-01",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "Object type catalog (`*LIB *PGM *MODULE *SRVPGM *CMD *FILE *MENU *MSGQ *DTAQ *DTAARA *USRSPC *OUTQ *JOBD *JOBQ *SBSD *CLS *USRPRF *AUTL *JRN *JRNRCV *DEVD *CTLD *LIND *NETSVR *BNDDIR *SYM *DTAARA *SFGMGT ... prioritize runnable subset).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-02",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "`ObjectName` (<=10 chars, `Q/#` reserved), `QualifiedName` (`LIB/OBJ`), generic name matching.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-03",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "`ObjectDescriptor`, object attributes (owner, created, changed, description, CCSID, authority), object store interface + in-memory + filesystem-backed implementations.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/object-model.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-04",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "System catalog schema (SQLite DDL) \u2014 object registry, system values, counters.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-05",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "`SystemValue` model + registry of standard values (QSECURITY, QDATE, QTIME, QCCSID, QSYSNAME, QDATFMT, QDATSEP, QLIBL, QSPLF, QINLMNU, ...).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-06",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "CCSID service: EBCDIC 037 \u2194 ASCII/UTF-8 conversion tables (`Ipc.Core.CodePage`), streaming and buffer variants; document supported CCSIDs.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-07",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "Date/time `Q-format` services (`*YMD`/`*DMY`/`*MDY`, separators, century windowing).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-08",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "`IpcMessage`/message-id model, `IpcException` hierarchy (escape/status line).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP01-09",
+      "source": "PLAN.md \u00a76 WP1",
+      "requirement": "Unit tests: name rules, CCSID round-trips, date formats, system-value defaults.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ObjectModelTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP02-01",
+      "source": "PLAN.md \u00a76 WP2",
+      "requirement": "SQLite access layer (connection factory, WAL, migrations runner).",
+      "status": "supported",
+      "implementation": [
+        "src/Ipc.Services/Sqlite/Migrator.cs",
+        "src/Ipc.Services/Sqlite/SqliteConnectionFactory.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/MigrationTests.cs"
+      ],
+      "documentation": [
+        "docs/catalog-migrations.md"
+      ],
+      "evidence": "2026-09-14: fresh/legacy upgrades, migration rollback, backup restore, concurrent processes, version/history rejection; migration test suite passed."
+    },
+    {
+      "id": "WP02-02",
+      "source": "PLAN.md \u00a76 WP2",
+      "requirement": "Service container (simple DI) + service-lifecycle management; config store (JSON + sysvals); host logging to rotating logs + `QHST`-style history journal.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ServicesTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP02-03",
+      "source": "PLAN.md \u00a76 WP2",
+      "requirement": "Event bus / domain events (for jobs, spool, messages, security audit).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ServicesTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP02-04",
+      "source": "PLAN.md \u00a76 WP2",
+      "requirement": "`IpcSystem` root facade exposing object store, job engine, spool, security, IFS, messaging.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ServicesTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP02-05",
+      "source": "PLAN.md \u00a76 WP2",
+      "requirement": "Unit + integration tests (SQLite backed).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ServicesTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-01",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "`UserProfile` (`*USRPRF`): user class (`*USER *SECADM *SECOFR *PGMR *SYSOPR *SYSADM`), special authorities (`*ALLOBJ *SECADM *JOBCTL *SAVSYS *SERVICE *SPLCTL *AUDIT *IOSYSCFG`), group profile, initial menu/program/current library, password rules, authorities.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-02",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "Object authority model: `*PUBLIC`, private authorities (`*USE *CHANGE *ALL`, bit matrix: OBJOPR/READ/ADD/UPD/DLT/OBJMGT/OBJEXIST), authorization lists (`*AUTL`), adopted authority (delegated from program call).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-03",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "`AuthorityEngine`: effective authority computation + enforcement hook.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-04",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "QSECURITY-equivalent levels (10/20/30/40/50 semantics subset); password policy ( QPWDLVL-aligned: length, repeated chars, expiration).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-05",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "Authentication provider abstraction: default delegates to Linux account (PAM/`getent`) at sign-on plus profile password check; configurable.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-06",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "Audit journal (`QAUDJRN`-style) writer.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP03-07",
+      "source": "PLAN.md \u00a76 WP3",
+      "requirement": "Tests: authority matrix, AUTL, adoption, group inheritance.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SecurityTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP04-01",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Job object: job number (unique, non-reused), user, name, type (interactive/batch/comm/system), status, priority, subsystem, output queue, message queue, active threads, timers, elapsed/CPU.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/ExecutionSession.cs",
+        "src/Ipc.Session/SystemWork.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/JobLifecycleTests.cs",
+        "tests/Ipc.Core.Tests/ActivationGroupTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 15: shared typed-job lifecycle, cancellation/shutdown, activation storage, managed/native accounting, authorized work commands and queue bindings; adapter-specific networking and full spool/message semantics remain in their owning packages."
+    },
+    {
+      "id": "WP04-02",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Subsystem runtime: subsystem description objects with routing entries (compare `*EQ/*SECTION`), job-queue entries (max active per queue), work-station entries; storage pools as categories.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/BatchDispatcher.cs",
+        "src/Ipc.Session/Controllers/WorkCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SchedulerDefinitionTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs",
+        "tests/Ipc.Core.Tests/BatchQueueTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 13; queue ownership, priority/FIFO and admission limits, JOBD/CLS and routing snapshots; actual CL/RPG/native batch effects and completion logs. Workstation entries/storage-pool categories and broader lifecycle remain open."
+    },
+    {
+      "id": "WP04-03",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Job queues: priorities + FIFO, one-queue-per-subsystem ownership rule; SBMJOB submission.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/BatchDispatcher.cs",
+        "src/Ipc.Session/Controllers/WorkCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SchedulerDefinitionTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs",
+        "tests/Ipc.Core.Tests/BatchQueueTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 13; queue ownership, priority/FIFO and admission limits, JOBD/CLS and routing snapshots; actual CL/RPG/native batch effects and completion logs. Workstation entries/storage-pool categories and broader lifecycle remain open."
+    },
+    {
+      "id": "WP04-04",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Interactive session host integration (SSH PTY\u2194job), sign-on job lifecycle.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/ExecutionSession.cs",
+        "src/Ipc.Session/SystemWork.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/JobLifecycleTests.cs",
+        "tests/Ipc.Core.Tests/ActivationGroupTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 15: shared typed-job lifecycle, cancellation/shutdown, activation storage, managed/native accounting, authorized work commands and queue bindings; adapter-specific networking and full spool/message semantics remain in their owning packages."
+    },
+    {
+      "id": "WP04-05",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Batch scheduler: background `Task`s + process-backed option, job-log capture.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/BatchDispatcher.cs",
+        "src/Ipc.Session/Controllers/WorkCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SchedulerDefinitionTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs",
+        "tests/Ipc.Core.Tests/BatchQueueTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 13; queue ownership, priority/FIFO and admission limits, JOBD/CLS and routing snapshots; actual CL/RPG/native batch effects and completion logs. Workstation entries/storage-pool categories and broader lifecycle remain open."
+    },
+    {
+      "id": "WP04-06",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Communication jobs (network service host adapters hook).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/ExecutionSession.cs",
+        "src/Ipc.Session/SystemWork.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/JobLifecycleTests.cs",
+        "tests/Ipc.Core.Tests/ActivationGroupTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 15: shared typed-job lifecycle, cancellation/shutdown, activation storage, managed/native accounting, authorized work commands and queue bindings; adapter-specific networking and full spool/message semantics remain in their owning packages."
+    },
+    {
+      "id": "WP04-07",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Active job registry + WRKACTJOB data source (with per-thread, CPU, status).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work",
+        "src/Ipc.Session/ExecutionSession.cs",
+        "src/Ipc.Session/SystemWork.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/JobLifecycleTests.cs",
+        "tests/Ipc.Core.Tests/ActivationGroupTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs"
+      ],
+      "documentation": [
+        "docs/batch-work.md"
+      ],
+      "evidence": "Schema 15: shared typed-job lifecycle, cancellation/shutdown, activation storage, managed/native accounting, authorized work commands and queue bindings; adapter-specific networking and full spool/message semantics remain in their owning packages."
+    },
+    {
+      "id": "WP04-08",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Job descriptions (`*JOBD`), routing data, classes (`*CLS`: priority, time-slice).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/JobEngineTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP04-09",
+      "source": "PLAN.md \u00a76 WP4",
+      "requirement": "Tests: queue ordering, concurrency limits, job lifecycle/status transitions.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/JobEngineTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP05-01",
+      "source": "PLAN.md \u00a76 WP5",
+      "requirement": "ANSI renderer: 80x24 grid, attributes (reverse/underline/blink) mapped from DSPATR, COLOR map to 16-color palette, cursor addressing, field attribute bytes, ins/escape-string rendering.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Terminal"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/TerminalTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP05-02",
+      "source": "PLAN.md \u00a76 WP5",
+      "requirement": "Terminal input editor: field navigation, insert/replace, char-by-char, numeric/timestamp fields, function keys (mapped from keyboard), roll keys, Enter, attention keys (SysReq).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Terminal"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/TerminalTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP05-03",
+      "source": "PLAN.md \u00a76 WP5",
+      "requirement": "Subfile controller: `SFL/SFLCTL` semantics, paging, roll up/down, fold, hidden keys, next-changed.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Terminal"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/TerminalTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP05-04",
+      "source": "PLAN.md \u00a76 WP5",
+      "requirement": "DSPF keyword runtime (subset documented in `dds-schema.md`): DSPSIZ, DSPATR, COLOR, DFT, DFTVAL, ERRMSG/ERRMSGID, MSGCON, COMP, CHECK/CHKMSGID, DATE/DATFMT, EDTCDE/EDTWRD, INDARA, CFnn/CAnn, PAGEDWN/PAGEUP, ALIAS/ALTPAGEDWN, cursor addressing, help attributes; message subfile `SFLMSG`.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Terminal"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/TerminalTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP05-05",
+      "source": "PLAN.md \u00a76 WP5",
+      "requirement": "Panel compiler: DDS display-file source \u2192 `PanelDefinition` (JSON/serde).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Terminal"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/TerminalTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP05-06",
+      "source": "PLAN.md \u00a76 WP5",
+      "requirement": "Renderer snapshot tests + interactive driver stub.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Terminal"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/TerminalTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP06-01",
+      "source": "PLAN.md \u00a76 WP6",
+      "requirement": "SSH login-shell executable: runs attached to the PTY, clears screen, launches sign-on panel.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Console",
+        "src/Ipc.Session",
+        "src/Ipc.Server"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SessionTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tools/pty-smoke.py"
+      ],
+      "documentation": [
+        "docs/architecture.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP06-02",
+      "source": "PLAN.md \u00a76 WP6",
+      "requirement": "Sign-on panel (faithful layout) + system values (date), user-profile auth, initial program/menu resolution, current library, liblist setup, sign-on audit.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Console",
+        "src/Ipc.Session",
+        "src/Ipc.Server"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SessionTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tools/pty-smoke.py"
+      ],
+      "documentation": [
+        "docs/architecture.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP06-03",
+      "source": "PLAN.md \u00a76 WP6",
+      "requirement": "Session loop: command line at menu \u2192 CL command prompt execution \u2192 return; `EXIT`/`SIGNOFF`.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Console",
+        "src/Ipc.Session",
+        "src/Ipc.Server"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SessionTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tools/pty-smoke.py"
+      ],
+      "documentation": [
+        "docs/architecture.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP06-04",
+      "source": "PLAN.md \u00a76 WP6",
+      "requirement": "Group jobs (session split) minimal (`DUP`/transfer to work menu).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Console",
+        "src/Ipc.Session",
+        "src/Ipc.Server"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SessionTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tools/pty-smoke.py"
+      ],
+      "documentation": [
+        "docs/architecture.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP06-05",
+      "source": "PLAN.md \u00a76 WP6",
+      "requirement": "SysReq menu (transfer/system request) wiring.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Console",
+        "src/Ipc.Session",
+        "src/Ipc.Server"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SessionTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tools/pty-smoke.py"
+      ],
+      "documentation": [
+        "docs/architecture.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP06-06",
+      "source": "PLAN.md \u00a76 WP6",
+      "requirement": "Screens render via WP5. Tests: fake terminal driver, sign-on flows.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Console",
+        "src/Ipc.Session",
+        "src/Ipc.Server"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/SessionTests.cs",
+        "tests/Ipc.Core.Tests/SessionServerTests.cs",
+        "tools/pty-smoke.py"
+      ],
+      "documentation": [
+        "docs/architecture.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP07-01",
+      "source": "PLAN.md \u00a76 WP7",
+      "requirement": "`*MENU` object model + `GO` command; canonical menu set: MAIN (verbatim options from AS/400 technical intro), MAJOR, verb/subject menus, `WRKSYS*` menus; option \u2192 CL command or submenu.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Menu",
+        "src/Ipc.Session/Controllers/MenuController.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/MenuTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP07-02",
+      "source": "PLAN.md \u00a76 WP7",
+      "requirement": "Menu security (restrict via command/option), menu-driven CL entry with prompt.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Menu",
+        "src/Ipc.Session/Controllers/MenuController.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/MenuTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP07-03",
+      "source": "PLAN.md \u00a76 WP7",
+      "requirement": "Custom menu creation (json + later SDA-styled builder).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Menu",
+        "src/Ipc.Session/Controllers/MenuController.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/MenuTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP07-04",
+      "source": "PLAN.md \u00a76 WP7",
+      "requirement": "Tests: menu routing, security, GO semantics.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Menu",
+        "src/Ipc.Session/Controllers/MenuController.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/MenuTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP08-01",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "`*CMD` object + command source (`CRTCMD`) compiler subset: parm definitions, type (char/dec/ choice/file/positional/multiple), keyword or positional, defaults, validation, prompt text/order, help.",
+      "status": "supported",
+      "implementation": [
+        "src/Ipc.Cl/Definitions",
+        "src/Ipc.Services/Commands/CommandDefinitionStore.cs",
+        "src/Ipc.Session/Controllers/CommandObjectCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/CommandDefinitionTests.cs",
+        "tests/Ipc.Core.Tests/CommandObjectTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs",
+        "tests/Ipc.Core.Tests/SignedDeploymentTests.cs",
+        "tools/pty-display-smoke.py"
+      ],
+      "documentation": [
+        "docs/command-definitions.md"
+      ],
+      "evidence": "622-test suite, persisted restart/authority/signatures/dependencies, shared text/structured/F4 metadata, native binary ABI and real PTY compile/prompt/execute/reference acceptance pass."
+    },
+    {
+      "id": "WP08-02",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "Command catalog in system catalog (built-in).",
+      "status": "supported",
+      "implementation": [
+        "src/Ipc.Cl/Definitions",
+        "src/Ipc.Services/Commands/CommandDefinitionStore.cs",
+        "src/Ipc.Session/Controllers/CommandObjectCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/CommandDefinitionTests.cs",
+        "tests/Ipc.Core.Tests/CommandObjectTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs",
+        "tests/Ipc.Core.Tests/SignedDeploymentTests.cs",
+        "tools/pty-display-smoke.py"
+      ],
+      "documentation": [
+        "docs/command-definitions.md"
+      ],
+      "evidence": "622-test suite, persisted restart/authority/signatures/dependencies, shared text/structured/F4 metadata, native binary ABI and real PTY compile/prompt/execute/reference acceptance pass."
+    },
+    {
+      "id": "WP08-03",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "Built-in commands across object, file/data, save/restore, work, security, spool, messaging, system, language, IFS and network categories; canonical names and extensions are enumerated in catalog.json.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Cl",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Services/Messages/MessageQueueStore.cs",
+        "src/Ipc.Session/Controllers/MessageCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ClTests.cs",
+        "tests/Ipc.Core.Tests/LogicalFileTests.cs",
+        "tests/Ipc.Core.Tests/LibraryDeletionTests.cs",
+        "tests/Ipc.Core.Tests/DataDictionaryTests.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/FileCopyTests.cs",
+        "tests/Ipc.Core.Tests/MessageQueueTests.cs",
+        "tests/Ipc.Core.Tests/ClMessageCommandTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/compatibility-contracts.md",
+        "docs/object-model.md",
+        "docs/logical-files.md",
+        "docs/object-command-progress.md",
+        "docs/file-copy.md",
+        "docs/message-queues.md"
+      ],
+      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open."
+    },
+    {
+      "id": "WP08-04",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "Command-line parser: keyword `KWD(val)`, positional, `*` builtins, generic names, F4 prompt panel build, validation/messages, choose-command error display.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Cl",
+        "src/Ipc.Session/Controllers/CommandService.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ClTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP08-05",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "CL program interpreter: compile CL source (fixed-column source in source PF) \u2192 IR; execution (`PGM..ENDPGM`), `DCL`, `CHGVAR`, `IF/THEN/ELSE/ENDIF`, `DO/ENDDO`, `GOTO`, `SELECT/ENDSL`, `CALL`/`CALLPRC`, `MONMSG`, `SNDPGMMSG`, `RCVMSG`, `SNDMSG`, `DSPLY`, `OVRPRTF/DLTF`, `RTVDTAARA/CHGDTAARA`, `ADDLIBLE/RMVLIBLE/CHGLIBL/ENDPGMCLS? GRTLIBL/CALLPRC PRC`, liblist ops, file ops, `SNDNETF/RCVNETF`, `CPYSPLF`, `QCMDEXC` bridge.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Cl",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Cl/Interpreter/ClControlFlowCompiler.cs",
+        "src/Ipc.Cl/Interpreter/ClExpression.cs",
+        "src/Ipc.Cl/Interpreter/ClVariableDefinition.cs",
+        "src/Ipc.Cl/Interpreter/ClVariables.cs",
+        "src/Ipc.Cl/Interpreter/ClMessageMonitor.cs",
+        "src/Ipc.Cl/Interpreter/ClDatabaseFile.cs",
+        "src/Ipc.Cl/Interpreter/ClOpenFiles.cs",
+        "src/Ipc.Session/Controllers/ClFileCommands.cs",
+        "src/Ipc.Db/Store/SequentialRecords.cs",
+        "src/Ipc.Core/Work/ProgramArgument.cs",
+        "src/Ipc.Session/Controllers/ClProgramCalls.cs",
+        "src/Ipc.Session/Controllers/ClRetrievalCommands.cs",
+        "src/Ipc.Session/Controllers/LibraryListCommands.cs",
+        "src/Ipc.Services/Work/DataAreaStore.cs",
+        "src/Ipc.Session/Controllers/DataAreaCommands.cs",
+        "src/Ipc.Services/Messages/MessageQueueStore.cs",
+        "src/Ipc.Session/Controllers/MessageCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ClTests.cs",
+        "tests/Ipc.Core.Tests/ClControlFlowTests.cs",
+        "tests/Ipc.Core.Tests/ClExpressionTests.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/ClParameterTests.cs",
+        "tests/Ipc.Core.Tests/ClMonitorTests.cs",
+        "tests/Ipc.Core.Tests/ClDatabaseFileTests.cs",
+        "tests/Ipc.Core.Tests/SequentialCursorTests.cs",
+        "tests/Ipc.Core.Tests/SqliteCancellationTests.cs",
+        "tests/Ipc.Core.Tests/ClExternalCallTests.cs",
+        "tests/Ipc.Core.Tests/ExternalProgramTests.cs",
+        "tests/Ipc.Core.Tests/ClEnvironmentCommandTests.cs",
+        "tests/Ipc.Core.Tests/DataAreaTests.cs",
+        "tests/Ipc.Core.Tests/MessageQueueTests.cs",
+        "tests/Ipc.Core.Tests/ClMessageCommandTests.cs",
+        "tests/Ipc.Core.Tests/ClRawCharacterTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/cl-runtime.md",
+        "docs/data-areas.md",
+        "docs/message-queues.md"
+      ],
+      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open."
+    },
+    {
+      "id": "WP08-06",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "Parameter ABI bridge for `*PGM` external (C#) targets; exit/recovery (MONMSG) semantics.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Cl",
+        "src/Ipc.Session/Controllers/CommandService.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ClTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP08-07",
+      "source": "PLAN.md \u00a76 WP8",
+      "requirement": "Golden tests: catalog of CL programs with expected results.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Cl",
+        "src/Ipc.Session/Controllers/CommandService.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ClTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP09-01",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Physical file objects: record formats, fields (A/P/S/F/B/L/D/T/Z types, lengths, decimals, var-length, null-capable, CCSID, ALTSEQ), keyed access paths; member support (each member a SQLite table or schema-qualified table).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs",
+        "tests/Ipc.Core.Tests/NativePhysicalDdsTests.cs",
+        "tests/Ipc.Core.Tests/DdsDefaultsTests.cs",
+        "tests/Ipc.Core.Tests/PhysicalValueTests.cs",
+        "tests/Ipc.Core.Tests/PhysicalMemberTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/dds-schema.md"
+      ],
+      "evidence": "Native PF columns/types, strict defaults and current dates, physical uniqueness and exact decimal/CCSID keys are implemented. CRTPF/CHGPF member limits and atomic member creation are covered. ALTSEQ, references and broader schema changes remain open."
+    },
+    {
+      "id": "WP09-02",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Logical files: simple/non-join/join LF \u2192 SQL views + indexes; select/omit; key sequence; access path maintenance.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs",
+        "tests/Ipc.Core.Tests/LogicalFileTests.cs",
+        "tests/Ipc.Core.Tests/NullableKeyTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/logical-files.md"
+      ],
+      "evidence": "Simple LF projection/select-omit, compound nullable keys, owned unique paths, member bindings, live authority and PF relocation are covered. Joins and multiple formats remain open."
+    },
+    {
+      "id": "WP09-03",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "DDS compiler (`Ipc.Db.Dds`): parse PF/LF source \u2192 schema; DSPF/PRTF handled in WP5/WP11.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs",
+        "tests/Ipc.Core.Tests/NativePhysicalDdsTests.cs",
+        "tests/Ipc.Core.Tests/DdsDefaultsTests.cs",
+        "tests/Ipc.Core.Tests/LogicalFileTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/dds-schema.md"
+      ],
+      "evidence": "Native PF/simple LF compilation includes continued statements, source diagnostics, strict DFT validation and explicit unsupported-keyword errors. Wider grammar remains open."
+    },
+    {
+      "id": "WP09-04",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "SQL DDL bridge: `CREATE TABLE/VIEW/INDEX` compatibility layer \u2192 object store; CRTSQL* mapping.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP09-05",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Record buffer codec: packed/zoned/free decimal, binary, float, date/time, CCSID text \u2014 deterministic layout for program I/O.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs",
+        "tests/Ipc.Core.Tests/RecordByteFixtureTests.cs",
+        "tests/Ipc.Core.Tests/PhysicalValueTests.cs",
+        "tests/Ipc.Core.Tests/DatabaseSortKeyTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/dds-schema.md"
+      ],
+      "evidence": "Independent numeric/CCSID/ISO datetime byte fixtures, layout-v2 packed/VARLEN/null buffers, exact decimal keys and float32 storage are validated. The C08 buffer-validation task is complete; wider native formats and API-specific marshalling retain their own open work."
+    },
+    {
+      "id": "WP09-06",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Sequential & keyed I/O service (for RPG/CL backends): READ/READP/READE/READPE/SETLL/SETGT/ CHAIN/OPEN/CLOSE/positioning/member/multi-format.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP09-07",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Data utilities: DSPPFM, CPYF (+FROMTO variants), CRTSRCPF/ADDPFM/RMVFM/RGZPFM, CLRPFM, DSPFD/DSPFFD, WRKFILE.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs",
+        "tests/Ipc.Core.Tests/FileCopyTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/file-copy.md"
+      ],
+      "evidence": "671 tests pass; real PTY verifies LF creation and transactional LF-to-PF copy. CPYF add/replace, mapping/drop, rollback and oldest-member selection are covered; remaining native options and broader category acceptance are open."
+    },
+    {
+      "id": "WP09-08",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "SQL interface: STRSQL (interactive), RUNSQL(STM), QMQRY objects + WRKQRY-lite \u2192 SQL editor; DB2-flavored SQL parser subset \u2192 SQLite translation (scalar funcs, date math, `*N` etc.).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP09-09",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Integrity: triggers (SQLite), referential integrity (FK), commitment control (transaction boxes), journaling hooks (CRTJRN/ADDPFTRG\u2192APYJRNCHG/RCVJRNE) \u2014 WP12.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP09-10",
+      "source": "PLAN.md \u00a76 WP9",
+      "requirement": "Golden SQL tests + record-buffer round-trip tests.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Db"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DbTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-01",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Lexer/parser \u2192 IR (fixed-column spec, free-form `**free`/`/free`), indicators, `D`/`F`/`C`/ `E`/`P`/`O` specs.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-02",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Data: fields/extended/named constants/data structures (DS, overlay/overlap), arrays (compile/ pre-runtime/runtime per go4as400), `%len/%size/%subst/%trim` built-ins, indicators 01\u201399*, `IN`, let-level conditions.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-03",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Expressions: arithmetic/comparison/logical, dates/times/zones, CCSID aware.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-04",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Opcode core (documented subset in `rpg-spec.md`): calculation (ADD SUB MULT DIV MVR Z-ADD Z-SUB EVAL MOVE MOVEL BITOFF/BITON TEST CLEAR SETON SETOFF SETONLR DO DOU DOW FOR IF/ELSE/ ENDIF SELECT ...), DB I/O (CHAIN READ READE READP READPE WRITE UPDATE DELETE SETLL SETGT OPEN CLOSE FORCE COMMIT ROLBK), print/display (EXFMT WRITE READ DSPLY SNDPGMMSG/RCVMSG), program (CALL CALLB CALLP PARM PLIST RETRN), indicators/error (ON-ERROR, `*INLR`), `EXSR`, subprocedures (`P`/`D` specs), prototyped calls, service programs.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-05",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Runtime integration with WP9 (record buffers) and WP5 (EXFMT/READ interaction).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-06",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Compile-to-IR (`CRTBNDRPG`) + execute (`CALL`); MONMSG-style and `*STATUS` handling.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP10-07",
+      "source": "PLAN.md \u00a76 WP10",
+      "requirement": "Golden test suite (ported go4as400/IPSA samples) + opcode coverage tracker.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Rpg"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/RpgTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+    },
+    {
+      "id": "WP11-01",
+      "source": "PLAN.md \u00a76 WP11",
+      "requirement": "`*PRTF` objects + printer-file DDS subset; `OVRPRTF` alignment.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP11-02",
+      "source": "PLAN.md \u00a76 WP11",
+      "requirement": "Spool records \u2192 spool store (QSPL), attributes (job/user, OUTQ, forms, copies, page count, user data, status HLD/RLS/DLT/RDY/CLO/WTR).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP11-03",
+      "source": "PLAN.md \u00a76 WP11",
+      "requirement": "`*OUTQ` objects, writer system jobs (STRPRTWTR/ENDPRTWTR), backends: CUPS (host printers), PDF, plain text, ASCII save.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP11-04",
+      "source": "PLAN.md \u00a76 WP11",
+      "requirement": "WRKSPLF full option flows (1=Send 2=Change 3=Hold 4=Delete 5=Display 6=Release 7=Messages 8=Attributes), CHGSPLFA, CPYSPLF\u2192PF/stream/OUTQ.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP11-05",
+      "source": "PLAN.md \u00a76 WP11",
+      "requirement": "WRKOUTQ, WRKPRT, device `*DEVD` printer mapping.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP11-06",
+      "source": "PLAN.md \u00a76 WP11",
+      "requirement": "Tests: send\u2192spool\u2192writer\u2192OUTQ lifecycle, attribute changes, remote OUTQ (SFTP forward).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP12-01",
+      "source": "PLAN.md \u00a76 WP12",
+      "requirement": "Message queues `*MSGQ` with SNDMSG/RCVMSG/WRKMSGQ/DSPMSG; message subtypes (inquiry/completion/ escape/status/informational), sender/reply, break handling; message subfile integration.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Messages/MessageQueueStore.cs",
+        "src/Ipc.Session/Controllers/MessageCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/MessageQueueTests.cs",
+        "tests/Ipc.Core.Tests/ClMessageCommandTests.cs",
+        "tools/pty-display-smoke.py"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/message-queues.md"
+      ],
+      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open."
+    },
+    {
+      "id": "WP12-02",
+      "source": "PLAN.md \u00a76 WP12",
+      "requirement": "Data queues `*DTAQ`: FIFO/LIFO/keyed; SNDDTAQ/RCVDTAQ + `QUSCRTDQ/QSNDDTAQ/QRDVDTAQ` APIs.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP12-03",
+      "source": "PLAN.md \u00a76 WP12",
+      "requirement": "Data areas `*DTAARA` (char/decimal/logical; RTVDTAARA/CHGDTAARA).",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work/DataAreaStore.cs",
+        "src/Ipc.Session/Controllers/DataAreaCommands.cs",
+        "src/Ipc.Session/Controllers/ClRetrievalCommands.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/DataAreaTests.cs",
+        "tests/Ipc.Core.Tests/ClEnvironmentCommandTests.cs",
+        "tools/pty-display-smoke.py"
+      ],
+      "documentation": [
+        "docs/data-areas.md"
+      ],
+      "evidence": "Durable typed named data areas and local job areas, CL retrieval/change, exact bytes/decimals, authority/locks and lifecycle PTY pass; wider public API formats remain open."
+    },
+    {
+      "id": "WP12-04",
+      "source": "PLAN.md \u00a76 WP12",
+      "requirement": "User spaces `*USRSPC` (CRTUSRSPC + `QUSCRTUS/QUSRUSAT` subset) as byte-addressable store.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP12-05",
+      "source": "PLAN.md \u00a76 WP12",
+      "requirement": "Journals `*JRN/*JRNRCV`: CRTJRN/ENDJRN/APYJRNCHG/JRNPF, RCVJRNE, GSHJRN?, journal entry format writer/reader; hooks from WP9.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP12-06",
+      "source": "PLAN.md \u00a76 WP12",
+      "requirement": "Tests per object type incl. concurrency.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP13-01",
+      "source": "PLAN.md \u00a76 WP13",
+      "requirement": "IFS virtual layout: `/` root \u2192 host root; `/QSYS.LIB` (library tree), `/QDLS`, `/QOpenSys`, `/home`; directory/stream-file object model over host FS.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP13-02",
+      "source": "PLAN.md \u00a76 WP13",
+      "requirement": "WRKLNK (browse/paging, options), EDTF stream editor (fixed/record editing subset), WRKFLR/folders.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP13-03",
+      "source": "PLAN.md \u00a76 WP13",
+      "requirement": "Stream-file APIs (open/read/write/seek, `QlgOpen*` subset), stream\u2194DB (CPYTOIMPF/CPYFRMIMPF, content types CSV/JSON/XML), permissions mapping (POSIX + iSeries authority), object\u2194stream (CPYTOSTMF/CPYFRMSTMF).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP13-04",
+      "source": "PLAN.md \u00a76 WP13",
+      "requirement": "QDLS folders for doc-look. Tests: path translation, permissions, transfer round-trips.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP14-01",
+      "source": "PLAN.md \u00a76 WP14",
+      "requirement": "Internal save format `.isav` (lossless, versioned) + **SAVF-compatible reader/writer** (documented OS/400 SAVF stream subset; validated against open-source savf parsers for interchange with real systems).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP14-02",
+      "source": "PLAN.md \u00a76 WP14",
+      "requirement": "SAVLIB/SAVOBJ/SAVCHGOBJ/SAVSECDTA/SAVCFG \u2192 SAVF or TAP media; RSTLIB/RSTOBJ/RSTSECDTA/RSTCFG with object existence/restore-log handling.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP14-03",
+      "source": "PLAN.md \u00a76 WP14",
+      "requirement": "TAP device emulation (archive container for user media workflows).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP14-04",
+      "source": "PLAN.md \u00a76 WP14",
+      "requirement": "ObjectConnect-equivalent **object transfer protocol** (direct TCP streaming between iSeriesPC nodes) + `SNDNETF/RCVNETF` commands mapping to SFTP file transfer and the object-stream service.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP14-05",
+      "source": "PLAN.md \u00a76 WP14",
+      "requirement": "ASP/mount-point mapping (independent storage pools as mount roots).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP14-06",
+      "source": "PLAN.md \u00a76 WP14",
+      "requirement": "Tests: round-trips, cross-version, corrupt input rejection, SAVF interop vectors.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP15-01",
+      "source": "PLAN.md \u00a76 WP15",
+      "requirement": "API execution host with classic CVT-style parameter ABI (20-byte + variable-length).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP15-02",
+      "source": "PLAN.md \u00a76 WP15",
+      "requirement": "Curated command execution, message, user-space, data-queue, system-value, job, date, journal, security and diagnostic APIs, normalized in catalog.json; each requires ABI/reference-vector acceptance.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/compatibility-contracts.md",
+        "docs/object-model.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP15-03",
+      "source": "PLAN.md \u00a76 WP15",
+      "requirement": "API registry discoverable (WRKAPILS? minimal) + docs (`docs/api.md`).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP15-04",
+      "source": "PLAN.md \u00a76 WP15",
+      "requirement": "Tests per API with reference vectors.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP16-01",
+      "source": "PLAN.md \u00a76 WP16",
+      "requirement": "ASP.NET Core host `Ipc.Web`: REST endpoints for system mgmt (same domains as 5250), **IWS-like service deployment** \u2014 register `*PGM` (CL/RPG/C#) or SQL proc \u2192 REST resource (GET/POST/ PUT/DELETE mapped to program call w/ JSON\u2194parm codec), OpenAPI docs.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Web/Program.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "HTTP command bridge uses the shared server; full domain endpoints, authority, IWS, OpenAPI and websocket/admin features remain open."
+    },
+    {
+      "id": "WP16-02",
+      "source": "PLAN.md \u00a76 WP16",
+      "requirement": "SOAP subset (document operations) optional phase.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP16-03",
+      "source": "PLAN.md \u00a76 WP16",
+      "requirement": "Vite SPA `Ipc.WebUi`: admin console (users, jobs, spool files, output queues, SQL browser, libraries/objects+authority, messages, sysvals, IFS explorer, print mgmt, security audit, service config: samba/ldap/dns/email/firewall), plus **web 5250** terminal over websocket.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP16-04",
+      "source": "PLAN.md \u00a76 WP16",
+      "requirement": "5250-over-websocket gateway (bridge terminal engine to browser).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP16-05",
+      "source": "PLAN.md \u00a76 WP16",
+      "requirement": "HTTP server config command (CRTHTTPC-equivalent\u2192our service config) + HTTPS/self-signed cert.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP16-06",
+      "source": "PLAN.md \u00a76 WP16",
+      "requirement": "Tests: REST integration (HTTP via TestServer), websocket 5250 round-trip.",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Web/Program.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "HTTP command bridge uses the shared server; full domain endpoints, authority, IWS, OpenAPI and websocket/admin features remain open."
+    },
+    {
+      "id": "WP17-01",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**SFTP/SSH:** map SSH sessions to interactive jobs (via login-shell swap in WP6); scripted SFTP bridge used by SNDNETF/CPYF-to-remote/SAVF exchange toward real iSeries (WP14/WP20).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-02",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**E-mail adapter:** send via SMTP (`SNDSMTPEMM`-equiv), host postfix+dovecot provisioned by installer; WRKDIRE-lite directory reads from LDAP.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-03",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**LDAP adapter:** sync user profiles \u2192 host LDAP (slapd); directory commands.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-04",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**DNS adapter:** host BIND zone mgmt via CFGTCP-style menus editing `named.conf`/zones.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-05",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**Firewall/NAT adapter:** UFW enable/allow/deny/forward + NAT rules via menus (CFGTCP).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-06",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**I-NetServer/Samba:** share create/modify/remove mapping `*NETSVR` + share mgmt commands.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-07",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**TCP/IP setup:** CFGTCP-style menus driving `nmcli`/`ip`/`/etc/hosts`/resolv; DSPNETA/CHGNETA.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-08",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**Node.js:** `*PGM` kind external\u2192node procedure; Vite build hook; `STRREXPRC`-like.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-09",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**CUPS:** printer backend integration for WP11.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-10",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "**ObjectConnect network service:** TCP listener for object streaming (WP14).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP17-11",
+      "source": "PLAN.md \u00a76 WP17",
+      "requirement": "Tests: adapter doubles + host-command dry-run mode.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-01",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "System values UI (WRKSYSVAL/CHGSYSVAL) + values storage.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-02",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "WRKSYSSTS/WRKDSKSTS (host /proc, `df`, `iostat`-equivalent via /proc), QPFRADJ pool hint.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-03",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "PTF-style self-update: managed package stream + apply/list/remove, messages.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-04",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "History (`QHST`) log, security audit review (QAUDJRN), job log capture.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-05",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "Startup/shutdown (`STRDOWN/PWRDWNSYS/ENDSYS` \u2192 systemd), system console line.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-06",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "STRSST safety/service tools subset (media recovery, security tools, STRSST menu).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-07",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "Backup scheduler (SAV* + remote copy).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP18-08",
+      "source": "PLAN.md \u00a76 WP18",
+      "requirement": "Tests: value round-trip, PTF apply/rollback, journal review file.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-01",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "apt provisioning (dotnet-8 hosted? use dotnet-install script for runtime, plus sqlite, openssh-server, samba, slapd+ldap-utils, bind9, postfix+dovecot optional, ufw, cups optional, node+npm).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-02",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "User/profile bootstrap: OS `qsecofr` + iSeries `QSECOFR`; default library set (QSYS + template libs), default subsystems/jobqs/outqs/msgqs/dspf baseline.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-03",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "SSH swap: set login shell/force-command so SSH runs `AS400Menu` (with PAM fallback).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-04",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "Samba shares, UFW rules, LDAP init, bind zone template, email relay unset, cert gen for web.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-05",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "systemd units: services host, web host, writers, object-connect listener, bridges.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-06",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "Vite production build deployed behind Kestrel (or static).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-07",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "First-run wizard (system name, QSECURITY level, CCSID, date/time, network, admin password, service enablement matrix).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-08",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "Idempotency, resume-on-failure, logging; `uninstall` path.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP19-09",
+      "source": "PLAN.md \u00a76 WP19",
+      "requirement": "Container smoke test (Docker Ubuntu 24.04).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP20-01",
+      "source": "PLAN.md \u00a76 WP20",
+      "requirement": "`as400bridge` CLI: SFTP pull from real iSeries (source PFs via `CPYTOSTMF`-style or QSYS.LIB stream files; data via `CPYTOIMPF` streams), local SAVF import/export, DDS\u2192SQL migration report, CSV/XLSX data moves, user-profile import/export mapping CSV.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP20-02",
+      "source": "PLAN.md \u00a76 WP20",
+      "requirement": "Push/export counterparts to real systems (source, data as IMPF streams, SAVF).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP20-03",
+      "source": "PLAN.md \u00a76 WP20",
+      "requirement": "Audit log + rollback notes. Tests with fake SFTP server + SAVF fixtures.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP21-01",
+      "source": "PLAN.md \u00a76 WP21",
+      "requirement": "README finalize: Application summary, installation, basic usage, architecture diagram, API documentation links, troubleshooting.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP21-02",
+      "source": "PLAN.md \u00a76 WP21",
+      "requirement": "docs/ finalize: architecture, object-model, security-model, cl-spec, rpg-spec, dds-schema, interop, api, install-guide, research-annex.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP21-03",
+      "source": "PLAN.md \u00a76 WP21",
+      "requirement": "Sample application toolkit (sample CL/RPG/DDS screens incl. message-subfile example per go4as400 cid=27).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP21-04",
+      "source": "PLAN.md \u00a76 WP21",
+      "requirement": "`.deb` packaging + man pages for executables (AS400Menu, AS400Admin, as400bridge, installer).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP21-05",
+      "source": "PLAN.md \u00a76 WP21",
+      "requirement": "Release checklist + signed artifacts.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-01",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "Fuzz CL parser, RPG parser, DDS parser, CL interpreter (via test fuzzers).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-02",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "Security authority matrix tests (all combos incl. `*PUBLIC`+AUTL+adoption).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-03",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "Concurrency stress: jobs, spool writers, DTAQ/MSGQ, DB commit control under parallel access.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-04",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "Backup/restore drill (full cycle) in container.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-05",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "Performance baselines (`main` menu load, WRKACTJOB with N jobs, WRKSPLF with 10k spool files, SQL over 1M-row table) \u2014 record in docs.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-06",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "Keyboard-only accessibility tests; localization hooks (US-EN first; CCSID 037/850).",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "WP22-07",
+      "source": "PLAN.md \u00a76 WP22",
+      "requirement": "OWASP-style review of web layer (auth, injection, TLS, CSRF) incl. SQLite safe defaults.",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "No implementation or acceptance evidence yet."
+    },
+    {
+      "id": "G01",
+      "source": "PLAN2.md G1",
+      "requirement": "Security services not named in WP3/WP17/WP18",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Security/CertificateService.cs",
+        "src/Ipc.Services/Security/ObjectSigningService.cs",
+        "src/Ipc.Services/Security/SignedDeploymentService.cs",
+        "src/Ipc.Services/Security/MfaStore.cs",
+        "src/Ipc.Services/Security/SessionTokenStore.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/CertificateTrustTests.cs",
+        "tests/Ipc.Core.Tests/CertificateKeyStorageTests.cs",
+        "tests/Ipc.Core.Tests/SignedDeploymentTests.cs",
+        "tests/Ipc.Core.Tests/MfaEntryPointTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/certificates-signatures.md",
+        "docs/mfa-sessions.md"
+      ],
+      "evidence": "C03 profile/PAM/SSSD/EIM, MFA/SSO, certificate/key lifecycle and signed code admission verified. IDS/VPN, host adapters and remaining crypto APIs remain in their owning tasks."
+    },
+    {
+      "id": "G02",
+      "source": "PLAN2.md G2",
+      "requirement": "Interactive source-level debugger \u2014 no WP",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G03",
+      "source": "PLAN2.md G3",
+      "requirement": "SEU and SDA as real engines, not command stubs",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G04",
+      "source": "PLAN2.md G4",
+      "requirement": "RPG/CL compiler directives",
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Core/Compilation/SourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/CompiledSourceMap.cs",
+        "src/Ipc.Session/Sources/ProgramSourceResolver.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/ClPreprocessingTests.cs",
+        "tools/pty-display-smoke.py"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/source-preprocessing.md"
+      ],
+      "evidence": "756 tests and real terminal CL include/conditional compilation and execution pass. CL extension, immutable source snapshots, location maps and shared resolver are implemented; RPG directives remain open in C09."
+    },
+    {
+      "id": "G05",
+      "source": "PLAN2.md G5",
+      "requirement": "Panel-group help (`*PNLGRP` / UIM) as a distinct object type",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G06",
+      "source": "PLAN2.md G6",
+      "requirement": "Object/record locking as a first-class model",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G07",
+      "source": "PLAN2.md G7",
+      "requirement": "OPNQRYF / Open Data Path (ODP)",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G08",
+      "source": "PLAN2.md G8",
+      "requirement": "IFS exit-program framework and large-file sizing",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G09",
+      "source": "PLAN2.md G9",
+      "requirement": "Outbound IWS client + Remote System Explorer REST API",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G10",
+      "source": "PLAN2.md G10",
+      "requirement": "Named data-area subtypes",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "Required; acceptance open."
+    },
+    {
+      "id": "G11",
+      "source": "PLAN2.md G11",
+      "requirement": "Client connectivity parity \u2014 ODBC/JDBC endpoint (scoping decision)",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "User explicitly approved inclusion on 2026-09-14; implementation and client/integration evidence remain open."
+    },
+    {
+      "id": "G12",
+      "source": "PLAN2.md G12",
+      "requirement": "LPAR / PowerVM (scoping decision \u2014 likely explicit exclusion)",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "G11 and G13 inclusion approved on 2026-09-14; G12 requires Docker instances."
+    },
+    {
+      "id": "G13",
+      "source": "PLAN2.md G13",
+      "requirement": "IBM MQ (scoping decision)",
+      "status": "planned",
+      "implementation": [],
+      "tests": [],
+      "documentation": [
+        "docs/release-scope.md"
+      ],
+      "evidence": "User explicitly approved inclusion on 2026-09-14; implementation and client/integration evidence remain open."
+    }
+  ]
+}

@@ -313,25 +313,39 @@ public class CommandServiceTests : IDisposable
     }
 
     [Fact]
-    public void Messages_command_reports_empty_queue()
+    public void Named_messages_display_reads_the_system_operator_queue()
     {
         var service = new CommandService(_system);
-        var result = service.Execute("DSPMSG");
-
-        Assert.Equal(CommandOutcome.Continue, result.Outcome);
-        Assert.Contains("empty", result.Message);
+        var result = service.Execute("DSPMSG MSGQ(*SYSOPR)");
+        Assert.False(result.IsError, result.Message);
+        Assert.Equal("Messages for QSYS/QSYSOPR", result.WorkList!.Title);
+        Assert.Empty(result.WorkList.Rows);
     }
 
     [Fact]
     public void Display_job_reports_active_job()
     {
-        _system.Jobs.CreateInteractive("QSECOFR");
-        var service = new CommandService(_system);
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"), "ADMIN1234");
+        var job = _system.Jobs.CreateInteractive("QSECOFR");
+        _system.Jobs.CreateInteractive("ANOTHER");
+        var service = new CommandService(_system, job);
         var result = service.Execute("DSPJOB");
 
         Assert.Equal(CommandOutcome.Continue, result.Outcome);
         Assert.Contains("active", result.Message);
         Assert.Contains("QDFTJOB", result.Message);
+        Assert.Contains(job.Key.ToString(), result.Message);
+        Assert.DoesNotContain("ANOTHER", result.Message);
+    }
+
+    [Fact]
+    public void Display_job_without_session_context_does_not_select_another_users_job()
+    {
+        _system.Jobs.CreateInteractive("ANOTHER");
+        var service = new CommandService(_system);
+        var result = service.Execute("DSPJOB");
+        Assert.Equal(CommandOutcome.Error, result.Outcome);
+        Assert.DoesNotContain("ANOTHER", result.Message);
     }
 
     [Fact]
@@ -414,7 +428,11 @@ public class CommandServiceTests : IDisposable
         Assert.Equal("Sign off.", evt.Last.Message);
     }
 
-    private UserProfile QsecOfr() => _system.Security.Profiles.Get(ProfileNames.QSecOficer);
+    private UserProfile QsecOfr()
+    {
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get(ProfileNames.QSecOficer), "TEST1234");
+        return _system.Security.Profiles.Get(ProfileNames.QSecOficer);
+    }
 
     private static (SessionEvent? Last, List<SessionEvent> All) FeedText(ISessionController controller, string text)
     {

@@ -26,7 +26,7 @@ public sealed class CommandCall
         var value = GetOption(keyword);
         return value is null
             ? Array.Empty<string>()
-            : value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            : CommandParser.Tokenize(value);
     }
 
     public override string ToString()
@@ -56,11 +56,12 @@ public static class CommandParser
         {
             var token = tokens[i];
             var open = token.IndexOf('(');
-            if (open > 0 && token.EndsWith(')'))
+            if (open > 0 && token.EndsWith(')') && !token.StartsWith('%'))
             {
                 var keyword = token[..open];
                 var value = token[(open + 1)..^1];
-                keywords[keyword] = value;
+                if (!keywords.TryAdd(keyword, value))
+                    throw new ClParseException($"Parameter {keyword} is repeated; use a parenthesized value list.");
             }
             else
             {
@@ -85,7 +86,7 @@ public static class CommandParser
 
         if (text.Length >= 2 && text[0] == '\'' && text[^1] == '\'')
         {
-            return text[1..^1];
+            return text[1..^1].Replace("''", "'", StringComparison.Ordinal);
         }
 
         return text;
@@ -96,110 +97,42 @@ public static class CommandParser
         var tokens = new List<string>();
         var current = new System.Text.StringBuilder();
         var quoted = false;
-        var started = false;
+        var depth = 0;
 
         for (var i = 0; i < line.Length; i++)
         {
             var ch = line[i];
-
             if (ch == '\'')
             {
-                if (quoted)
+                current.Append(ch);
+                if (quoted && i + 1 < line.Length && line[i + 1] == '\'')
                 {
-                    if (i + 1 < line.Length && line[i + 1] == '\'')
-                    {
-                        current.Append('\'');
-                        i++;
-                        continue;
-                    }
-
-                    quoted = false;
-                    started = true;
+                    current.Append(line[++i]);
                     continue;
                 }
-
-                quoted = true;
-                started = true;
+                quoted = !quoted;
                 continue;
             }
-
-            if (!quoted && ch == '(')
+            if (!quoted)
             {
-                var prefix = started ? current.ToString() : string.Empty;
-                if (started)
+                if (ch == '(') depth++;
+                if (ch == ')' && --depth < 0)
+                    throw new ClParseException("Unexpected closing parenthesis.");
+                if (char.IsWhiteSpace(ch) && depth == 0)
                 {
-                    current.Clear();
-                    started = false;
-                }
-
-                var depth = 1;
-                var group = new System.Text.StringBuilder("(");
-                i++;
-                while (i < line.Length && depth > 0)
-                {
-                    var gch = line[i];
-                    if (gch == '\'')
+                    if (current.Length > 0)
                     {
-                        group.Append(gch);
-                        if (i + 1 < line.Length && line[i + 1] == '\'')
-                        {
-                            group.Append('\'');
-                            i++;
-                        }
-
-                        i++;
-                        continue;
+                        tokens.Add(current.ToString());
+                        current.Clear();
                     }
-
-                    if (gch == '(')
-                    {
-                        depth++;
-                    }
-                    else if (gch == ')')
-                    {
-                        depth--;
-                    }
-
-                    group.Append(gch);
-                    i++;
+                    continue;
                 }
-
-                if (depth != 0)
-                {
-                    throw new ClParseException("Unbalanced parentheses.");
-                }
-
-                tokens.Add(prefix + group.ToString());
-                started = false;
-                current.Clear();
-                continue;
             }
-
-            if (char.IsWhiteSpace(ch) && !quoted)
-            {
-                if (started)
-                {
-                    tokens.Add(current.ToString());
-                    current.Clear();
-                    started = false;
-                }
-
-                continue;
-            }
-
             current.Append(ch);
-            started = true;
         }
-
-        if (quoted)
-        {
-            throw new ClParseException("Unterminated quoted string.");
-        }
-
-        if (started)
-        {
-            tokens.Add(current.ToString());
-        }
+        if (quoted) throw new ClParseException("Unterminated quoted string.");
+        if (depth != 0) throw new ClParseException("Unbalanced parentheses.");
+        if (current.Length > 0) tokens.Add(current.ToString());
 
         return tokens;
     }

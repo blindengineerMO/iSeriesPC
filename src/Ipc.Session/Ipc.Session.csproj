@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Ipc.Services/Ipc.Services.csproj" />
+    <ProjectReference Include="../Ipc.Terminal/Ipc.Terminal.csproj" />
+    <ProjectReference Include="../Ipc.Cl/Ipc.Cl.csproj" />
+    <ProjectReference Include="../Ipc.Db/Ipc.Db.csproj" />
+    <ProjectReference Include="../Ipc.Rpg/Ipc.Rpg.csproj" />
+    <ProjectReference Include="../Ipc.Dsp/Ipc.Dsp.csproj" />
+  </ItemGroup>
+  <ItemGroup><InternalsVisibleTo Include="Ipc.Core.Tests" /></ItemGroup>
+</Project>

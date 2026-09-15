@@ -2,7 +2,17 @@ namespace Ipc.Core.Catalog;
 
 public static class SystemCatalog
 {
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 21;
+
+    public const string CreateMigrationHistoryTable = """
+        CREATE TABLE IF NOT EXISTS sys_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            checksum TEXT NOT NULL,
+            applied_at TEXT NOT NULL,
+            baseline INTEGER NOT NULL DEFAULT 0 CHECK (baseline IN (0, 1))
+        );
+        """;
 
     public const string CreateObjectsTable = """
         CREATE TABLE IF NOT EXISTS sys_objects (
@@ -242,5 +252,6 @@ public static class SystemCatalog
         CreateMenuOptionsTable,
         CreateFileDefinitionsTable,
         CreateFileMembersTable,
+        CreateMigrationHistoryTable,
     };
 }

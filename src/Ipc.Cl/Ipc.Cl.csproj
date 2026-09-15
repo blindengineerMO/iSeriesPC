@@ -4,6 +4,7 @@
     <RootNamespace>Ipc.Cl</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Compatibility/catalog.json" />
     <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -86,7 +86,7 @@ public class UserProfileStoreTests : IDisposable
 
         var secofr = profiles.Get(ProfileNames.QSecOficer);
         Assert.Equal(ProfileStatus.PasswordExpired, secofr.Status);
-        Assert.True(profiles.VerifyPassword(ProfileNames.QSecOficer, "11111111"));
+        Assert.False(profiles.VerifyPassword(ProfileNames.QSecOficer, "11111111"));
         Assert.Equal(SpecialAuthority.AllObject, secofr.SpecialAuthorities & SpecialAuthority.AllObject);
     }
 
@@ -157,7 +157,11 @@ public class SecurityServiceTests : IDisposable
     [Fact]
     public void Sign_on_with_default_security_officer_password()
     {
-        var result = _system.Security.Authenticate(ProfileNames.QSecOficer, "11111111");
+        var profile = _system.Security.Profiles.Get(ProfileNames.QSecOficer);
+        _system.Security.Profiles.SetPassword(profile, "EXPIRED12");
+        profile.Status = ProfileStatus.PasswordExpired;
+        _system.Security.Profiles.Update(profile);
+        var result = _system.Security.Authenticate(ProfileNames.QSecOficer, "EXPIRED12");
         Assert.True(result.Success);
         Assert.True(result.MustChangePassword);
     }
@@ -278,8 +282,8 @@ public class AuthorityEngineTests : IDisposable
     public void AuthL_membership_grants_to_member()
     {
         var authority = _system.Security.Authority;
-        authority.GrantAuthL("MYLIB", "PAYROLL", "*FILE", "PAYROLLAUTL", Authorities.ChangeBits);
-        authority.AddAuthLMember("PAYROLLAUTL", "GRP1", Authorities.ChangeBits);
+        authority.GrantAuthL("MYLIB", "PAYROLL", "*FILE", "PAYAUTL", Authorities.ChangeBits);
+        authority.AddAuthLMember("PAYAUTL", "GRP1", Authorities.ChangeBits);
 
         var bits = authority.EffectiveFor(User("ALICE"), Groups("ALICE"), "MYLIB", "PAYROLL", "*FILE");
         Assert.Equal(Authorities.ChangeBits, bits);

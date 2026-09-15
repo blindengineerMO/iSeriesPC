@@ -2,9 +2,15 @@ namespace Ipc.Cl.Interpreter;
 
 public sealed class ClProgram
 {
+    public Ipc.Core.Compilation.PreprocessedSource? Source { get; init; }
+
     public required string Name { get; init; }
 
     public required string Library { get; init; }
+
+    public IReadOnlyList<ClFileBinding> Files { get; init; } = Array.Empty<ClFileBinding>();
+
+    public IReadOnlyList<ClMessageMonitor> Monitors { get; init; } = Array.Empty<ClMessageMonitor>();
 
     public IReadOnlyList<ClStatement> Statements { get; init; } = Array.Empty<ClStatement>();
 

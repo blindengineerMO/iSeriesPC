@@ -25,14 +25,7 @@ public sealed class AnsiRenderer
                     sb.Append(Sgr(cell.Attributes, cell.Foreground));
                 }
 
-                if (cell.Attributes.HasFlag(DisplayAttribute.ColumnSeparator))
-                {
-                    sb.Append('|');
-                }
-                else
-                {
-                    sb.Append(cell.Value);
-                }
+                sb.Append(TerminalGlyph.Render(cell));
 
                 previous = cell;
                 previousFg = cell.Foreground;
@@ -44,6 +37,7 @@ public sealed class AnsiRenderer
             }
         }
 
+        sb.Append(Cursor(buffer));
         return sb.ToString();
     }
 
@@ -53,7 +47,7 @@ public sealed class AnsiRenderer
 
         if (prior.Rows != buffer.Rows || prior.Columns != buffer.Columns)
         {
-            return Render(buffer);
+            changed = true; return Render(buffer);
         }
 
         var sb = new StringBuilder();
@@ -69,22 +63,17 @@ public sealed class AnsiRenderer
                     changed = true;
                     sb.Append($"\u001b[{row};{col}H");
                     sb.Append(Sgr(cell.Attributes, cell.Foreground));
-                    if (cell.Attributes.HasFlag(DisplayAttribute.ColumnSeparator))
-                    {
-                        sb.Append('|');
-                    }
-                    else
-                    {
-                        sb.Append(cell.Value);
-                    }
+                    sb.Append(TerminalGlyph.Render(cell));
                 }
             }
         }
 
+        if (changed || buffer.Cursor != prior.Cursor) { changed = true; sb.Append(Cursor(buffer)); }
         return sb.ToString();
     }
 
-    public static string RenderCell(Cell cell) => Sgr(cell.Attributes, cell.Foreground) + cell.Value;
+    private static string Cursor(DisplayBuffer buffer) => $"\u001b[{Math.Clamp(buffer.Cursor.Row, 1, buffer.Rows)};{Math.Clamp(buffer.Cursor.Column, 1, buffer.Columns)}H";
+    public static string RenderCell(Cell cell) => Sgr(cell.Attributes, cell.Foreground) + TerminalGlyph.Render(cell);
 
     private static string Sgr(DisplayAttribute attributes, int foreground)
     {

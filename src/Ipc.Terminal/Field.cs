@@ -17,6 +17,9 @@ public sealed class InputField
     public required int Column { get; init; }
 
     public required int Length { get; init; }
+    public int? DisplayLength { get; init; }
+    public int VisibleLength => Math.Min(Length, DisplayLength ?? Length);
+    public bool TrimTrailingFill { get; init; } = true;
 
     public FieldUsage Usage { get; init; } = FieldUsage.AlphaNumeric;
 
@@ -38,6 +41,7 @@ public sealed class InputField
 public sealed class FieldValue
 {
     private readonly char[] _buffer;
+    private int _length;
 
     public FieldValue(InputField field)
     {
@@ -52,7 +56,7 @@ public sealed class FieldValue
 
     public string Text
     {
-        get => new string(_buffer).TrimEnd(Field.Fill);
+        get => Field.TrimTrailingFill ? new string(_buffer).TrimEnd(Field.Fill) : new string(_buffer, 0, _length);
         set
         {
             var text = value ?? string.Empty;
@@ -68,6 +72,7 @@ public sealed class FieldValue
             }
 
             CursorOffset = Math.Min(text.Length, _buffer.Length);
+            _length = text.Length;
         }
     }
 
@@ -96,7 +101,8 @@ public sealed class FieldValue
 
     public string Blanks => new string(Field.Fill, _buffer.Length);
 
-    public void Clear() => Array.Fill(_buffer, Field.Fill);
+    public void Clear() { Array.Fill(_buffer, Field.Fill); _length = 0; CursorOffset = 0; }
+    public int ViewOffset => Math.Max(0, Math.Min(CursorOffset, Field.Length - 1) - Field.VisibleLength + 1);
 
     public override string ToString() => Text;
 }
@@ -161,22 +167,20 @@ public sealed class DisplayForm
         }
     }
 
+    public void RepaintActive() => Paint(Active.Field, Active.Text, Active.ViewOffset);
+
     public IEnumerable<FieldValue> Values => _values.OrderBy(kv => kv.Key).Select(kv => kv.Value);
 
-    private void Paint(InputField field, string text)
+    private void Paint(InputField field, string text, int viewOffset = 0)
     {
         var attributes = DisplayAttribute.InputField |
                          (field.Hidden ? DisplayAttribute.NonDisplay : DisplayAttribute.None);
-        var padded = text.PadRight(field.Length, field.Fill);
-        if (padded.Length > field.Length)
-        {
-            padded = padded[..field.Length];
-        }
+        var padded = text.PadRight(field.Length, field.Fill).Substring(viewOffset, field.VisibleLength);
 
         _buffer.MoveCursor(field.Row, field.Column);
-        for (var i = 0; i < field.Length; i++)
+        for (var i = 0; i < field.VisibleLength; i++)
         {
-            var value = field.Hidden && i < text.Length ? '*' : padded[i];
+            var value = field.Hidden ? (i + viewOffset < text.Length ? '*' : field.Fill) : padded[i];
             _buffer.Set(field.Row, field.Column + i, value, attributes);
         }
     }

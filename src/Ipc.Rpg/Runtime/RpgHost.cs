@@ -43,7 +43,11 @@ public interface IRpgFileAccess
 
 public sealed class RpgHost
 {
+    public CancellationToken CancellationToken { get; init; }
+
     public IRpgFileAccess? Files { get; init; }
+
+    public Func<string, RpgFileHandle>? OpenFile { get; init; }
 
     public Func<string, string, string?>? LibraryResolver { get; init; }
 
@@ -56,4 +60,12 @@ public sealed class RpgHost
     public RpgDisplayHandler? Display { get; init; }
 
     public DateTimeOffset? Now { get; init; }
+}
+
+public sealed class RpgFileHandle(Func<RpgFileCursor> cursor, Action close, Action? explicitClose = null) : IDisposable
+{
+    private bool _closed;
+    public RpgFileCursor Cursor { get { ObjectDisposedException.ThrowIf(_closed, this); return cursor(); } }
+    public void Close() { if (_closed) return; (explicitClose ?? close)(); _closed = true; }
+    public void Dispose() { if (_closed) return; close(); _closed = true; }
 }

@@ -8,6 +8,7 @@ public sealed class RpgInterpreter
 {
     private readonly RpgHost _host;
     private readonly Dictionary<string, RpgFileCursor> _files = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, RpgFileHandle> _fileHandles = new(StringComparer.OrdinalIgnoreCase);
     private bool _programEnded;
     private bool _returned;
     private bool _handlingError;
@@ -15,17 +16,31 @@ public sealed class RpgInterpreter
 
     public RpgInterpreter(RpgHost host) => _host = host;
 
-    public RpgRuntimeContext Run(RpgProgram program, IReadOnlyList<object?>? parameters = null)
+    public static IReadOnlyList<string> EntryParameterNames(RpgProgram program) => program.MainStatements
+        .Where(statement => statement.Opcode == RpgOpcode.Parm && InEntryPlist(program.MainStatements, statement))
+        .Select(statement => statement.Factor1 ?? throw new RpgRuntimeException("RPG entry PARM requires a field.")).ToArray();
+
+    public RpgRuntimeContext Run(RpgProgram program, IReadOnlyList<object?>? parameters = null, RpgRuntimeContext? existingContext = null)
     {
-        var context = new RpgRuntimeContext(program, _host);
+        _host.CancellationToken.ThrowIfCancellationRequested();
+        var context = existingContext ?? new RpgRuntimeContext(program, _host);
+        context.RebindHost(_host);
         _files.Clear();
         _programEnded = false;
         _returned = false;
         _handlingError = false;
         _depth = 0;
-        BindEntryParameters(program, context, parameters);
-        Execute(program.MainStatements, context, new RpgBlockState());
-        return context;
+        try
+        {
+            BindEntryParameters(program, context, parameters);
+            Execute(program.MainStatements, context, new RpgBlockState());
+            return context;
+        }
+        finally
+        {
+            try { foreach (var handle in _fileHandles.Values) handle.Dispose(); }
+            finally { _fileHandles.Clear(); _files.Clear(); context.ReleaseReferences(); }
+        }
     }
 
     private void BindEntryParameters(RpgProgram program, RpgRuntimeContext context, IReadOnlyList<object?>? parameters)
@@ -36,6 +51,9 @@ public sealed class RpgInterpreter
         }
 
         var index = 0;
+        if (parameters.Any(p => p is Ipc.Core.Work.ProgramArgument) &&
+            parameters.Count != program.MainStatements.Count(s => s.Opcode == RpgOpcode.Parm && InEntryPlist(program.MainStatements, s)))
+            throw new RpgRuntimeException("RPG entry parameter count does not match the caller.");
         foreach (var statement in program.MainStatements)
         {
             if (statement.Opcode == RpgOpcode.Plist && string.Equals(statement.Factor1, "*ENTRY", StringComparison.OrdinalIgnoreCase))
@@ -47,7 +65,8 @@ public sealed class RpgInterpreter
             {
                 if (index < parameters.Count && statement.Factor1 is not null)
                 {
-                    context.WriteValue(statement.Factor1, parameters[index]);
+                    if (parameters[index] is Ipc.Core.Work.ProgramArgument reference) context.BindReference(statement.Factor1, reference);
+                    else context.WriteValue(statement.Factor1, parameters[index]);
                 }
 
                 index++;
@@ -113,6 +132,8 @@ public sealed class RpgInterpreter
         var pc = 0;
         while (pc < statements.Count && !_programEnded && !_returned && !context.Indicators[0])
         {
+            _host.CancellationToken.ThrowIfCancellationRequested();
+            Ipc.Core.Work.JobExecutionBudget.Checkpoint();
             var statement = statements[pc];
             if (!ConditionsMet(statement, context))
             {
@@ -765,6 +786,7 @@ public sealed class RpgInterpreter
         var fileName = (stmt.Factor2 ?? stmt.Factor1)?.Trim().ToUpperInvariant();
         if (fileName is not null)
         {
+            if (_fileHandles.Remove(fileName, out var handle)) handle.Close();
             _files.Remove(fileName);
         }
     }
@@ -774,7 +796,14 @@ public sealed class RpgInterpreter
         var key = fileName.Trim().ToUpperInvariant();
         if (_files.TryGetValue(key, out var existing))
         {
-            return existing;
+            return _fileHandles.TryGetValue(key, out var handle) ? handle.Cursor : existing;
+        }
+
+        if (_host.OpenFile is { } openFile)
+        {
+            var handle = openFile(key);
+            try { var opened = handle.Cursor; _fileHandles.Add(key, handle); _files.Add(key, opened); return opened; }
+            catch { handle.Dispose(); throw; }
         }
 
         if (_host.Files is null)
@@ -785,6 +814,7 @@ public sealed class RpgInterpreter
         var library = ResolveLibrary(fileName);
         var cursor = new RpgFileCursor(_host.Files, library, fileName, fileMember(fileName));
         _files[key] = cursor;
+        _fileHandles[key] = new RpgFileHandle(() => cursor, cursor.Dispose);
         return cursor;
     }
 
@@ -1007,6 +1037,14 @@ public sealed class RpgInterpreter
         return -1;
     }
 
+    private RpgExternalCallResult? CallExternal(RpgStatement statement, string name, IReadOnlyList<object?> parameters)
+    {
+        var result = _host.ProgramCaller?.Invoke("*LIBL", name, parameters);
+        if (result is { Success: false } && statement.Indicator1 == 0)
+            throw new RpgRuntimeException(result.Message ?? $"External program {name} failed.");
+        return result;
+    }
+
     private int CallOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
         var programName = Unquote(stmt.Factor1 ?? string.Empty);
@@ -1020,8 +1058,9 @@ public sealed class RpgInterpreter
             throw new RpgRuntimeException("CALL requires a program name.");
         }
 
+        var plistName = stmt.Factor2;
         var parameters = CollectParameters(stmt, ctx);
-        var result = _host.ProgramCaller?.Invoke("*LIBL", programName, parameters);
+        var result = CallExternal(stmt, programName, parameters);
         if (result is null)
         {
             if (stmt.Indicator1 != 0)
@@ -1029,16 +1068,24 @@ public sealed class RpgInterpreter
                 ctx.Indicators[stmt.Indicator1] = true;
             }
         }
-        else if (!result.Success)
+        else
         {
-            if (stmt.Indicator1 != 0)
+            if (!result.Success)
             {
-                ctx.Indicators[stmt.Indicator1] = true;
+                if (stmt.Indicator1 != 0)
+                {
+                    ctx.Indicators[stmt.Indicator1] = true;
+                }
+
+                if (stmt.Result is not null)
+                {
+                    ctx.WriteValue(stmt.Result, result.Message ?? string.Empty);
+                }
             }
 
-            if (stmt.Result is not null)
+            if (!string.IsNullOrWhiteSpace(plistName))
             {
-                ctx.WriteValue(stmt.Result, result.Message ?? string.Empty);
+                WriteBackPlist(ctx.Program, plistName, result.UpdatedParameters, ctx);
             }
         }
 
@@ -1050,6 +1097,7 @@ public sealed class RpgInterpreter
         var text = stmt.Factor1 ?? stmt.Value ?? string.Empty;
         var name = text;
         var arguments = new List<RpgExpr>();
+        var rawArguments = new List<string>();
         var open = text.IndexOf('(');
         if (open >= 0)
         {
@@ -1064,6 +1112,7 @@ public sealed class RpgInterpreter
             {
                 foreach (var argument in inner.Split(':'))
                 {
+                    rawArguments.Add(argument);
                     arguments.Add(RpgExpressionParser.Parse(argument));
                 }
             }
@@ -1085,14 +1134,181 @@ public sealed class RpgInterpreter
             return -1;
         }
 
+        var plistName = stmt.Factor2;
+        if (string.IsNullOrWhiteSpace(plistName) && rawArguments.Count == 1)
+        {
+            var candidate = rawArguments[0].Trim();
+            if (IsPlistName(ctx.Program, candidate))
+            {
+                plistName = candidate;
+                arguments = new List<RpgExpr>();
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(plistName))
+        {
+            var parameters = CollectPlistValues(ctx.Program, plistName, ctx);
+            var result = CallExternal(stmt, name, parameters);
+            if (result is not null)
+            {
+                if (!result.Success && stmt.Indicator1 != 0)
+                {
+                    ctx.Indicators[stmt.Indicator1] = true;
+                }
+
+                WriteBackPlist(ctx.Program, plistName, result.UpdatedParameters, ctx);
+            }
+
+            return -1;
+        }
+
         var evaluated = arguments.Select(a => a.Eval(ctx)).ToList();
-        var result = _host.ProgramCaller?.Invoke("*LIBL", name, evaluated);
-        if (result is not null && !result.Success && stmt.Indicator1 != 0)
+
+        var prototype = ctx.Program.FindPrototype(name);
+        if (prototype is not null)
+        {
+            var externalName = prototype.ExternalName ?? prototype.Name;
+            BindPrototypeParameters(ctx, prototype, arguments);
+            var values = prototype.Parameters.Count > 0
+                ? prototype.Parameters.Select(p => ctx.ReadValue(p)).ToList()
+                : evaluated;
+            var result = CallExternal(stmt, externalName, values);
+            if (result is not null)
+            {
+                if (!result.Success && stmt.Indicator1 != 0)
+                {
+                    ctx.Indicators[stmt.Indicator1] = true;
+                }
+
+                WriteBackParameters(prototype.Parameters, result.UpdatedParameters, ctx);
+            }
+
+            return -1;
+        }
+
+        var pointerField = ctx.Program.FindField(name);
+        if (pointerField is { Kind: RpgFieldKind.ProcPtr })
+        {
+            var target = RpgValues.ToText(ctx.ReadValue(name));
+            if (target.Length > 0)
+            {
+                var result = CallExternal(stmt, target, evaluated);
+                if (result is not null)
+                {
+                    if (!result.Success && stmt.Indicator1 != 0)
+                    {
+                        ctx.Indicators[stmt.Indicator1] = true;
+                    }
+
+                    WriteBackArguments(arguments, result.UpdatedParameters, ctx);
+                }
+            }
+
+            return -1;
+        }
+
+        var external = CallExternal(stmt, name, evaluated);
+        if (external is not null && !external.Success && stmt.Indicator1 != 0)
         {
             ctx.Indicators[stmt.Indicator1] = true;
         }
 
+        WriteBackArguments(arguments, external?.UpdatedParameters, ctx);
         return -1;
+    }
+
+    private static void BindPrototypeParameters(RpgRuntimeContext ctx, RpgPrototype prototype, IReadOnlyList<RpgExpr> arguments)
+    {
+        for (var index = 0; index < prototype.Parameters.Count && index < arguments.Count; index++)
+        {
+            ctx.WriteValue(prototype.Parameters[index], arguments[index].Eval(ctx));
+        }
+    }
+
+    private static void WriteBackArguments(IReadOnlyList<RpgExpr> arguments, IReadOnlyList<object?>? updated, RpgRuntimeContext ctx)
+    {
+        if (updated is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < arguments.Count && index < updated.Count; index++)
+        {
+            if (arguments[index] is RpgFieldRef field && updated[index] is not null)
+            {
+                ctx.WriteValue(field.Name, updated[index]);
+            }
+        }
+    }
+
+    private static void WriteBackParameters(IReadOnlyList<string> parameters, IReadOnlyList<object?>? updated, RpgRuntimeContext ctx)
+    {
+        if (updated is null)
+        {
+            return;
+        }
+
+        for (var index = 0; index < parameters.Count && index < updated.Count; index++)
+        {
+            if (updated[index] is not null)
+            {
+                ctx.WriteValue(parameters[index], updated[index]);
+            }
+        }
+    }
+
+    private static bool IsPlistName(RpgProgram program, string name) =>
+        program.MainStatements.Any(s => s.Opcode == RpgOpcode.Plist &&
+            string.Equals(s.Factor1, name, StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlyList<object?> CollectPlistValues(RpgProgram program, string plistName, RpgRuntimeContext ctx)
+    {
+        var names = CollectPlistFieldNames(program, plistName);
+        return names.Select(n => ctx.ReadValue(n)).ToList();
+    }
+
+    private static IReadOnlyList<string> CollectPlistFieldNames(RpgProgram program, string plistName)
+    {
+        var names = new List<string>();
+        var collecting = false;
+        foreach (var candidate in program.MainStatements)
+        {
+            if (candidate.Opcode == RpgOpcode.Plist &&
+                string.Equals(candidate.Factor1, plistName, StringComparison.OrdinalIgnoreCase))
+            {
+                collecting = true;
+                continue;
+            }
+
+            if (collecting)
+            {
+                if (candidate.Opcode != RpgOpcode.Parm || string.IsNullOrEmpty(candidate.Factor1))
+                {
+                    break;
+                }
+
+                names.Add(candidate.Factor1);
+            }
+        }
+
+        return names;
+    }
+
+    private static void WriteBackPlist(RpgProgram program, string plistName, IReadOnlyList<object?>? updated, RpgRuntimeContext ctx)
+    {
+        if (updated is null)
+        {
+            return;
+        }
+
+        var names = CollectPlistFieldNames(program, plistName);
+        for (var index = 0; index < names.Count && index < updated.Count; index++)
+        {
+            if (updated[index] is not null)
+            {
+                ctx.WriteValue(names[index], updated[index]);
+            }
+        }
     }
 
     private static void BindParameters(RpgRuntimeContext ctx, RpgSubprocedure procedure, IReadOnlyList<RpgExpr> arguments)

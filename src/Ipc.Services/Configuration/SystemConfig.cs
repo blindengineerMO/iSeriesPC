@@ -20,7 +20,37 @@ public sealed class SystemConfig
 
     public string Version { get; set; } = "0.1.0-dev";
 
+    public Ipc.Services.Logging.LogRetention Logging { get; set; } = new();
+    public AuthenticationConfig Authentication { get; set; } = new();
+
     public static SystemConfig Default() => new();
+}
+
+public sealed class AuthenticationConfig
+{
+    public string PamService { get; set; } = "iseriespc";
+    public string? PamConfigurationDirectory { get; set; }
+    public Dictionary<string, string> PamAccounts { get; set; } = new(StringComparer.Ordinal);
+    public bool BindTerminalPamToUnixAccount { get; set; } = true;
+    public bool PamRequireProfilePassword { get; set; } = true;
+    public bool AllowGroupSocketAccess { get; set; }
+    public string SssdPamService { get; set; } = "iseriespc-sssd";
+    public List<LdapDirectoryConfig> Directories { get; set; } = new();
+}
+
+public sealed class LdapDirectoryConfig
+{
+    public string Name { get; set; } = "";
+    public string Uri { get; set; } = "";
+    public string? BindDistinguishedName { get; set; }
+    public string? BindPasswordFile { get; set; }
+    public string? TrustedCertificatesDirectory { get; set; }
+    public bool AllowLoopbackPlaintext { get; set; }
+    public string EntryIdAttribute { get; set; } = "entryUUID";
+    public string PrincipalAttribute { get; set; } = "krbPrincipalName";
+    public string LinuxAccountAttribute { get; set; } = "uid";
+    public string EnabledAttribute { get; set; } = "employeeType";
+    public string EnabledValue { get; set; } = "active";
 }
 
 public sealed class ConfigStore

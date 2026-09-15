@@ -53,6 +53,7 @@ public class JobEngineTests : IDisposable
     public void Higher_priority_starts_first()
     {
         _system.Subsystems.Ensure("PRIOTEST", "priority test", 1);
+        _system.Subsystems.Start("PRIOTEST");
         _system.Jobs.Submit("LOWPRIO", "low", "PRIOTEST", priority: 9);
         var high = _system.Jobs.Submit("HIGHPRIO", "high", "PRIOTEST", priority: 1);
 
@@ -68,6 +69,7 @@ public class JobEngineTests : IDisposable
     public void Max_active_jobs_are_not_exceeded()
     {
         _system.Subsystems.Ensure("QBATCHMAX", "batch with max 1", 1);
+        _system.Subsystems.Start("QBATCHMAX");
 
         _system.Jobs.Submit("JOB1", "one", "QBATCHMAX", priority: 5);
         _system.Jobs.Submit("JOB2", "two", "QBATCHMAX", priority: 5);

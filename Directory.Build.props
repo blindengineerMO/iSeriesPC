@@ -8,6 +8,7 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <InvariantGlobalization>false</InvariantGlobalization>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 </Project>

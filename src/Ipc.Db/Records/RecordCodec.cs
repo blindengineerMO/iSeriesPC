@@ -5,29 +5,47 @@ using Ipc.Db.Definitions;
 
 namespace Ipc.Db.Records;
 
-public sealed class RecordCodec
+public sealed partial class RecordCodec
 {
     private readonly int _ccsid;
 
     public RecordCodec(int ccsid = CodePage.DefaultSystem)
     {
+        if (!CodePage.IsSupported(ccsid)) throw new ArgumentOutOfRangeException(nameof(ccsid));
         _ccsid = ccsid;
     }
 
-    public byte[] Encode(RecordFormat format, IReadOnlyDictionary<string, object?> values)
+    public byte[] Encode(RecordFormat format, IReadOnlyDictionary<string, object?> values) => EncodeCore(format, values, false, out _);
+
+    public byte[] Encode(RecordFormat format, IReadOnlyDictionary<string, object?> values, out short[] nullIndicators) => EncodeCore(format, values, true, out nullIndicators);
+
+    private byte[] EncodeCore(RecordFormat format, IReadOnlyDictionary<string, object?> values, bool withNulls, out short[] nullIndicators)
     {
+        ValidateRecord(format);
         var buffer = new byte[format.RecordLength];
-        foreach (var field in format.Fields)
+        nullIndicators = new short[format.Fields.Count];
+        for (var index = 0; index < format.Fields.Count; index++)
         {
-            values.TryGetValue(field.Name, out var value);
+            var field = format.Fields[index];
+            if (values.TryGetValue(field.Name, out var value) && value is null)
+            {
+                if (!field.NullCapable || !withNulls) throw new ArgumentException("Explicit null requires a nullable field and a null-indicator buffer.");
+                nullIndicators[index] = -1;
+            }
             WriteValue(buffer, field, value ?? DefaultValue(field));
         }
 
         return buffer;
     }
 
-    public object?[] Decode(RecordFormat format, byte[] buffer)
+    public object?[] Decode(RecordFormat format, byte[] buffer) => DecodeCore(format, buffer, null);
+
+    public object?[] Decode(RecordFormat format, byte[] buffer, IReadOnlyList<short> nullIndicators) => DecodeCore(format, buffer, nullIndicators);
+
+    private object?[] DecodeCore(RecordFormat format, byte[] buffer, IReadOnlyList<short>? nullIndicators)
     {
+        ValidateRecord(format);
+        if (nullIndicators is not null && nullIndicators.Count != format.Fields.Count) throw new ArgumentException("Null-indicator count differs from the record format.");
         if (buffer.Length < format.RecordLength)
         {
             throw new ArgumentException("Record buffer is shorter than the record format.");
@@ -36,7 +54,10 @@ public sealed class RecordCodec
         var values = new object?[format.Fields.Count];
         for (var index = 0; index < format.Fields.Count; index++)
         {
-            values[index] = ReadValue(buffer, format.Fields[index]);
+            var field = format.Fields[index]; ValidateField(buffer, field);
+            var indicator = nullIndicators?[index] ?? 0;
+            if (indicator is not (0 or -1) || indicator == -1 && !field.NullCapable) throw new ArgumentException("Invalid record null indicator.");
+            values[index] = indicator == -1 ? null : ReadValue(buffer, field);
         }
 
         return values;
@@ -44,6 +65,7 @@ public sealed class RecordCodec
 
     public void WriteValue(byte[] buffer, FieldSpec field, object? value)
     {
+        ValidateField(buffer, field);
         var offset = field.Position - 1;
         var f = value ?? DefaultValue(field);
 
@@ -51,8 +73,13 @@ public sealed class RecordCodec
         {
             case FieldType.Alpha:
             {
-                var bytes = CodePage.ToBytes(field.Ccsid, PadRight(ToString(f), field.Length));
-                Buffer.BlockCopy(bytes, 0, buffer, offset, field.Length);
+                var bytes = EncodedText(field.Ccsid, Convert.ToString(f, CultureInfo.InvariantCulture) ?? "", field.Length);
+                if (field.VariableLength)
+                {
+                    var count = CodePage.ToBytes(field.Ccsid, Convert.ToString(f, CultureInfo.InvariantCulture) ?? "").Length;
+                    buffer[offset++] = (byte)(count >> 8); buffer[offset++] = (byte)count;
+                }
+                Buffer.BlockCopy(bytes, 0, buffer, offset, bytes.Length);
                 break;
             }
 
@@ -67,6 +94,8 @@ public sealed class RecordCodec
             case FieldType.Binary:
             {
                 var number = ToLong(f);
+                if (field.Length == 2 && number is < short.MinValue or > short.MaxValue || field.Length == 4 && number is < int.MinValue or > int.MaxValue)
+                    throw new OverflowException("Binary value exceeds field width.");
                 for (var i = field.Length - 1; i >= 0; i--)
                 {
                     buffer[offset + i] = (byte)(number & 0xFF);
@@ -78,9 +107,11 @@ public sealed class RecordCodec
 
             case FieldType.Float:
             {
+                var number = ToDouble(f);
+                if (field.Length == 4 && !float.IsFinite((float)number)) throw new OverflowException("Floating-point value exceeds field width.");
                 var bits = field.Length == 4
-                    ? (long)BitConverter.SingleToInt32Bits((float)ToDouble(f))
-                    : BitConverter.DoubleToInt64Bits(ToDouble(f));
+                    ? (long)BitConverter.SingleToInt32Bits((float)number)
+                    : BitConverter.DoubleToInt64Bits(number);
                 var bytes = ConvertToBytes(bits);
                 for (var i = 0; i < field.Length; i++)
                 {
@@ -91,31 +122,43 @@ public sealed class RecordCodec
             }
 
             case FieldType.Logic:
-                buffer[offset] = ToBool(f) ? (byte)'1' : (byte)'0';
+                buffer[offset] = CodePage.ToBytes(_ccsid, ToBool(f) ? "1" : "0")[0];
                 break;
 
             case FieldType.Date:
-                WriteText(buffer, offset, field.Length, ToDate(f).ToString("yyyyMMdd", CultureInfo.InvariantCulture));
+                WriteText(buffer, offset, field.Length, ToDate(f).ToString(field.Length == 8 ? "yyyyMMdd" : "yyyy-MM-dd", CultureInfo.InvariantCulture));
                 break;
 
             case FieldType.Time:
-                WriteText(buffer, offset, field.Length, ToTime(f).ToString(@"hhmmss", CultureInfo.InvariantCulture));
+                var time = ToTime(f);
+                if (time < TimeSpan.Zero || time >= TimeSpan.FromDays(1) || time.Ticks % TimeSpan.TicksPerSecond != 0) throw new OverflowException("Time value exceeds the basic time field precision.");
+                WriteText(buffer, offset, field.Length, time.ToString(field.Length == 6 ? @"hhmmss" : @"hh\.mm\.ss", CultureInfo.InvariantCulture));
                 break;
 
             case FieldType.Timestamp:
-                WriteText(buffer, offset, field.Length, ToDate(f).ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture));
+                var timestamp = ToDate(f);
+                if (timestamp.Ticks % (field.Length == 14 ? TimeSpan.TicksPerSecond : 10) != 0) throw new OverflowException("Timestamp exceeds its field precision.");
+                WriteText(buffer, offset, field.Length, timestamp.ToString(field.Length == 14 ? "yyyyMMddHHmmss" : "yyyy-MM-dd-HH.mm.ss.ffffff", CultureInfo.InvariantCulture));
                 break;
         }
     }
 
     public object? ReadValue(byte[] buffer, FieldSpec field)
     {
+        ValidateField(buffer, field);
         var offset = field.Position - 1;
 
         switch (field.Type)
         {
             case FieldType.Alpha:
-                return CodePage.FromBytes(field.Ccsid, buffer, offset, field.Length).TrimEnd(' ');
+                var encoding = (Encoding)CodePage.FromCcsid(field.Ccsid).Clone(); encoding.DecoderFallback = DecoderFallback.ExceptionFallback;
+                if (field.VariableLength)
+                {
+                    var count = (buffer[offset] << 8) | buffer[offset + 1];
+                    if (count > field.Length) throw new FormatException("Variable field length exceeds its declared maximum.");
+                    return encoding.GetString(buffer, offset + 2, count);
+                }
+                return encoding.GetString(buffer, offset, field.Length).TrimEnd(' ');
 
             case FieldType.Zoned:
                 return ReadZoned(buffer, offset, field);
@@ -125,7 +168,7 @@ public sealed class RecordCodec
 
             case FieldType.Binary:
             {
-                long number = 0;
+                long number = (buffer[offset] & 0x80) == 0 ? 0 : -1;
                 for (var i = 0; i < field.Length; i++)
                 {
                     number = (number << 8) | buffer[offset + i];
@@ -151,19 +194,20 @@ public sealed class RecordCodec
             }
 
             case FieldType.Logic:
-                return buffer[offset] == (byte)'1';
+                var logical = CodePage.FromBytes(_ccsid, buffer, offset, 1);
+                return logical switch { "0" => false, "1" => true, _ => throw new FormatException("Invalid logical record byte.") };
 
             case FieldType.Date:
-                return ParseDate(TextAt(buffer, offset, field.Length), "yyyyMMdd");
+                return ParseDate(TextAt(buffer, offset, field.Length), field.Length == 8 ? "yyyyMMdd" : "yyyy-MM-dd");
 
             case FieldType.Time:
             {
                 var text = TextAt(buffer, offset, field.Length);
-                return TimeSpan.ParseExact(text, "hhmmss", CultureInfo.InvariantCulture);
+                return TimeSpan.ParseExact(text, field.Length == 6 ? "hhmmss" : @"hh\.mm\.ss", CultureInfo.InvariantCulture);
             }
 
             case FieldType.Timestamp:
-                return ParseDate(TextAt(buffer, offset, field.Length), "yyyyMMddHHmmss");
+                return ParseDate(TextAt(buffer, offset, field.Length), field.Length == 14 ? "yyyyMMddHHmmss" : "yyyy-MM-dd-HH.mm.ss.ffffff");
 
             default:
                 throw new ArgumentOutOfRangeException();
@@ -185,8 +229,8 @@ public sealed class RecordCodec
     private void WritePacked(byte[] buffer, int offset, FieldSpec field, decimal value)
     {
         var digits = DigitsString(value, field.Decimals, field.Length);
-        var byteCount = (field.Length + 1) / 2;
-        var signNibble = value < 0 ? 0xD : 0xF;
+        var byteCount = (field.Length + 2) / 2;
+        var signNibble = value < 0 ? 0xD : 0xC;
         var firstNibble = field.Length % 2 == 0;
 
         for (var i = 0; i < byteCount; i++)
@@ -204,16 +248,17 @@ public sealed class RecordCodec
         for (var i = 0; i < field.Length; i++)
         {
             var b = buffer[offset + i];
+            if ((b & 0x0F) > 9 || i < field.Length - 1 && (b >> 4) != 0x0F) throw new FormatException("Invalid zoned decimal digit or zone.");
             digits[i] = (char)('0' + (b & 0x0F));
         }
 
-        var negative = (buffer[offset + field.Length - 1] >> 4) == 0x0D;
+        var negative = NegativeSign(buffer[offset + field.Length - 1] >> 4);
         return ParseDecimal(digits, field.Decimals, negative);
     }
 
     private decimal ReadPacked(byte[] buffer, int offset, FieldSpec field)
     {
-        var byteCount = (field.Length + 1) / 2;
+        var byteCount = (field.Length + 2) / 2;
         var firstNibble = field.Length % 2 == 0;
         var digits = new List<char>(field.Length);
         for (var i = 0; i < byteCount; i++)
@@ -221,6 +266,7 @@ public sealed class RecordCodec
             var b = buffer[offset + i];
             var high = (b >> 4) & 0x0F;
             var low = b & 0x0F;
+            if (firstNibble && i == 0 ? high != 0 : high > 9) throw new FormatException("Invalid packed decimal digit or padding.");
             if (!(firstNibble && i == 0))
             {
                 digits.Add((char)('0' + high));
@@ -229,11 +275,12 @@ public sealed class RecordCodec
             var isLast = i == byteCount - 1;
             if (!isLast)
             {
+                if (low > 9) throw new FormatException("Invalid packed decimal digit.");
                 digits.Add((char)('0' + low));
             }
         }
 
-        var negative = (buffer[offset + byteCount - 1] & 0x0F) == 0x0D;
+        var negative = NegativeSign(buffer[offset + byteCount - 1] & 0x0F);
         return ParseDecimal(digits, field.Decimals, negative);
     }
 
@@ -245,29 +292,18 @@ public sealed class RecordCodec
             whole = "0";
         }
 
-        if (!decimal.TryParse(whole, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-        {
-            throw new FormatException($"Invalid numeric digits '{whole}'.");
-        }
-
         if (decimals > 0)
         {
-            parsed *= Pow10(decimals);
+            whole = whole.PadLeft(decimals + 1, '0');
+            whole = whole.Insert(whole.Length - decimals, ".");
         }
-
-        return negative ? -parsed : parsed;
+        return ToDecimal((negative ? "-" : "") + whole);
     }
 
     private string DigitsString(decimal value, int decimals, int totalLength)
     {
-        var scaled = decimal.Round(Math.Abs(value), decimals, MidpointRounding.AwayFromZero);
-        if (decimals > 0)
-        {
-            scaled /= Pow10(decimals);
-        }
-
-        var integer = decimal.ToInt64(scaled);
-        var digits = integer.ToString(CultureInfo.InvariantCulture).PadLeft(totalLength, '0');
+        if (decimal.Round(value, decimals) != value) throw new OverflowException("Decimal value exceeds field scale.");
+        var digits = Math.Abs(value).ToString("F" + decimals, CultureInfo.InvariantCulture).Replace(".", "", StringComparison.Ordinal).TrimStart('0').PadLeft(totalLength, '0');
         if (digits.Length > totalLength)
         {
             throw new OverflowException($"Value {value} exceeds the field capacity of {totalLength} digits.");
@@ -283,16 +319,8 @@ public sealed class RecordCodec
             throw new OverflowException($"Value '{text}' exceeds the field length of {length}.");
         }
 
-        var bytes = CodePage.ToBytes(_ccsid, text);
-        for (var i = 0; i < bytes.Length; i++)
-        {
-            buffer[offset + i] = bytes[i];
-        }
-
-        for (var i = bytes.Length; i < length; i++)
-        {
-            buffer[offset + i] = (byte)' ';
-        }
+        var bytes = EncodedText(_ccsid, text, length);
+        Buffer.BlockCopy(bytes, 0, buffer, offset, bytes.Length);
     }
 
     private string TextAt(byte[] buffer, int offset, int length) =>
@@ -319,61 +347,50 @@ public sealed class RecordCodec
 
     private static string ToString(object value) => value.ToString() ?? string.Empty;
 
-    private static decimal ToDecimal(object value) => value switch
+    private static decimal ToDecimal(object value)
     {
-        decimal d => d,
-        long l => l,
-        int i => i,
-        double f => System.Convert.ToDecimal(f),
-        _ => decimal.TryParse(ToString(value), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m,
-    };
+        var text = Convert.ToString(value, CultureInfo.InvariantCulture)!;
+        try { _ = Ipc.Services.Sqlite.DatabaseSortKeys.Decimal(text); }
+        catch (ArgumentException) { throw new FormatException("Invalid decimal value or unsupported precision."); }
+        return decimal.Parse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
+    }
 
-    private static long ToLong(object value) => value switch
+    private static long ToLong(object value)
     {
-        long l => l,
-        int i => i,
-        decimal d => decimal.ToInt64(d),
-        _ => long.TryParse(ToString(value), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0L,
-    };
+        if (value is decimal number && decimal.Truncate(number) == number && number >= long.MinValue && number <= long.MaxValue) return decimal.ToInt64(number);
+        return long.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var parsed)
+            ? parsed : throw new FormatException("Invalid integral value.");
+    }
 
-    private static double ToDouble(object value) => value switch
-    {
-        double d => d,
-        decimal m => (double)m,
-        long l => l,
-        _ => double.TryParse(ToString(value), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0d,
-    };
+    private static double ToDouble(object value) => double.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out var number) && double.IsFinite(number)
+        ? number : throw new FormatException("Invalid finite floating-point value.");
 
     private static bool ToBool(object value) => value switch
     {
         bool b => b,
-        _ => ToString(value) is "1" or "Y" or "T" or "true",
+        _ => ToString(value).ToUpperInvariant() switch { "1" or "Y" or "T" or "TRUE" => true, "0" or "N" or "F" or "FALSE" => false, _ => throw new FormatException("Invalid logical value.") },
     };
 
     private static DateTimeOffset ToDate(object value) => value switch
     {
         DateTimeOffset d => d,
-        DateTime d => new DateTimeOffset(d, TimeSpan.Zero),
-        _ => DateTimeOffset.TryParse(ToString(value), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
+        DateOnly d => new DateTimeOffset(d.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
+        DateTime d => new DateTimeOffset(DateTime.SpecifyKind(d, DateTimeKind.Unspecified), TimeSpan.Zero),
+        _ => DateTimeOffset.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed)
             ? parsed
-            : new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            : throw new FormatException("Invalid date value."),
     };
 
     private static TimeSpan ToTime(object value) => value switch
     {
         TimeSpan t => t,
+        TimeOnly t => t.ToTimeSpan(),
         DateTimeOffset d => d.TimeOfDay,
         DateTime d => d.TimeOfDay,
-        _ => TimeSpan.TryParseExact(ToString(value), @"hhmmss", CultureInfo.InvariantCulture, out var parsed)
+        _ => TimeSpan.TryParseExact(Convert.ToString(value, CultureInfo.InvariantCulture), new[] { "hhmmss", @"hh\:mm\:ss", @"hh\.mm\.ss" }, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
-            : TimeSpan.Zero,
+            : throw new FormatException("Invalid time value."),
     };
-
-    private static string PadRight(string text, int length) =>
-        text.Length >= length ? text[..length] : text.PadRight(length);
-
-    private static decimal Pow10(int exponent) =>
-        new decimal(1, 0, 0, false, (byte)exponent);
 
     private static byte[] ConvertToBytes(long value)
     {

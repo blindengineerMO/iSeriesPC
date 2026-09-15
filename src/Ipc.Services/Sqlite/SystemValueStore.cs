@@ -14,6 +14,7 @@ public sealed class SystemValueStore
 
     public void SeedFromRegistry(SystemValueRegistry registry)
     {
+        new Ipc.Services.Security.ServiceAuthorization(_factory).RequireSpecial(Ipc.Core.Security.SpecialAuthority.SecurityAdministrator);
         using var connection = _factory.Open();
         foreach (var value in registry.All)
         {
@@ -29,6 +30,10 @@ public sealed class SystemValueStore
 
     public void Set(string name, string value)
     {
+        new Ipc.Services.Security.ServiceAuthorization(_factory).RequireSpecial(
+            name == SystemValueNames.SecurityLevel
+                ? Ipc.Core.Security.SpecialAuthority.SecurityAdministrator | Ipc.Core.Security.SpecialAuthority.AllObject
+                : Ipc.Core.Security.SpecialAuthority.SecurityAdministrator);
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText =

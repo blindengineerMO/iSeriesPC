@@ -1,12 +1,16 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <AssemblyName>Ipc.Services</AssemblyName>
     <RootNamespace>Ipc.Services</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
+    <ProjectReference Include="../Ipc.Cl/Ipc.Cl.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <!-- Preserve SQLite's schema-lock result; 2.1.x slices an invalid prepare tail. -->
+    <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.5" />
+    <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.12" />
   </ItemGroup>
 </Project>

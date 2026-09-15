@@ -4,97 +4,54 @@ namespace Ipc.Terminal;
 
 public static class KeyTranslator
 {
+    private static readonly IReadOnlyDictionary<string, KeyPress> Sequences = BuildSequences();
     public static bool IsSequenceStart(char ch) => ch == '\u001b';
-
     public static KeyPress? Translate(string sequence, char? pendingChar = null)
     {
-        if (pendingChar is { } pc && !char.IsControl(pc) && pc != '\r' && pc != '\b')
+        if (pendingChar is { } c && TerminalGlyph.IsSingleCell(c)) return new(AidKey.None, CursorEdit.None, c);
+        return Sequences.TryGetValue(sequence, out var key) ? key : null;
+    }
+    private static IReadOnlyDictionary<string, KeyPress> BuildSequences()
+    {
+        var result = new Dictionary<string, KeyPress>(StringComparer.Ordinal);
+        void Aid(string sequence, AidKey aid) => result.Add(sequence, new(aid));
+        void Edit(string sequence, CursorEdit edit) => result.Add(sequence, new(AidKey.None, edit));
+        Aid("\r", AidKey.Enter); Aid("\n", AidKey.Enter);
+        Aid("\u0001", AidKey.Pa1); Aid("\u0002", AidKey.Pa2); Aid("\u0006", AidKey.Pa3);
+        Aid("\u0007", AidKey.SysReq); Aid("\u000c", AidKey.Clear); Aid("\u0010", AidKey.Print);
+        Edit("\b", CursorEdit.FieldBackspace); Edit("\u007f", CursorEdit.FieldBackspace);
+        Edit("\t", CursorEdit.NextField); Edit("\u001b[Z", CursorEdit.BackTab);
+        foreach (var prefix in new[] { "\u001b[", "\u001bO" })
         {
-            return new KeyPress(AidKey.None, CursorEdit.None, pc);
+            Edit(prefix + "A", CursorEdit.CursorUp); Edit(prefix + "B", CursorEdit.CursorDown);
+            Edit(prefix + "C", CursorEdit.CursorRight); Edit(prefix + "D", CursorEdit.CursorLeft);
+            Edit(prefix + "H", CursorEdit.Home); Edit(prefix + "F", CursorEdit.End);
         }
-
-        if (string.IsNullOrEmpty(sequence))
-        {
-            return null;
-        }
-
-        switch (sequence)
-        {
-            case "\r":
-            case "\n":
-                return new KeyPress(AidKey.Enter);
-            case "\b":
-            case "\u007f":
-                return new KeyPress(AidKey.None, CursorEdit.Delete);
-            case "\t":
-                return new KeyPress(AidKey.None, CursorEdit.NextField);
-            case "\u001b[Z":
-                return new KeyPress(AidKey.None, CursorEdit.BackTab);
-            case "\u001b[A":
-                return new KeyPress(AidKey.None, CursorEdit.CursorUp);
-            case "\u001b[B":
-                return new KeyPress(AidKey.None, CursorEdit.CursorDown);
-            case "\u001b[C":
-                return new KeyPress(AidKey.None, CursorEdit.CursorRight);
-            case "\u001b[D":
-                return new KeyPress(AidKey.None, CursorEdit.CursorLeft);
-            case "\u001b[H":
-                return new KeyPress(AidKey.None, CursorEdit.CursorLeft);
-            case "\u001b[F":
-                return new KeyPress(AidKey.None, CursorEdit.CursorRight);
-            case "\u001b[1;5C":
-                return new KeyPress(AidKey.None, CursorEdit.NextField);
-            case "\u001b[1;5D":
-                return new KeyPress(AidKey.None, CursorEdit.PreviousField);
-        }
-
+        Edit("\u001b[1~", CursorEdit.Home); Edit("\u001b[4~", CursorEdit.End);
+        Edit("\u001b[7~", CursorEdit.Home); Edit("\u001b[8~", CursorEdit.End);
+        Edit("\u001b[2~", CursorEdit.Insert); Edit("\u001b[3~", CursorEdit.Delete);
+        Edit("\u001b[1;5C", CursorEdit.NextField); Edit("\u001b[1;5D", CursorEdit.PreviousField);
+        Edit("\u000b", CursorEdit.FieldEraseToEnd); Edit("\u0005", CursorEdit.FieldExit);
+        Aid("\u001b[5~", AidKey.RollDown); Aid("\u001b[6~", AidKey.RollUp);
         for (var i = 0; i < KeyCodes.FunctionKeys.Length; i++)
         {
-            if (sequence.StartsWith(KeyCodes.FunctionKeys[i], StringComparison.Ordinal))
-            {
-                var suffix = sequence[KeyCodes.FunctionKeys[i].Length..];
-                var aid = (byte)((int)AidKey.Pf1 + i);
-                if (string.IsNullOrEmpty(suffix))
-                {
-                    return new KeyPress((AidKey)aid);
-                }
-
-                if (suffix.Length > 1 || !ParseDigit(suffix, out var digit))
-                {
-                    return null;
-                }
-
-                if (digit >= 1 && digit <= 5)
-                {
-                    return new KeyPress((AidKey)aid, i is 0 or 1 ? CursorEdit.CursorLeft : (CursorEdit?)digit);
-                }
-            }
+            Aid(KeyCodes.FunctionKeys[i], (AidKey)((int)AidKey.Pf1 + i));
+            var shifted = i < 4 ? "\u001b[1;2" + "PQRS"[i] : KeyCodes.FunctionKeys[i][..^1] + ";2~";
+            Aid(shifted, (AidKey)((int)AidKey.Pf13 + i));
+            if (i < 4) Aid("\u001b[1;1" + "PQRS"[i], (AidKey)((int)AidKey.Pf1 + i));
         }
-
-        return null;
+        var legacy = new[] { 25, 26, 28, 29, 31, 32, 33, 34 };
+        for (var i = 0; i < legacy.Length; i++) Aid("\u001b[" + legacy[i] + "~", (AidKey)((int)AidKey.Pf13 + i));
+        return result;
     }
-
     public static string CollectPending(string[] fragments)
     {
-        var sb = new StringBuilder();
+        var result = new StringBuilder(12);
         foreach (var fragment in fragments)
         {
-            sb.Append(fragment);
+            result.Append(fragment.AsSpan(0, Math.Min(fragment.Length, 12 - result.Length)));
+            if (result.Length == 12) break;
         }
-
-        var result = sb.ToString();
-        return result.Length <= 12 ? result : result[..12];
-    }
-
-    private static bool ParseDigit(string text, out int digit)
-    {
-        if (text.Length == 1 && text[0] is >= '0' and <= '9')
-        {
-            digit = text[0] - '0';
-            return true;
-        }
-
-        digit = 0;
-        return false;
+        return result.ToString();
     }
 }

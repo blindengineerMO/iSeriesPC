@@ -33,6 +33,9 @@ public readonly record struct QualifiedName
             : throw new FormatException($"Not a qualified name '{qualified}'.");
     }
 
+    public static QualifiedName Parse(string name, string defaultLibrary) =>
+        name.Contains('/') ? Parse(name) : new QualifiedName(defaultLibrary, name.Trim());
+
     public bool UsesLibraryList =>
         Library == ObjectName.LibraryListMagic || Library == ObjectName.CurrentLibraryMagic;
 
@@ -46,7 +49,8 @@ public readonly record struct QualifiedName
         q.Library switch
         {
             ObjectName.CurrentLibraryMagic => new[] { currentLibrary },
-            ObjectName.LibraryListMagic => systemLibraryList.Concat(userPartOfLibraryList).ToArray(),
+            ObjectName.LibraryListMagic => systemLibraryList.Concat(new[] { currentLibrary })
+                .Concat(userPartOfLibraryList).Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
             _ => new[] { q.Library },
         };
 }

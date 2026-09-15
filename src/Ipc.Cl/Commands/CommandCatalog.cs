@@ -1,4 +1,5 @@
 using Ipc.Cl.Parsing;
+using Ipc.Cl.Compatibility;
 namespace Ipc.Cl.Commands;
 
 public enum CommandOutcome
@@ -7,6 +8,10 @@ public enum CommandOutcome
     SignOff,
     GoMenu,
     Error,
+    DisplayPanel,
+    DisplayHelp,
+    ScreenDesigner,
+    GroupJob,
 }
 
 public sealed class CommandResult
@@ -14,12 +19,22 @@ public sealed class CommandResult
     public CommandOutcome Outcome { get; init; }
 
     public string? Message { get; init; }
+    public string? MessageId { get; init; }
+    public string? MessageData { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Ipc.Core.Work.ProgramMessageReference? ExceptionReference { get; init; }
+
+    public PanelRequest? Panel { get; init; }
+    public Ipc.Core.Menu.HelpRequest? Help { get; init; }
+    public DesignerRequest? Designer { get; init; }
+    public GroupJobRequest? GroupJob { get; init; }
 
     public string? MenuName { get; init; }
 
     public string? MenuLibrary { get; init; }
 
     public IReadOnlyList<string>? Listing { get; init; }
+    public Ipc.Core.Menu.WorkList? WorkList { get; init; }
 
     public bool IsError => Outcome == CommandOutcome.Error;
 
@@ -32,12 +47,25 @@ public sealed class CommandResult
     public static CommandResult Go(string menuName, string? menuLibrary = null) =>
         new() { Outcome = CommandOutcome.GoMenu, MenuName = menuName, MenuLibrary = menuLibrary };
 
-    public static CommandResult Error(string message) =>
-        new() { Outcome = CommandOutcome.Error, Message = message };
+    public static CommandResult Error(string message, string? messageId = null, string? messageData = null,
+        Ipc.Core.Work.ProgramMessageReference? exceptionReference = null) =>
+        new() { Outcome = CommandOutcome.Error, Message = message,
+            MessageId = messageId ?? (System.Text.RegularExpressions.Regex.IsMatch(message, @"\A[A-Z][A-Z0-9]{2}[0-9A-F]{4}:") ? message[..7] : "IPC0006"),
+            MessageData = messageData, ExceptionReference = exceptionReference };
 }
+
+public sealed record GroupJobRequest(string Action, string Name, string InitialProgram = "QCMD", string Description = "");
+
+public sealed record DesignerRequest(string Library, string SourceFile, string Member);
+
+public sealed record PanelRequest(string Library, string File, string Record);
 
 public sealed class CommandCatalog
 {
+    private readonly bool _builtinContracts;
+
+    public CommandCatalog(bool builtinContracts = false) => _builtinContracts = builtinContracts;
+
     private readonly Dictionary<string, Func<CommandCall, CommandResult>> _handlers =
         new(StringComparer.OrdinalIgnoreCase);
 
@@ -45,6 +73,8 @@ public sealed class CommandCatalog
     {
         _handlers[name] = handler;
     }
+
+    public IReadOnlyList<string> RegisteredNames => _handlers.Keys.Order(StringComparer.Ordinal).ToArray();
 
     public bool IsRegistered(string name) => _handlers.ContainsKey(name);
 
@@ -57,24 +87,22 @@ public sealed class CommandCatalog
         }
         catch (ClParseException ex)
         {
-            return CommandResult.Error(ex.Message);
+            return CommandResult.Error($"IPC0005: {ex.Message}");
         }
-
-        if (!_handlers.TryGetValue(call.Name, out var handler))
-        {
-            return CommandResult.Error($"Command {call.Name} not found.");
-        }
-
-        return handler(call);
+        return Execute(call);
     }
 
     public CommandResult Execute(CommandCall call)
     {
-        if (!_handlers.TryGetValue(call.Name, out var handler))
+        var name = _builtinContracts ? BuiltinContract.CanonicalName(call.Name) : call.Name;
+        if (!_handlers.TryGetValue(name, out var handler))
         {
-            return CommandResult.Error($"Command {call.Name} not found.");
+            return CommandResult.Error(_builtinContracts ? BuiltinContract.Unavailable(call.Name) : $"IPC0001: Command {call.Name} not found.");
         }
-
-        return handler(call);
+        if (_builtinContracts && BuiltinContract.Validate(call) is { } error)
+            return CommandResult.Error(error);
+        try { return handler(call); }
+        catch (Ipc.Core.Messages.CpfException ex) { return CommandResult.Error(ex.Message); }
+        catch (ArgumentException) when (_builtinContracts) { return CommandResult.Error("IPC0003: Invalid command parameter."); }
     }
 }

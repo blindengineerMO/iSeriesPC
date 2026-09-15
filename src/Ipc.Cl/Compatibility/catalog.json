@@ -1,0 +1,3996 @@
+{
+  "version": 1,
+  "referenceDate": "2026-09-14",
+  "references": {
+    "commands": "https://www.ibm.com/docs/en/i/7.5.0?topic=language-alphabetic-list-cl-commands-by-command-name",
+    "messages": "https://www.ibm.com/docs/en/i/7.5.0?topic=category-message-handling-apis",
+    "user-spaces": "https://www.ibm.com/docs/en/i/7.5.0?topic=auditing-operations-user-space-usrspc",
+    "data-queues": "https://www.ibm.com/docs/ssw_ibm_i_75/rzarl/sc415302.pdf?view=kc",
+    "work": "https://www.ibm.com/docs/en/i/7.4.0?topic=category-work-management",
+    "apis": "https://www.ibm.com/docs/en/i/7.6.0?topic=interfaces-alphabetic-list-apis",
+    "journals": "https://www.ibm.com/docs/en/i/7.4.0?topic=q-retrieve-journal-entries-qjoretrievejournalentries"
+  },
+  "entries": [
+    {
+      "name": "CRTLIB",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB",
+        "TEXT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLTLIB",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "DSPLIB",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTDTADCT",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "DTADCT",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "CRTPF",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "SRCFILE",
+        "SRCMBR",
+        "TEXT",
+        "MBR",
+        "MAXMBRS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTLF",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "SRCFILE",
+        "SRCMBR",
+        "SRCSTMF",
+        "MBR",
+        "DTAMBRS",
+        "MAXMBRS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTDSPF",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "SRCFILE",
+        "SRCMBR",
+        "TEXT",
+        "REPLACE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTPRTF",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTSRVPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTBNDCL",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTBNDRPG",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB",
+        "PGM",
+        "SRCSTMF",
+        "SRCFILE",
+        "SRCMBR",
+        "ACTGRP"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTCLPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB",
+        "PGM",
+        "SRCSTMF",
+        "SRCFILE",
+        "SRCMBR",
+        "ACTGRP"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTCMD",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "CMD",
+        "PGM",
+        "SRCFILE",
+        "SRCMBR",
+        "SRCSTMF",
+        "HLPPNLGRP",
+        "HLPID",
+        "REPLACE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTDUPOBJ",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "FROMLIB",
+        "OBJTYPE",
+        "TOLIB",
+        "NEWOBJ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "MOVOBJ",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE",
+        "TOLIB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RNMOBJ",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE",
+        "NEWOBJ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLTOBJ",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPOBJD",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKOBJ",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKOBJPDM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DSPFD",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPFFD",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "PGM"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTPNLGRP",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "PNLGRP",
+        "SRCFILE",
+        "SRCMBR",
+        "TEXT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CPYF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FROMFILE",
+        "TOFILE",
+        "FROMMBR",
+        "TOMBR",
+        "MBROPT",
+        "FMTOPT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CPYTOIMPF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CPYFRMIMPF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DSPPFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "EDTF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTSRCPF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "TEXT",
+        "SRCDTALEN"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ADDPFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RMVM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RGZPFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CHGPF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MAXMBRS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGLF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CLRPFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLTF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKFILE",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "OPNQRYF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CLOF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "OVRDBF",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "TOFILE",
+        "MBR",
+        "SHARE",
+        "OVRSCOPE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLTOVR",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "LVL"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "SAVLIB",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SAVOBJ",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SAVCHGOBJ",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SAVSECDTA",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SAVCFG",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RSTLIB",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RSTOBJ",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RSTUSRPRF",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RSTAUT",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RSTCFG",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SAVRSTLIB",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SNDNETF",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RCVNETF",
+      "kind": "command",
+      "category": "save",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SBMJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "CMD",
+        "JOB",
+        "JOBQ",
+        "JOBD",
+        "JOBPTY",
+        "USER",
+        "RTGDTA",
+        "INLLIBL"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKACTJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKJOBQ",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKSBS",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "STRSBS",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBSD"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ENDSBS",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKSBMJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USER"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOB",
+        "OUTQ",
+        "MSGQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGJOBD",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBD",
+        "JOBQ",
+        "JOBPTY",
+        "USER",
+        "RTGDTA",
+        "CURLIB",
+        "INLLIBL"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKJOBD",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBD"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKCLS",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "CLS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKUSRPRF",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USRPRF"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPUSRPRF",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USRPRF"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKOBJLCK",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ALCOBJ",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ",
+        "WAIT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLCOBJ",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OBJ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTUSRPRF",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USRPRF",
+        "USRCLS",
+        "STATUS",
+        "SPCAUT",
+        "GRPPRF",
+        "INLPGM",
+        "INLMNU",
+        "CURLIB",
+        "CCSID",
+        "TEXT",
+        "PASSWORD",
+        "PWDFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGUSRPRF",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USRPRF",
+        "USRCLS",
+        "STATUS",
+        "SPCAUT",
+        "GRPPRF",
+        "INLPGM",
+        "INLMNU",
+        "CURLIB",
+        "CCSID",
+        "TEXT",
+        "PASSWORD",
+        "PWDFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLTUSRPRF",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USRPRF"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "GRTOBJAUT",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RVKOBJAUT",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKAUTL",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "EDTOBJAUT",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKSYSVAL",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SYSVAL"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGSYSVAL",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SYSVAL",
+        "VALUE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHKOBJITG",
+      "kind": "command",
+      "category": "security",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "USRPRF",
+        "OBJ",
+        "CHKSIG"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKSPLF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKOUTQ",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "OUTQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKPRT",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRPRTWTR",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDWTR",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CHGSPLFA",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CPYSPLF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DLTSPLF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "HLDSPLF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RLSSPLF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SNDNETSPLF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "OVRPRTF",
+      "kind": "command",
+      "category": "spool",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SNDMSG",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSG",
+        "TOMSGQ",
+        "MSGTYPE",
+        "RPYMSGQ"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "SNDPGMMSG",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSG",
+        "MSGID",
+        "MSGF",
+        "MSGDTA",
+        "MSGTYPE",
+        "TOPGMQ",
+        "TOMSGQ",
+        "RPYMSGQ",
+        "KEYVAR"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "SNDBRKMSG",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RCVMSG",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSGQ",
+        "MSGTYPE",
+        "MSGKEY",
+        "WAIT",
+        "RMV",
+        "CCSID",
+        "KEYVAR",
+        "MSG",
+        "MSGLEN",
+        "MSGID",
+        "SEV",
+        "TXTCCSID",
+        "PGMQ",
+        "RTNTYPE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKMSGQ",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSGQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPMSG",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSGQ"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "DLTMSGQ",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSGQ"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "CRTMSGQ",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSGQ",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "SNDRPY",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MSGKEY",
+        "MSGQ",
+        "RPY",
+        "RMV"
+      ],
+      "maxPositional": 3
+    },
+    {
+      "name": "RMVMSG",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": ["PGMQ", "MSGQ", "MSGKEY", "CLEAR", "RMVEXCP"],
+      "maxPositional": 0
+    },
+    {
+      "name": "GO",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MENU",
+        "PGM"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "CRTMNU",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MENU",
+        "SRCFILE",
+        "SRCMBR",
+        "REPLACE",
+        "JSONFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "PWRDWNSYS",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDSYS",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRSST",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKSYSSTS",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKDSKSTS",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DSPJOBLOG",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CALL",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "PGM",
+        "PARM"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "CALLPRC",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SIGNOFF",
+      "kind": "command",
+      "category": "system",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTRPGMOD",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTBNDC",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRSQL",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRQM",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RUNQRY",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RUNSQLSTM",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RUNSQL",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRSEU",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRSDA",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SRCFILE",
+        "SRCMBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "STRDBG",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDDBG",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ADDBKP",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RMVBKP",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRCMTCTL",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDCMTCTL",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "COMMIT",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ROLLBACK",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKLNK",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKFLR",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CHGATR",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CD",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "QSH",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CPYTOSTMF",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CPYFRMSTMF",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CFGTCP",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRTCPSVR",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDTCPSVR",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DSPNETA",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CHGNETA",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RTVNETA",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKSRVTBLE",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRHOSTSVR",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDHOSTSVR",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SNDSMTPEMM",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKDIRE",
+      "kind": "command",
+      "category": "network",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTDTAQ",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DLTDTAQ",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTDTAARA",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "DTAARA",
+        "TYPE",
+        "LEN",
+        "VALUE",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 6
+    },
+    {
+      "name": "DLTDTAARA",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "DTAARA"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "RTVDTAARA",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "DTAARA",
+        "RTNVAR"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "CHGDTAARA",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "DTAARA",
+        "VALUE"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "CRTJRN",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTJRNRCV",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CHGJRN",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DLTJRN",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DLTJRNRCV",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRJRNPF",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDJRNPF",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRJRN",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDJRN",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "APYJRNCHG",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RCVJRNE",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RTVJRNE",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DSPJRN",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "PGM",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDPGM",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DCL",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CHGVAR",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "IF",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ELSE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DO",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDDO",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DOWHILE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DOUNTIL",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DOFOR",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "LEAVE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ITERATE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "GOTO",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SELECT",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WHEN",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "OTHERWISE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ENDSELECT",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "MONMSG",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ADDLIBLE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB",
+        "POSITION"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "RMVLIBLE",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIB"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "CHGLIBL",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "LIBL",
+        "CURLIB"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "RTVJOBA",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOB",
+        "USER",
+        "NBR",
+        "CURUSER",
+        "CURLIB",
+        "USRLIBL",
+        "SYSLIBL",
+        "CCSID"
+      ],
+      "maxPositional": 3
+    },
+    {
+      "name": "DCLF",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RCVF",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SNDF",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "SNDRCVF",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RETURN",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "ADDSRCPFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "iSeriesPC extension",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR",
+        "DATA",
+        "SEQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "SNDDTAQ",
+      "kind": "command",
+      "category": "data",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "RCVDTAQ",
+      "kind": "command",
+      "category": "data",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTUSRSPC",
+      "kind": "command",
+      "category": "data",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKAPILS",
+      "kind": "command",
+      "category": "system",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "WRKNETSVR",
+      "kind": "command",
+      "category": "network",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "CRTHTTPC",
+      "kind": "command",
+      "category": "network",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "STRDOWN",
+      "kind": "command",
+      "category": "system",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "QSHC",
+      "kind": "command",
+      "category": "ifs",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DLTMNU",
+      "kind": "command",
+      "category": "system",
+      "origin": "iSeriesPC extension",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "MENU"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKSECLST",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "DSPTCPTBL",
+      "kind": "command",
+      "category": "network",
+      "origin": "iSeriesPC extension",
+      "status": "planned",
+      "source": null,
+      "requirements": [
+        "WP08-03"
+      ]
+    },
+    {
+      "name": "QMHSNDM",
+      "kind": "api",
+      "category": "messages",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "messages",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHRCVM",
+      "kind": "api",
+      "category": "messages",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "messages",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHRTVM",
+      "kind": "api",
+      "category": "messages",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "messages",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHSNDPM",
+      "kind": "api",
+      "category": "messages",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "messages",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHRCVPM",
+      "kind": "api",
+      "category": "messages",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "messages",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHSNDRM",
+      "kind": "api",
+      "category": "messages",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "messages",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSCRTUS",
+      "kind": "api",
+      "category": "user-spaces",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "user-spaces",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSRUSAT",
+      "kind": "api",
+      "category": "user-spaces",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "user-spaces",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSCHGUS",
+      "kind": "api",
+      "category": "user-spaces",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "user-spaces",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSRTVUS",
+      "kind": "api",
+      "category": "user-spaces",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "user-spaces",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSCUSAT",
+      "kind": "api",
+      "category": "user-spaces",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "user-spaces",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSDLTUS",
+      "kind": "api",
+      "category": "user-spaces",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "user-spaces",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QSNDDTAQ",
+      "kind": "api",
+      "category": "data-queues",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "data-queues",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QRCVDTAQ",
+      "kind": "api",
+      "category": "data-queues",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "data-queues",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHQCDQ",
+      "kind": "api",
+      "category": "data-queues",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "data-queues",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QMHQRDQD",
+      "kind": "api",
+      "category": "data-queues",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "data-queues",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QCLRDTAQ",
+      "kind": "api",
+      "category": "data-queues",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "data-queues",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QWCRSVAL",
+      "kind": "api",
+      "category": "work",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "work",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSRJOBI",
+      "kind": "api",
+      "category": "work",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "work",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QUSLJOB",
+      "kind": "api",
+      "category": "work",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "work",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QCMDEXC",
+      "kind": "api",
+      "category": "apis",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "apis",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QWCCVTDT",
+      "kind": "api",
+      "category": "apis",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "apis",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QSYGETPH",
+      "kind": "api",
+      "category": "apis",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "apis",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "Qp0zLprintf",
+      "kind": "api",
+      "category": "apis",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "apis",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QjoRetrieveJournalEntries",
+      "kind": "api",
+      "category": "journals",
+      "origin": "IBM",
+      "status": "planned",
+      "source": "journals",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "ENDIF",
+      "kind": "command",
+      "category": "cl",
+      "origin": "iSeriesPC extension",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "WP08-05"
+      ]
+    },
+    {
+      "name": "ENDSL",
+      "kind": "command",
+      "category": "cl",
+      "origin": "iSeriesPC extension",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "WP08-05"
+      ]
+    },
+    {
+      "name": "DSPLY",
+      "kind": "command",
+      "category": "cl",
+      "origin": "iSeriesPC extension",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "WP08-05"
+      ]
+    },
+    {
+      "name": "CHGCURLIB",
+      "kind": "command",
+      "category": "cl",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-05"
+      ],
+      "keywords": [
+        "CURLIB"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "ADDEIMMAP",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "PROFILE",
+        "DIRECTORY",
+        "DN",
+        "ENTRYID",
+        "PRINCIPAL",
+        "ACCOUNT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RMVEIMMAP",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "PROFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPEIMMAP",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "PROFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RFREIMMAP",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "PROFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTLOCALCA",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "LABEL",
+        "CN",
+        "DAYS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTLOCCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "LABEL",
+        "CN",
+        "CA",
+        "PURPOSE",
+        "DAYS",
+        "DNS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "IMPCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "LABEL",
+        "FILE",
+        "PWDFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "TRUSTCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "CERT",
+        "PURPOSE",
+        "TRUST"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RVKCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "CERT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RNWCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "CERT",
+        "CA",
+        "PURPOSE",
+        "DAYS",
+        "DNS"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "BINDCERT",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "SERVICE",
+        "CERT",
+        "PURPOSE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKKEYRING",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "ROTKEYRING",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "SGNOBJ",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "OBJ",
+        "OBJTYPE",
+        "CERT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RSTSGNOBJ",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "FILE",
+        "SIGFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "APYSGNUPD",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "FILE",
+        "SIGFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DPLYSGNSRV",
+      "kind": "command",
+      "category": "security",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": null,
+      "requirements": [
+        "G01"
+      ],
+      "keywords": [
+        "FILE",
+        "SIGFILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTJOBQ",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ",
+        "TEXT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "HLDJOBQ",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RLSJOBQ",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ADDJOBQE",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ",
+        "SBSD",
+        "MAXACT",
+        "SEQNBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGJOBQE",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ",
+        "SBSD",
+        "MAXACT",
+        "SEQNBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RMVJOBQE",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBQ",
+        "SBSD"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTSBSD",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBSD",
+        "MAXJOBS",
+        "TEXT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ADDRTGE",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBSD",
+        "SEQNBR",
+        "CMPVAL",
+        "CMPMODE",
+        "CLS",
+        "PGM"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGRTGE",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBSD",
+        "SEQNBR",
+        "CMPVAL",
+        "CMPMODE",
+        "CLS",
+        "PGM"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RMVRTGE",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SBSD",
+        "SEQNBR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTCLS",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "CLS",
+        "RUNPTY",
+        "TIMESLICE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGCLS",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "CLS",
+        "RUNPTY",
+        "TIMESLICE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTJOBD",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JOBD",
+        "JOBQ",
+        "JOBPTY",
+        "USER",
+        "RTGDTA",
+        "CURLIB",
+        "INLLIBL"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTEXTPGM",
+      "kind": "command",
+      "category": "work",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": "work",
+      "requirements": [
+        "WP04-05"
+      ],
+      "keywords": [
+        "PGM",
+        "EXEC",
+        "ARGS",
+        "DEPENDS",
+        "TIMEOUT",
+        "PROTOCOL"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ENDJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP04-07"
+      ],
+      "status": "partial",
+      "keywords": [
+        "JOB",
+        "OPTION"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "HLDJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP04-07"
+      ],
+      "status": "partial",
+      "keywords": [
+        "JOB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RLSJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP04-07"
+      ],
+      "status": "partial",
+      "keywords": [
+        "JOB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RCLACTGRP",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP04-05"
+      ],
+      "status": "partial",
+      "keywords": [
+        "ACTGRP"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPOVR",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "G10"
+      ],
+      "status": "partial",
+      "keywords": [
+        "FILE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPDTAARA",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "G10"
+      ],
+      "status": "partial",
+      "keywords": [
+        "DTAARA"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "RUNPNL",
+      "kind": "command",
+      "category": "display",
+      "origin": "iSeriesPC",
+      "source": "commands",
+      "requirements": [
+        "WP05-04"
+      ],
+      "status": "partial",
+      "keywords": [
+        "FILE",
+        "RCDFMT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTMSGF",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP05-04"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGF",
+        "TEXT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ADDMSGD",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP05-04"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGID",
+        "MSGF",
+        "MSG"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPHELP",
+      "kind": "command",
+      "category": "display",
+      "origin": "iSeriesPC",
+      "source": "commands",
+      "requirements": [
+        "WP05-04"
+      ],
+      "status": "partial",
+      "keywords": [
+        "PNLGRP",
+        "MODULE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CHGGRPA",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP06-04",
+        "WP06-05"
+      ],
+      "keywords": [
+        "GRPJOB",
+        "TEXT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "TFRGRPJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP06-04",
+        "WP06-05"
+      ],
+      "keywords": [
+        "GRPJOB",
+        "INLGRPPGM"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ENDGRPJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP06-04",
+        "WP06-05"
+      ],
+      "keywords": [
+        "GRPJOB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "TFRSECJOB",
+      "kind": "command",
+      "category": "work",
+      "origin": "iSeriesPC",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP06-04",
+        "WP06-05"
+      ],
+      "keywords": [],
+      "maxPositional": 0
+    },
+    {
+      "name": "WRKLIB",
+      "kind": "command",
+      "category": "work",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP07-01"
+      ],
+      "status": "partial",
+      "keywords": [
+        "LIB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "SLTCMD",
+      "kind": "command",
+      "category": "menu",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP07-01"
+      ],
+      "keywords": [
+        "CMD"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPCMD",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-01"
+      ],
+      "status": "partial",
+      "keywords": [
+        "CMD"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ADDLFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR",
+        "DTAMBRS"
+      ],
+      "maxPositional": 0
+    }
+  ],
+  "aliases": {
+    "RMVFM": "RMVM",
+    "DSPMENU": "GO",
+    "MSG": "DSPMSG"
+  },
+  "corrections": {
+    "WRKCLASS": "WRKCLS",
+    "EDTOTA": "EDTOBJAUT",
+    "ENDPRTWTR": "ENDWTR",
+    "RLS": "RLSSPLF",
+    "SND": "SNDNETSPLF",
+    "RCVFNET": "RCVNETF",
+    "QRDVDTAQ": "QRCVDTAQ",
+    "QMHSNDPGM": "QMHSNDPM",
+    "QWCRTVUS": "QUSRTVUS",
+    "QUSCHGDQ": "QMHQCDQ",
+    "QUSRDTAT": "QMHQRDQD",
+    "QWCRJOB": "QUSRJOBI",
+    "QWCAACTJ": "QUSLJOB",
+    "QJORJRNI": "QjoRetrieveJournalEntries",
+    "QUSCRTDQ": "CRTDTAQ",
+    "RSTSECDTA": "RSTUSRPRF + RSTAUT",
+    "JRNPF": "STRJRNPF",
+    "GSHJRN": "DSPJRN",
+    "QFRSMSG": "QMHSNDPM",
+    "QWCS": "CHGSYSVAL",
+    "GRTLIBL": "RTVJOBA",
+    "ENDPGMCLS": "ENDPGM",
+    "SETONLR": "SETON LR (fixed RPG) or *INLR = *ON (free RPG)"
+  },
+  "rejectedPlaceholders": {
+    "MLT": "Explicitly rejected in WP8.",
+    "EXEC": "Explicitly rejected in WP8.",
+    "PY": "Use external program CALL or QSH.",
+    "BLDC": "Use CRTBNDC for external C builds.",
+    "QAFC": "Authority checks use the shared authority service; no API with this provisional name.",
+    "QGPL": "Library name, not an API.",
+    "PRC": "Use CALLPRC.",
+    "QP0Z": "API family prefix; use the explicit Qp0zLprintf contract.",
+    "DMPCLPGM": "Optional diagnostic intent is met by STRDBG/listings; no such required command."
+  }
+}

@@ -18,6 +18,7 @@ public class MenuSystemTests : IDisposable
         Directory.CreateDirectory(_tempDir);
         _system = IpcSystem.Create(_tempDir, "test.db");
         _system.Start();
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"), "ADMIN1234");
     }
 
     public void Dispose()
@@ -68,7 +69,7 @@ public class MenuSystemTests : IDisposable
         var profile = QsecOfr();
         var controller = new MenuController(_system, profile, "MAIN");
 
-        Assert.Contains("M A I N", controller.Buffer.RowText(1));
+        Assert.Contains("AS/400 Main Menu", controller.Buffer.RowText(1));
         var body = string.Concat(Enumerable.Range(3, 18).Select(r => controller.Buffer.RowText(r)));
         Assert.Contains("Select one of the following:", body);
         Assert.Contains("1. User tasks", body);
@@ -132,7 +133,7 @@ public class MenuSystemTests : IDisposable
     {
         var controller = new MenuController(_system, QsecOfr(), "MAIN");
         var evt = FeedText(controller, "9\r");
-        Assert.Contains("menu to display", controller.Buffer.RowText(24));
+        Assert.Contains("Prompt command - GO", controller.Buffer.RowText(1));
 
         evt = FeedText(controller, "MAJOR\r");
         Assert.False(evt.Last!.EndSession);
@@ -156,6 +157,7 @@ public class MenuSystemTests : IDisposable
     {
         RegisterMenuChain(out _);
 
+        _system.Libraries.CreateLibrary("OTHER");
         _system.Menus.Register(new ApplicationMenu
         {
             Name = "ELSE",
@@ -179,7 +181,7 @@ public class MenuSystemTests : IDisposable
             },
         }, owner: "QSECOFR");
 
-        Assert.Equal("OTHER", _system.Menus.Go("ELSE").Library);
+        Assert.Equal("OTHER", _system.Menus.Go("OTHER/ELSE").Library);
 
         var controller = new MenuController(_system, QsecOfr(), "BRIDGE");
         FeedText(controller, "1\r");
@@ -192,6 +194,10 @@ public class MenuSystemTests : IDisposable
     private void RegisterMenuChain(out string mainName)
     {
         mainName = "MYMENU";
+        _system.Libraries.CreateLibrary("MYLIB");
+        var profile = QsecOfr();
+        profile.InitialCurrentLibrary = "MYLIB";
+        _system.Security.Profiles.Update(profile);
         _system.Menus.Register(new ApplicationMenu
         {
             Name = "SUB",

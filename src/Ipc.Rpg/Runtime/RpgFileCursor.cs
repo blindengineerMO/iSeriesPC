@@ -2,7 +2,7 @@ using Ipc.Db.Definitions;
 
 namespace Ipc.Rpg.Runtime;
 
-public sealed class RpgFileCursor
+public sealed class RpgFileCursor : IDisposable
 {
     private readonly IRpgFileAccess _access;
     private readonly string _library;
@@ -11,6 +11,8 @@ public sealed class RpgFileCursor
     private readonly FileDefinition _definition;
     private IReadOnlyList<IReadOnlyDictionary<string, object?>> _records = Array.Empty<IReadOnlyDictionary<string, object?>>();
     private int _position = -1;
+    private bool _disposed;
+    public void Dispose() { _disposed = true; _records = Array.Empty<IReadOnlyDictionary<string, object?>>(); }
 
     public RpgFileCursor(IRpgFileAccess access, string library, string name, string member)
     {
@@ -45,10 +47,11 @@ public sealed class RpgFileCursor
     public IReadOnlyDictionary<string, object?>? Current =>
         _position >= 0 && _position < _records.Count ? _records[_position] : null;
 
-    public void Reload() => _records = _access.ReadKeyed(_library, _name, _member);
+    public void Reload() { ObjectDisposedException.ThrowIf(_disposed, this); _records = _access.ReadKeyed(_library, _name, _member); }
 
     public bool ReadNext(out IReadOnlyDictionary<string, object?>? record, out bool eof)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (_position < _records.Count - 1)
         {
             _position++;
@@ -65,6 +68,7 @@ public sealed class RpgFileCursor
 
     public bool ReadPrior(out IReadOnlyDictionary<string, object?>? record, out bool eof)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (_position > 0)
         {
             _position--;
@@ -81,6 +85,7 @@ public sealed class RpgFileCursor
 
     public bool ReadNextKeyed(IReadOnlyDictionary<string, object?> prefix, out IReadOnlyDictionary<string, object?>? record, out bool eof)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         for (var index = _position + 1; index < _records.Count; index++)
         {
             if (Matches(_records[index], prefix))
@@ -99,6 +104,7 @@ public sealed class RpgFileCursor
 
     public bool ReadPriorKeyed(IReadOnlyDictionary<string, object?> prefix, out IReadOnlyDictionary<string, object?>? record, out bool eof)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         for (var index = _position - 1; index >= 0; index--)
         {
             if (Matches(_records[index], prefix))
@@ -117,6 +123,7 @@ public sealed class RpgFileCursor
 
     public bool Chain(IReadOnlyDictionary<string, object?> search)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         for (var index = 0; index < _records.Count; index++)
         {
             if (Matches(_records[index], search))
@@ -132,6 +139,7 @@ public sealed class RpgFileCursor
 
     public bool SetLowerBound(IReadOnlyDictionary<string, object?> search)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         for (var index = 0; index < _records.Count; index++)
         {
             var comparison = CompareKeys(_records[index], search);
@@ -148,6 +156,7 @@ public sealed class RpgFileCursor
 
     public void SetUpperBound(IReadOnlyDictionary<string, object?> search)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         for (var index = 0; index < _records.Count; index++)
         {
             if (CompareKeys(_records[index], search) > 0)

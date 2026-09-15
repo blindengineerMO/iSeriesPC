@@ -59,6 +59,8 @@ public enum CursorEdit : byte
     BackTab = 11,
     NextField = 12,
     PreviousField = 13,
+    Home = 14,
+    End = 15,
 }
 
 public readonly record struct KeyPress(AidKey Aid, CursorEdit? Edit = null, char Character = '\0');

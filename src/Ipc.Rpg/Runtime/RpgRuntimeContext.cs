@@ -7,8 +7,32 @@ namespace Ipc.Rpg.Runtime;
 public sealed class RpgRuntimeContext
 {
     private readonly RpgProgram _program;
-    private readonly RpgHost _host;
+    private RpgHost _host;
+    internal void RebindHost(RpgHost host) => _host = host;
     private readonly Dictionary<string, object?> _slots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Ipc.Core.Work.ProgramArgument> _references = new(StringComparer.OrdinalIgnoreCase);
+    internal void BindReference(string name, Ipc.Core.Work.ProgramArgument argument)
+    {
+        var field = _program.FindField(name) ?? throw new RpgRuntimeException($"Unknown entry field '{name}'.");
+        if (field.IsArray || field.IsDataStructure || field.Source == RpgFieldSource.Constant || _program.FindDsElement(name) is not null)
+            throw new RpgRuntimeException("Borrowed entry arguments currently require scalar fields.");
+        var compatible = argument.Type switch {
+            null => true,
+            "*CHAR" => field.Kind == RpgFieldKind.Character && field.Length == argument.Length,
+            "*DEC" => field.Kind is RpgFieldKind.Packed or RpgFieldKind.Decimal && field.Length == argument.Length && field.Decimals == argument.Decimals,
+            "*INT" => field.Kind is RpgFieldKind.Integer or RpgFieldKind.Binary && field.Decimals == 0 &&
+                (field.Length <= 5 ? 2 : field.Length <= 10 ? 4 : 8) == argument.Length,
+            "*LGL" => field.Kind == RpgFieldKind.Indicator,
+            _ => false };
+        if (!compatible) throw new RpgRuntimeException("CL/RPG reference parameter types or lengths do not match.");
+        _ = Coerce(field, argument.Value);
+        _references.Add(field.Name, argument);
+    }
+    internal void ReleaseReferences()
+    {
+        try { foreach (var reference in _references) _slots[reference.Key] = reference.Value.Value; }
+        finally { _references.Clear(); }
+    }
     private readonly Dictionary<string, object?[]> _arrays = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _dsStorage = new(StringComparer.OrdinalIgnoreCase);
 
@@ -76,6 +100,7 @@ public sealed class RpgRuntimeContext
         {
             RpgFieldKind.Character => PadCharacter(init ?? string.Empty, field.Length),
             RpgFieldKind.VaryingChar => init ?? string.Empty,
+            RpgFieldKind.ProcPtr => init ?? string.Empty,
             RpgFieldKind.Zoned or RpgFieldKind.Packed or RpgFieldKind.Decimal => ParseDecimal(init) ?? 0m,
             RpgFieldKind.Binary or RpgFieldKind.Integer => ParseDecimal(init).HasValue ? (object)long.Parse(init!, CultureInfo.InvariantCulture) : 0L,
             RpgFieldKind.Float => ParseDouble(init) ?? 0d,
@@ -132,7 +157,7 @@ public sealed class RpgRuntimeContext
             return _arrays[field.Name];
         }
 
-        return field.Kind == RpgFieldKind.VaryingChar ? _slots[field.Name] : _slots[field.Name];
+        return _references.TryGetValue(field.Name, out var reference) ? Coerce(field, reference.Value) : _slots[field.Name];
     }
 
     public void WriteValue(string name, object? value)
@@ -156,7 +181,9 @@ public sealed class RpgRuntimeContext
             throw new RpgRuntimeException($"Cannot assign to constant field '{name}'.");
         }
 
-        _slots[field.Name] = Coerce(field, value);
+        var converted = Coerce(field, value);
+        if (_references.TryGetValue(field.Name, out var reference)) reference.Value = converted;
+        else _slots[field.Name] = converted;
     }
 
     public object? ReadArrayValue(string name, long index)
@@ -172,8 +199,8 @@ public sealed class RpgRuntimeContext
         if (!field.IsArray)
         {
             return field.Kind == RpgFieldKind.Character
-                ? SubstringCharacter(CoerceToString(_slots[field.Name]), index)
-                : _slots[field.Name];
+                ? SubstringCharacter(CoerceToString(ReadValue(field.Name)), index)
+                : ReadValue(field.Name);
         }
 
         if (index < 1 || index > field.Dimension)
@@ -237,7 +264,7 @@ public sealed class RpgRuntimeContext
             return;
         }
 
-        _slots[field.Name] = ClearValueFor(field);
+        WriteValue(field.Name, ClearValueFor(field));
     }
 
     public static object ClearValueFor(RpgFieldKind kind) => kind switch
@@ -280,10 +307,18 @@ public sealed class RpgRuntimeContext
         return text[(int)index - 1].ToString();
     }
 
-    private object? Coerce(RpgField field, object? value) => field.Kind switch
+    private object? Coerce(RpgField field, object? value)
     {
+        if (value is Ipc.Core.Work.ProgramBuffer buffer)
+        {
+            if (field.Kind is not (RpgFieldKind.Character or RpgFieldKind.VaryingChar)) throw new RpgRuntimeException("RPG numeric byte-buffer arguments require a typed ABI adapter.");
+            try { value = buffer.ToText(); }
+            catch (Ipc.Core.Messages.CpfException error) { throw new RpgRuntimeException(error.Message); }
+        }
+        return field.Kind switch
+        {
         RpgFieldKind.Character => CoerceToString(ParseBlank(value)).PadRight(field.Length)[..field.Length],
-        RpgFieldKind.VaryingChar => CoerceToString(ParseBlank(value)),
+        RpgFieldKind.VaryingChar or RpgFieldKind.ProcPtr => CoerceToString(ParseBlank(value)),
         RpgFieldKind.Zoned or RpgFieldKind.Packed or RpgFieldKind.Decimal => Round(ParseDecimalValue(value), field.Decimals),
         RpgFieldKind.Binary or RpgFieldKind.Integer => RpgValues.ToLong(value),
         RpgFieldKind.Float => RpgValues.ToDouble(value),
@@ -293,6 +328,7 @@ public sealed class RpgRuntimeContext
         RpgFieldKind.Indicator => ParseBoolean(value),
         _ => value,
     };
+    }
 
     private static object? ParseBlank(object? value) =>
         value is string s && (s == "*BLANK" || s == "*BLANKS") ? string.Empty : value;

@@ -19,6 +19,8 @@ packages/
 [Tt]est[Rr]esult*/
 *.trx
 coverage.*
+output/playwright/
+.playwright-cli/
 
 # Node / Vite
 node_modules/
@@ -57,4 +59,3 @@ logs/
 PLAN.md
 PLAN2.md
 PROJECT.md
-.github/

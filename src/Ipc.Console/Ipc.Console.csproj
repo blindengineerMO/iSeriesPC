@@ -6,6 +6,7 @@
     <StartupObject>Ipc.Console.Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Ipc.Session\Ipc.Session.csproj" />
     <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
     <ProjectReference Include="..\Ipc.Services\Ipc.Services.csproj" />
     <ProjectReference Include="..\Ipc.Terminal\Ipc.Terminal.csproj" />

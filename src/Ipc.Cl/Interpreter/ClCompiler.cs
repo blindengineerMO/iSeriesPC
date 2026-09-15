@@ -1,75 +1,42 @@
 using Ipc.Cl.Parsing;
+using Ipc.Core.Compilation;
 
 namespace Ipc.Cl.Interpreter;
 
-public sealed class ClCompiler
+public sealed class ClCompiler(Func<ClFileRequest, ClDatabaseFile>? fileResolver = null)
 {
-    public ClProgram Compile(string name, string library, string source)
+    public ClProgram Compile(string name, string library, string source, CancellationToken cancellationToken = default) => Compile(name, library, new SourceDocument(library + "/" + name, source), cancellationToken: cancellationToken);
+
+    public ClProgram Compile(string name, string library, SourceDocument source,
+        Func<SourceDocument, string, SourceDocument>? resolver = null, CancellationToken cancellationToken = default)
     {
-        var statements = new List<ClStatement>();
-        IReadOnlyList<string> entryParameters = Array.Empty<string>();
-        var lineNumber = 0;
+        try { return Compile(name, library, new SourcePreprocessor(resolver).Expand(source, cancellationToken), cancellationToken); }
+        catch (SourcePreprocessException error) { throw new ClCompileException(error); }
+    }
 
-        foreach (var raw in source.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-        {
-            lineNumber++;
-            var line = raw.Trim();
-
-            if (line.Length == 0 || line.StartsWith('*') || line.StartsWith("//"))
-            {
-                continue;
-            }
-
-            var upper = line.ToUpperInvariant();
-
-            try
-            {
-                if (upper.StartsWith("PGM "))
-                {
-                    var call = CommandParser.Parse(line);
-                    entryParameters = call.Split("PARM");
-                    statements.Add(new ClStatement { Kind = ClStatementKind.Program, EntryParameters = entryParameters });
-                    continue;
-                }
-
-                if (upper == "PGM" || upper.StartsWith("PGM("))
-                {
-                    var call = CommandParser.Parse(line);
-                    entryParameters = call.Split("PARM");
-                    statements.Add(new ClStatement { Kind = ClStatementKind.Program, EntryParameters = entryParameters });
-                    continue;
-                }
-
-                if (upper == "ENDPGM")
-                {
-                    statements.Add(new ClStatement { Kind = ClStatementKind.EndProgram });
-                    break;
-                }
-
-                statements.Add(ParseStatement(line));
-            }
-            catch (ClParseException ex)
-            {
-                throw new ClCompileException(name, library, lineNumber, ex.Message);
-            }
-        }
-
+    public ClProgram Compile(string name, string library, PreprocessedSource source, CancellationToken cancellationToken = default)
+    {
+        var lowerer = new ClControlFlowCompiler(source, cancellationToken, fileResolver);
+        var statements = lowerer.Compile();
+        var entryParameters = statements.LastOrDefault(s => s.Kind == ClStatementKind.Program)?.EntryParameters ?? Array.Empty<string>();
         var labels = ResolveLabels(statements);
-        ResolveBlocks(statements);
 
         return new ClProgram
         {
             Name = name,
             Library = library,
+            Source = source,
             Statements = statements,
+            Monitors = lowerer.Monitors,
+            Files = lowerer.Files,
             Labels = labels,
             EntryParameters = entryParameters,
         };
     }
 
-    private static ClStatement ParseStatement(string line)
+    internal static ClStatement ParseStatement(string line)
     {
-        var keyword = line.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
+        var keyword = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)[0].ToUpperInvariant();
 
         if (keyword == "DCL")
         {
@@ -77,8 +44,10 @@ public sealed class ClCompiler
             return new ClStatement
             {
                 Kind = ClStatementKind.Declare,
-                VariableName = call.GetOption("VAR"),
-                Value = CallOrEmpty(call, "VALUE"),
+                VariableName = Parameter(call, "VAR", 0)?.ToUpperInvariant(),
+                Value = Parameter(call, "VALUE", 3),
+                DeclarationType = Parameter(call, "TYPE", 1)?.ToUpperInvariant(),
+                DeclarationLength = Parameter(call, "LEN", 2),
             };
         }
 
@@ -88,8 +57,8 @@ public sealed class ClCompiler
             return new ClStatement
             {
                 Kind = ClStatementKind.Change,
-                VariableName = call.GetOption("VAR"),
-                Value = CallOrEmpty(call, "VALUE"),
+                VariableName = Parameter(call, "VAR", 0)?.ToUpperInvariant(),
+                Value = CallOrEmpty(call, "VALUE") ?? Parameter(call, "VALUE", 1),
             };
         }
 
@@ -155,7 +124,7 @@ public sealed class ClCompiler
             };
         }
 
-        if (keyword == "SNDPGMMSG" || keyword == "SNDMSG")
+        if (keyword == "SNDPGMMSG")
         {
             var call = CommandParser.Parse(line);
             return new ClStatement
@@ -195,62 +164,29 @@ public sealed class ClCompiler
         {
             if (statements[i].Kind == ClStatementKind.Label)
             {
-                labels[statements[i].Label!] = i;
+                if (!labels.TryAdd(statements[i].Label!, i)) throw new ClCompileException(statements[i].Location!, "Duplicate label " + statements[i].Label + ".");
             }
         }
 
         return labels;
     }
 
-    private static void ResolveBlocks(IReadOnlyList<ClStatement> statements)
+    private static string? Parameter(CommandCall call, string keyword, int position)
     {
-        for (var i = 0; i < statements.Count; i++)
-        {
-            if (statements[i].Kind != ClStatementKind.If || statements[i].Then is not null)
-            {
-                continue;
-            }
-
-            var depth = 0;
-            int? elseIndex = null;
-            int? endIndex = null;
-
-            for (var j = i + 1; j < statements.Count; j++)
-            {
-                switch (statements[j].Kind)
-                {
-                    case ClStatementKind.If when statements[j].Then is null:
-                        depth++;
-                        break;
-                    case ClStatementKind.Else when depth == 0:
-                        elseIndex = j;
-                        break;
-                    case ClStatementKind.EndIf when depth == 0:
-                        endIndex = j;
-                        goto found;
-                    case ClStatementKind.EndIf:
-                        depth--;
-                        break;
-                }
-            }
-
-        found:
-            if (endIndex is null)
-            {
-                throw new ClCompileException(string.Empty, string.Empty, 0, "IF without matching ENDIF.");
-            }
-
-            statements[i].Jump = (elseIndex ?? endIndex)!.Value + 1;
-            if (elseIndex is not null)
-            {
-                statements[elseIndex.Value].Jump = endIndex!.Value + 1;
-            }
-        }
+        if (call.GetOption(keyword) is { } value) return value;
+        if (position >= call.Positional.Count) return null;
+        var valueAtPosition = call.Positional[position];
+        return valueAtPosition.StartsWith('(') && valueAtPosition.EndsWith(')') ? valueAtPosition[1..^1] : valueAtPosition;
     }
+
 }
 
 public sealed class ClCompileException : Exception
 {
+    public SourceLocation? Location { get; }
+    public ClCompileException(SourceLocation location, string message) : base($"IPC0006: {location}: {message}") { Location = location; }
+    public ClCompileException(SourcePreprocessException error) : base(error.Message, error) { Location = error.Location; }
+
     public ClCompileException(string program, string library, int lineNumber, string message)
         : base($"{library}/{program}:{(lineNumber == 0 ? "?" : lineNumber.ToString())}: {message}")
     {

@@ -189,7 +189,7 @@ public class IpcSystemTests
 
         Assert.True(system.Libraries.LibraryExists("QGPL"));
         Assert.Equal("40", system.SystemValues.Get(SystemValueNames.SecurityLevel).Value);
-        Assert.Equal(LibraryNames.SystemDefaults.Count + 2, system.Objects.ObjectCount);
+        Assert.Equal(LibraryNames.SystemDefaults.Count + 13 + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
         system.Log.Info("integration ok");
         Assert.Equal(2, system.Log.Recent(10).Count);
     }

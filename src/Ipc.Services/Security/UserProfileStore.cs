@@ -9,6 +9,7 @@ public sealed class UserProfileStore
 {
     private readonly SqliteConnectionFactory _factory;
     private readonly PasswordPolicy _policy;
+    internal SqliteConnectionFactory Factory => _factory;
 
     public UserProfileStore(SqliteConnectionFactory factory, PasswordPolicy policy)
     {
@@ -28,9 +29,17 @@ public sealed class UserProfileStore
             SpecialAuthorities = UserClasses.BaselineAuthorities(UserClass.SecurityOfficer),
             Description = "IBM default security officer",
         };
-        SetPassword(secofr, "11111111");
-        secofr.Status = ProfileStatus.PasswordExpired;
-        Upsert(secofr);
+        if (!Exists(secofr.Name))
+        {
+            var initial = new BootstrapCredentialStore(_factory).Prepare(_policy);
+            secofr.PasswordHash = PasswordHasher.Hash(initial, secofr.PasswordHashIterations);
+            secofr.PasswordChanged = DateTimeOffset.UtcNow;
+            secofr.PasswordExpires = secofr.PasswordChanged.Value.AddDays(ExpirationIntervalDays());
+            secofr.Status = ProfileStatus.PasswordExpired;
+            Upsert(secofr, createOnly: true);
+        }
+        else if (Get(secofr.Name).Status != ProfileStatus.PasswordExpired)
+            new BootstrapCredentialStore(_factory).Remove();
 
         var qsecadm = new UserProfile
         {
@@ -39,7 +48,7 @@ public sealed class UserProfileStore
             SpecialAuthorities = UserClasses.BaselineAuthorities(UserClass.SecurityAdministrator),
             Description = "IBM default security administrator",
         };
-        Upsert(qsecadm);
+        Upsert(qsecadm, createOnly: true);
 
         var qsysopr = new UserProfile
         {
@@ -48,7 +57,7 @@ public sealed class UserProfileStore
             SpecialAuthorities = UserClasses.BaselineAuthorities(UserClass.SystemOperator),
             Description = "IBM system operator",
         };
-        Upsert(qsysopr);
+        Upsert(qsysopr, createOnly: true);
 
         var qpgmr = new UserProfile
         {
@@ -56,7 +65,7 @@ public sealed class UserProfileStore
             UserClass = UserClass.Programmer,
             Description = "IBM default programmer",
         };
-        Upsert(qpgmr);
+        Upsert(qpgmr, createOnly: true);
 
         var quser = new UserProfile
         {
@@ -64,7 +73,7 @@ public sealed class UserProfileStore
             UserClass = UserClass.User,
             Description = "IBM user used by host services and database",
         };
-        Upsert(quser);
+        Upsert(quser, createOnly: true);
 
         var qsys = new UserProfile
         {
@@ -74,12 +83,45 @@ public sealed class UserProfileStore
             Description = "System service profile",
             Status = ProfileStatus.Disabled,
         };
-        Upsert(qsys);
+        Upsert(qsys, createOnly: true);
     }
 
     public bool Exists(string name) => TryGet(name) is not null;
 
+    public string ResetAdministratorCredential()
+    {
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
+        var bootstrap = new BootstrapCredentialStore(_factory);
+        var path = bootstrap.PathName ?? throw new InvalidOperationException("Recovery requires a persistent catalog.");
+        bootstrap.Remove();
+        var password = bootstrap.Prepare(_policy);
+        var profile = Get(ProfileNames.QSecOficer);
+        profile.PasswordHash = PasswordHasher.Hash(password, profile.PasswordHashIterations);
+        profile.PasswordChanged = DateTimeOffset.UtcNow;
+        profile.PasswordExpires = null;
+        profile.Status = ProfileStatus.PasswordExpired;
+        profile.SignOnAttempts = 0;
+        Upsert(profile);
+        using (var connection = _factory.Open())
+        using (var transaction = connection.BeginTransaction(deferred: false))
+        {
+            using var reset = connection.CreateCommand();
+            reset.Transaction = transaction;
+            reset.CommandText = "DELETE FROM sys_mfa_enrollments WHERE profile='QSECOFR'; DELETE FROM sys_mfa WHERE profile='QSECOFR'";
+            reset.ExecuteNonQuery();
+            MfaStore.Audit(connection, transaction, "security.administrator.recovered", profile.Name, true, DateTimeOffset.UtcNow);
+            transaction.Commit();
+        }
+        return path;
+    }
+
     public UserProfile? TryGet(string name)
+    {
+        new ServiceAuthorization(_factory).RequireProfileRead(name);
+        return TryGetForAuthentication(name);
+    }
+
+    internal UserProfile? TryGetForAuthentication(string name)
     {
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
@@ -102,6 +144,7 @@ public sealed class UserProfileStore
 
     public IReadOnlyList<UserProfile> ListAll()
     {
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "SELECT name, user_class, special_auth, group_profile, owner, description, " +
@@ -120,104 +163,161 @@ public sealed class UserProfileStore
 
     public void Create(UserProfile profile)
     {
-        if (Exists(profile.Name))
-        {
-            throw new CpfException("CPF2205", $"User profile {profile.Name} already exists.");
-        }
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
+        Upsert(profile, createOnly: true, rejectExisting: true);
+    }
 
+    public void Update(UserProfile profile)
+    {
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
         Upsert(profile);
     }
 
-    public void Update(UserProfile profile) => Upsert(profile);
+    public void SaveSettings(UserProfile profile, bool create, string? password = null, bool removePassword = false)
+    {
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
+        if (password is not null && removePassword) throw new ArgumentException("Choose a password or password removal.");
+        if (password is not null)
+        {
+            var issues = _policy.Validate(password); if (issues.Count > 0) throw new CpfException("CPF22M3", issues[0]);
+            profile.PasswordHashIterations = 210_000; profile.PasswordHash = PasswordHasher.Hash(password, profile.PasswordHashIterations);
+            profile.PasswordChanged = DateTimeOffset.UtcNow;
+            var interval = ExpirationIntervalDays(); profile.PasswordExpires = interval == 0 ? null : profile.PasswordChanged.Value.AddDays(interval);
+            profile.SignOnAttempts = 0;
+        }
+        else if (removePassword) { profile.PasswordHash = null; profile.PasswordChanged = DateTimeOffset.UtcNow; profile.PasswordExpires = null; profile.SignOnAttempts = 0; }
+        new Ipc.Services.Work.JobLockStore(_factory).RequireAccess("QSYS", profile.Name.ToUpperInvariant(), Ipc.Core.Objects.ObjectType.UserProfile, Ipc.Core.Objects.AuthorityBit.ObjectManagement);
+        Upsert(profile, createOnly: create, rejectExisting: create, preserveCredentials: !create && password is null && !removePassword);
+    }
 
     public void Delete(string name)
     {
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
         if (SystemProfiles.Contains(name.ToUpperInvariant(), StringComparer.Ordinal))
         {
             throw new CpfException("CPF2283", $"User profile {name} cannot be deleted.");
         }
 
-        using var connection = _factory.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM sys_profiles WHERE name = $name";
-        cmd.Parameters.AddWithValue("$name", name.ToUpperInvariant());
-        cmd.ExecuteNonQuery();
+        new ObjectCatalogOperations(_factory).Delete(new Ipc.Core.Objects.QualifiedName("QSYS", name.ToUpperInvariant()), Ipc.Core.Objects.ObjectType.UserProfile);
     }
 
     public void SetPassword(UserProfile profile, string password)
     {
-        var issues = _policy.Validate(password);
-        if (issues.Count > 0)
-        {
-            throw new CpfException("CPF22M3", issues[0]);
-        }
+        new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);
+        SetPasswordCore(profile, password);
+    }
 
-        profile.PasswordHash = PasswordHasher.Hash(password, profile.PasswordHashIterations);
-        profile.PasswordChanged = DateTimeOffset.UtcNow;
-        profile.PasswordExpires = profile.PasswordChanged.Value.AddDays(ExpirationIntervalDays());
+    private void SetPasswordCore(UserProfile profile, string password, string? expectedHash = null, string? expectedMfa = null)
+    {
+        var issues = _policy.Validate(password);
+        if (issues.Count > 0) throw new CpfException("CPF22M3", issues[0]);
+        var hash = PasswordHasher.Hash(password, profile.PasswordHashIterations);
+        var changed = DateTimeOffset.UtcNow;
+        var interval = ExpirationIntervalDays();
+        DateTimeOffset? expires = interval == 0 ? null : changed.AddDays(interval);
+        using var connection = _factory.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE sys_profiles SET password_hash=$hash, hash_iterations=$iterations,
+                password_changed=$changed, password_expires=$expires, status='Enabled', signon_attempts=0
+            WHERE name=$name
+            """ + (expectedHash is null ? "" : " AND password_hash=$expected AND status IN ('Enabled','PasswordExpired') AND $mfa IS (SELECT revision FROM sys_mfa WHERE profile=$name)");
+        cmd.Parameters.AddWithValue("$hash", hash);
+        cmd.Parameters.AddWithValue("$iterations", profile.PasswordHashIterations);
+        cmd.Parameters.AddWithValue("$changed", changed.ToString("o"));
+        cmd.Parameters.AddWithValue("$expires", (object?)expires?.ToString("o") ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$name", profile.Name.ToUpperInvariant());
+        if (expectedHash is not null) cmd.Parameters.AddWithValue("$expected", expectedHash);
+        if (expectedHash is not null) cmd.Parameters.AddWithValue("$mfa", (object?)expectedMfa ?? DBNull.Value);
+        if (cmd.ExecuteNonQuery() != 1) throw new CpfException("CPF22CD", "Profile or credentials changed; sign on again.");
+        profile.PasswordHash = hash;
+        profile.PasswordChanged = changed;
+        profile.PasswordExpires = expires;
         profile.Status = ProfileStatus.Enabled;
-        Upsert(profile);
+        profile.SignOnAttempts = 0;
+        if (profile.Name.Equals(ProfileNames.QSecOficer, StringComparison.OrdinalIgnoreCase))
+            new BootstrapCredentialStore(_factory).Remove();
     }
 
     public void ChangePassword(string name, string current, string next)
+        => ChangePassword(name, current, next, profile =>
+        {
+            using var connection = _factory.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT count(*) FROM sys_mfa WHERE profile=$profile";
+            command.Parameters.AddWithValue("$profile", profile.Name);
+            if (Convert.ToInt64(command.ExecuteScalar()) != 0) throw new CpfException("IPC0102", "Use MFA-verified password change.");
+            return null;
+        });
+
+    internal void ChangePassword(string name, string current, string next, Func<UserProfile, string?> verifyFactor)
     {
         var profile = Get(name);
+        if (profile.Status is not (ProfileStatus.Enabled or ProfileStatus.PasswordExpired))
+            throw new CpfException("CPF22CD", "Profile is unavailable; contact a security administrator.");
         if (!PasswordHasher.Verify(current, profile.PasswordHash ?? string.Empty))
         {
+            RecordSignOnFailure(name);
             throw new CpfException("CPF22CD", "Current password is not correct.");
         }
-
-        SetPassword(profile, next);
-        Upsert(profile);
+        SetPasswordCore(profile, next, profile.PasswordHash, verifyFactor(profile));
     }
 
     public bool VerifyPassword(string name, string password)
     {
         var profile = TryGet(name);
-        return profile?.PasswordHash is not null &&
-               PasswordHasher.Verify(password, profile.PasswordHash);
+        return profile?.PasswordHash is not null && PasswordHasher.Verify(password, profile.PasswordHash);
     }
 
     public void RecordSignOnFailure(string name)
     {
-        var profile = TryGet(name);
-        if (profile is null)
-        {
-            return;
-        }
-
-        profile.SignOnAttempts++;
-        var maximum = MaximumSignOnAttempts();
-        if (profile.SignOnAttempts >= maximum)
-        {
-            profile.Status = ProfileStatus.Disabled;
-        }
-
-        Upsert(profile);
+        new ServiceAuthorization(_factory).RequireProfileRead(name);
+        using var connection = _factory.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE sys_profiles SET signon_attempts=signon_attempts+1,
+                status=CASE WHEN signon_attempts+1 >= $maximum THEN 'Disabled' ELSE status END
+            WHERE name=$name AND status IN ('Enabled','PasswordExpired')
+            """;
+        cmd.Parameters.AddWithValue("$maximum", MaximumSignOnAttempts());
+        cmd.Parameters.AddWithValue("$name", name.ToUpperInvariant());
+        cmd.ExecuteNonQuery();
     }
 
     public void RecordSignOnSuccess(string name)
     {
-        var profile = TryGet(name);
-        if (profile is null)
-        {
-            return;
-        }
+        new ServiceAuthorization(_factory).RequireProfileRead(name);
+        var profile = TryGetForAuthentication(name);
+        if (profile is not null) RecordVerifiedSignOn(profile);
+    }
 
-        profile.SignOnAttempts = 0;
-        profile.DaysUsed++;
-        Upsert(profile);
+    internal bool RecordVerifiedSignOn(UserProfile snapshot)
+    {
+        // Only counters change. A concurrent disable, password reset or expiry must win.
+        using var connection = _factory.Open();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            UPDATE sys_profiles SET signon_attempts=0, days_used=days_used+1
+            WHERE name=$name AND status=$status AND status IN ('Enabled','PasswordExpired')
+              AND password_hash IS $hash AND password_expires IS $expires
+            """;
+        cmd.Parameters.AddWithValue("$name", snapshot.Name);
+        cmd.Parameters.AddWithValue("$status", snapshot.Status.ToString());
+        cmd.Parameters.AddWithValue("$hash", (object?)snapshot.PasswordHash ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$expires", (object?)snapshot.PasswordExpires?.ToString("o") ?? DBNull.Value);
+        return cmd.ExecuteNonQuery() == 1;
     }
 
     public IReadOnlyList<string> EffectiveGroups(string name)
     {
         var groups = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var current = TryGet(name)?.GroupProfile;
+        new ServiceAuthorization(_factory).RequireProfileRead(name);
+        var current = TryGetForAuthentication(name)?.GroupProfile;
         while (current is not null && seen.Add(current))
         {
             groups.Add(current);
-            current = TryGet(current)?.GroupProfile;
+            current = TryGetForAuthentication(current)?.GroupProfile;
         }
 
         return groups;
@@ -247,11 +347,26 @@ public sealed class UserProfileStore
             : 3;
     }
 
-    private void Upsert(UserProfile profile)
+    private void Upsert(UserProfile profile, bool createOnly = false, bool rejectExisting = false, bool preserveCredentials = false)
     {
         profile.Name = profile.Name.ToUpperInvariant();
+        if (!Ipc.Core.Objects.ObjectName.IsValid(profile.Name))
+            throw new ArgumentException("A valid profile name is required.", nameof(profile));
+        if (profile.Owner is not null && !Ipc.Core.Objects.ObjectName.IsValid(profile.Owner))
+            throw new ArgumentException("A valid owner profile name is required.", nameof(profile));
         using var connection = _factory.Open();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        if (!createOnly)
+        {
+            using var exists = connection.CreateCommand();
+            exists.Transaction = transaction;
+            exists.CommandText = "SELECT count(*) FROM sys_profiles WHERE name=$name";
+            exists.Parameters.AddWithValue("$name", profile.Name);
+            if (Convert.ToInt64(exists.ExecuteScalar()) != 1)
+                throw new CpfException("CPF2204", $"User profile {profile.Name} not found.");
+        }
         using var cmd = connection.CreateCommand();
+        cmd.Transaction = transaction;
         cmd.CommandText = """
             INSERT INTO sys_profiles (
                 name, user_class, special_auth, group_profile, owner, description, status,
@@ -281,6 +396,12 @@ public sealed class UserProfileStore
                 country_id = excluded.country_id,
                 locale = excluded.locale;
             """;
+        if (preserveCredentials)
+            foreach (var column in new[] { "password_hash", "hash_iterations", "password_changed", "password_expires", "signon_attempts", "days_used" })
+                cmd.CommandText = cmd.CommandText.Replace(column + " = excluded." + column, column + " = sys_profiles." + column, StringComparison.Ordinal);
+        if (createOnly)
+            cmd.CommandText = cmd.CommandText[..cmd.CommandText.IndexOf("ON CONFLICT", StringComparison.Ordinal)] +
+                "ON CONFLICT(name) DO NOTHING;";
         cmd.Parameters.AddWithValue("$name", profile.Name);
         cmd.Parameters.AddWithValue("$class", UserClasses.Name(profile.UserClass));
         cmd.Parameters.AddWithValue("$auth", (int)profile.SpecialAuthorities);
@@ -304,7 +425,10 @@ public sealed class UserProfileStore
         cmd.Parameters.AddWithValue("$ccsid", profile.Ccsid);
         cmd.Parameters.AddWithValue("$country", (object?)profile.CountryId ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$locale", (object?)profile.Locale ?? DBNull.Value);
-        cmd.ExecuteNonQuery();
+        var changed = cmd.ExecuteNonQuery();
+        if (rejectExisting && changed == 0)
+            throw new CpfException("CPF2205", $"User profile {profile.Name} already exists.");
+        transaction.Commit();
     }
 
     private static UserProfile FromReader(System.Data.Common.DbDataReader reader)
@@ -319,7 +443,7 @@ public sealed class UserProfileStore
             GroupProfile = N(3),
             Owner = N(4),
             Description = N(5),
-            Status = Enum.TryParse<ProfileStatus>(reader.GetString(6), out var status) ? status : ProfileStatus.Enabled,
+            Status = Enum.TryParse<ProfileStatus>(reader.GetString(6), out var status) ? status : ProfileStatus.Disabled,
             InitialMenu = N(7),
             InitialProgram = N(8),
             InitialCurrentLibrary = N(9),

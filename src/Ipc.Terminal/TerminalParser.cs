@@ -2,80 +2,57 @@ using System.Text;
 
 namespace Ipc.Terminal;
 
+/// <summary>Bounded streaming VT parser. Unknown escape strings never become command text.</summary>
 public sealed class TerminalParser
 {
-    private readonly StringBuilder _escape = new();
-    private bool _inEscape;
-
+    private enum State { Plain, Escape, Csi, Ss3, String, StringEscape }
+    private State _state;
+    private readonly StringBuilder _escape = new(64);
+    private bool _overflow;
+    private bool _paste;
+    public bool IsPasting => _paste;
+    public bool HasPendingEscape => _state != State.Plain;
     public IReadOnlyList<KeyPress> Feed(char ch)
     {
-        var output = new List<KeyPress>();
-
-        if (_inEscape)
+        var output = new List<KeyPress>(1);
+        if (_state is State.String or State.StringEscape)
         {
-            _escape.Append(ch);
-            if (IsCompleteEscape(_escape.ToString()))
-            {
-                var translated = KeyTranslator.Translate(_escape.ToString());
-                if (translated is { } key)
-                {
-                    output.Add(key);
-                }
-
-                _inEscape = false;
-                _escape.Clear();
-            }
-
+            if (ch == '\a' || _state == State.StringEscape && ch == '\\') EndEscape();
+            else _state = ch == '\u001b' ? State.StringEscape : State.String;
             return output;
         }
-
-        if (ch == '\u001b')
+        if (ch == '\u001b') { EndEscape(); _state = State.Escape; _escape.Append(ch); return output; }
+        if (_state == State.Plain)
         {
-            _inEscape = true;
-            _escape.Append(ch);
+            var key = _paste && ch is '\r' or '\n' or '\t' ? new KeyPress(AidKey.None, Character: ' ') : KeyTranslator.Translate(ch.ToString(), ch);
+            if (key is { } plain && (!_paste || plain.Aid == AidKey.None && plain.Character != '\0')) output.Add(plain);
             return output;
         }
-
-        var plain = KeyTranslator.Translate(ch.ToString(), ch);
-        if (plain is { } plainKey)
+        if (_escape.Length < 64) _escape.Append(ch); else _overflow = true;
+        if (_state == State.Escape)
         {
-            output.Add(plainKey);
+            _state = ch switch { '[' => State.Csi, 'O' => State.Ss3, ']' or 'P' or '^' or '_' => State.String, _ => State.Plain };
+            if (_state == State.Plain) EndEscape();
+            return output;
         }
-
+        var complete = ch is >= '@' and <= '~';
+        if (complete)
+        {
+            var sequence = _escape.ToString();
+            if (!_overflow && sequence == "\u001b[200~") _paste = true;
+            else if (!_overflow && sequence == "\u001b[201~") _paste = false;
+            else if (!_overflow && !_paste && KeyTranslator.Translate(sequence) is { } key) output.Add(key);
+            EndEscape();
+        }
+        else if (ch is < ' ' or > '~') EndEscape();
         return output;
     }
-
-    public void Reset()
+    /// <summary>Called after an input idle timeout. Lone Escape is Attention; incomplete control strings remain bounded until their terminator.</summary>
+    public IReadOnlyList<KeyPress> FlushPending()
     {
-        _inEscape = false;
-        _escape.Clear();
+        var attention = _state == State.Escape && !_paste;
+        if (_state == State.Escape) EndEscape(); return attention ? new[] { new KeyPress(AidKey.Pa1) } : Array.Empty<KeyPress>();
     }
-
-    private static bool IsCompleteEscape(string buffer)
-    {
-        foreach (var sequence in KnownSequences)
-        {
-            if (string.Equals(sequence, buffer, StringComparison.Ordinal))
-            {
-                return true;
-            }
-
-            if (sequence.StartsWith(buffer, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return buffer.Length > 3;
-    }
-
-    private static readonly string[] KnownSequences =
-    {
-        "\u001b[A", "\u001b[B", "\u001b[C", "\u001b[D", "\u001b[H", "\u001b[F",
-        "\u001b[Z", "\u001b[1;5C", "\u001b[1;5D",
-        "\r", "\n", "\b", "\u007f", "\t",
-        "\u001bOP", "\u001bOQ", "\u001bOR", "\u001bOS",
-        "\u001b[15~", "\u001b[17~", "\u001b[18~", "\u001b[19~",
-        "\u001b[20~", "\u001b[21~", "\u001b[23~", "\u001b[24~",
-    };
+    private void EndEscape() { _state = State.Plain; _escape.Clear(); _overflow = false; }
+    public void Reset() { EndEscape(); _paste = false; }
 }

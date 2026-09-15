@@ -153,6 +153,17 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
 - **Coercion** (`RpgRuntimeContext.Coerce`): decimals round to the field's precision; character
   values are trimmed/padded to the field length.
 - **Entry parameters**: `PLIST *ENTRY` with `PARM` targets binds `Run(params)` values into fields.
+- **Prototypes**: a D-spec with `PR` in the type column registers an `RpgPrototype` (name, optional
+  `EXTPROC('name')`/`EXTPGM('name')` external name). Blank-named D-specs that follow it become the
+  prototype's parameters (synthetic program fields `P1`, `P2`, … bound by reference). `CALLP`
+  resolves the callee name against prototypes before falling back to a bare external call, so
+  `callp calc(1:2);` with an `EXTPROC('INNER')` prototype calls the host program `INNER`.
+- **Procedure pointers**: `PROCPTR` on a standalone field stores a program name; `CALLP name(args)`
+  against such a field reads it and calls the named program (so `eval FN = 'REALPGM'; callp FN(5);`
+  invokes `REALPGM`).
+- **PLIST writeback**: fixed `CALL 'pgm' PL` (and free `CALLP 'pgm'(PL)`) forwards the `PLIST`'s
+  `PARM` fields to the host; when the host returns `RpgExternalCallResult.UpdatedParameters`, each
+  entry is written back into the corresponding `PARM` field (by-reference semantics).
 
 ## 8. Files
 
@@ -165,13 +176,14 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
 ## 9. Program object model
 
 `RpgProgram` — name/library, `IsFreeForm`, `Fields`, `DataStructures`, `EntryPlist`,
-`MainStatements`, `Subroutines`, `Subprocedures`. `RpgStatement` — `Opcode`, `Factor1`/`Factor2`/
-`Result`, `Length`, `Value` (free operand text), `Conditions`, `Label`, `Indicator1`/`Indicator2`,
-`Jump` (else/branch target index), `End` (block end index). `RpgField` — name, kind (Zoned/Packed/
-Character), length, decimals, `InitialValue`, `IsArray`/`Dimension`, `IsDataStructure`, `Varying`,
-`Source`. Subroutines are `BEGSR…ENDSR` blocks re-parented out of the main stream, and
-subprocedures are P-spec blocks re-parented into `Subprocedures` (`RpgSubprocedure` — name,
-`Statements`, `Parameters`).
+`MainStatements`, `Subroutines`, `Subprocedures`, `Prototypes`. `RpgStatement` — `Opcode`,
+`Factor1`/`Factor2`/`Result`, `Length`, `Value` (free operand text), `Conditions`, `Label`,
+`Indicator1`/`Indicator2`, `Jump` (else/branch target index), `End` (block end index). `RpgField` —
+name, kind (Zoned/Packed/Character/ProcPtr), length, decimals, `InitialValue`, `IsArray`/`Dimension`,
+`IsDataStructure`, `Varying`, `Source`. Subroutines are `BEGSR…ENDSR` blocks re-parented out of the
+main stream, and subprocedures are P-spec blocks re-parented into `Subprocedures`
+(`RpgSubprocedure` — name, `Statements`, `Parameters`). Prototypes are D-spec `PR` rows in
+`Prototypes` (`RpgPrototype` — name, `ExternalName`, `Parameters`).
 
 ## 10. Limits and divergence notes
 
@@ -192,5 +204,9 @@ subprocedures are P-spec blocks re-parented into `Subprocedures` (`RpgSubprocedu
 - **Subprocedures share the program's field namespace**: procedure D-specs are registered in
   `program.Fields` and mirrored as the procedure's `Parameters`, so a global field and a
   procedure-local of the same name collide.
+- **`**free` is global**: a program containing `**free` is free-form throughout, so fixed-form
+  C-specs (e.g. a fixed `PLIST`) cannot coexist with `**free` in the same source — use fixed-form
+  `CALL` with `PLIST` for that. `PLIST` parameter forwarding therefore lives in fixed form;
+  prototypes and procedure pointers cover the free-form calling cases.
 - **`*INLR` honored**: setting `*INLR` (via `SETON *INLR`, `seton *inlr`, or assigning it with
   `EVAL`) stops the main `Execute` loop, matching classic RPG's last-record indicator.

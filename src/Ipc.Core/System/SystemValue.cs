@@ -91,7 +91,7 @@ public sealed class SystemValueRegistry
         V(SystemValueNames.TimeFormat, "*HMS", SystemValueType.Character, "Time format"),
         V(SystemValueNames.TimeSeparator, ":"),
         V(SystemValueNames.SecurityLevel, "40", SystemValueType.Numeric, "Security level"),
-        V(SystemValueNames.PasswordSystemLevel, "*SYSVAL", SystemValueType.Character, "Password level follows QSECURITY"),
+        V(SystemValueNames.PasswordSystemLevel, "3", SystemValueType.Character, "Password compatibility level (0/1: 10, 2/3/4: 128 characters)"),
         V(SystemValueNames.PasswordMinimumLength, "6", SystemValueType.Numeric),
         V(SystemValueNames.PasswordRequiredDigit, "*NO", SystemValueType.Character, "Require digit in passwords"),
         V(SystemValueNames.PasswordRepeatedCharacters, "*NO", SystemValueType.Character, "Repeated characters not allowed"),

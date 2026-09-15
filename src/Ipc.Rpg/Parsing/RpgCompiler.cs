@@ -61,6 +61,8 @@ public static class RpgCompiler
     {
         RpgDataStructure? currentDs = null;
         RpgSubprocedure? currentProc = null;
+        RpgPrototype? currentPrototype = null;
+        var prototypeParamIndex = 0;
         foreach (var line in lines)
         {
             var spec = line.Length >= 7 ? line[6] : ' ';
@@ -74,6 +76,7 @@ public static class RpgCompiler
                 var marker = line.Length >= 24 ? line[23] : ' ';
                 var procName = Col(line, 8, 21).Trim();
                 currentDs = null;
+                currentPrototype = null;
                 if (marker == 'B' && procName.Length > 0)
                 {
                     currentProc = new RpgSubprocedure { Name = procName.ToUpperInvariant() };
@@ -108,6 +111,20 @@ public static class RpgCompiler
 
                 currentDs.Dimension = ParseKeywordInt(keywords, "DIM") ?? 1;
                 program.DataStructures.Add(currentDs);
+                currentPrototype = null;
+                continue;
+            }
+
+            if (type is "PR" or "PI")
+            {
+                currentDs = null;
+                prototypeParamIndex = 0;
+                currentPrototype = new RpgPrototype
+                {
+                    Name = name.ToUpperInvariant(),
+                    ExternalName = ParseExternalName(keywords),
+                };
+                program.Prototypes.Add(currentPrototype);
                 continue;
             }
 
@@ -119,6 +136,21 @@ public static class RpgCompiler
             }
 
             currentDs = null;
+            if (currentPrototype is not null && type.Length == 0)
+            {
+                prototypeParamIndex++;
+                var parameterField = ParseStandalone(
+                    name.Length > 0 ? name : $"P{prototypeParamIndex}", type, lengthText, decimalsText, keywords);
+                if (parameterField is not null)
+                {
+                    program.Fields.Add(parameterField);
+                    currentPrototype.Parameters.Add(parameterField.Name);
+                }
+
+                continue;
+            }
+
+            currentPrototype = null;
             var field = ParseStandalone(name, type, lengthText, decimalsText, keywords);
             if (field is not null)
             {
@@ -129,6 +161,18 @@ public static class RpgCompiler
                 }
             }
         }
+    }
+
+    private static string? ParseExternalName(string keywords)
+    {
+        var match = Regex.Match(keywords, @"(?i)EXTPROC\(\s*'([^']*)'\s*\)");
+        if (match.Success)
+        {
+            return match.Groups[1].Value;
+        }
+
+        match = Regex.Match(keywords, @"(?i)EXTPGM\(\s*'([^']*)'\s*\)");
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     private static RpgDsElement ParseDsElement(string name, string lengthText, string decimalsText,
@@ -218,6 +262,12 @@ public static class RpgCompiler
         {
             kind = RpgFieldKind.Timestamp;
             length = 26;
+        }
+
+        if (HasKeyword(keywords, "PROCPTR"))
+        {
+            kind = RpgFieldKind.ProcPtr;
+            length = Math.Max(1, length);
         }
 
         var field = new RpgField

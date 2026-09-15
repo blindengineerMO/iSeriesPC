@@ -169,7 +169,7 @@ public class AnsiRendererTests
         var diff = new AnsiRenderer().RenderDiff(a, b, out var changed);
         Assert.True(changed);
         Assert.Contains("\u001b[5;5H", diff);
-        Assert.Single(global::System.Text.RegularExpressions.Regex.Matches(diff, @"\x1b\[\d+;\d+H"));
+        Assert.EndsWith("\u001b[5;6H", diff); // Restore the logical cursor after painting the changed cell.
     }
 }
 
@@ -267,7 +267,7 @@ public class DisplayFormTests
     }
 
     [Fact]
-    public void Field_exit_takes_cursor_to_end()
+    public void Field_exit_clears_remainder_and_advances()
     {
         var form = CreateForm(out _);
         var editor = new FieldEditor(form);
@@ -275,8 +275,9 @@ public class DisplayFormTests
         editor.Apply('X');
         editor.ApplyEdit(CursorEdit.FieldExit);
 
-        Assert.Equal(10, form.Active.CursorOffset);
-        Assert.Equal(0, form.ActiveIndex);
+        Assert.Equal("X", form.ReadValue(0));
+        Assert.Equal(0, form.Active.CursorOffset);
+        Assert.Equal(1, form.ActiveIndex);
     }
 
     [Fact]

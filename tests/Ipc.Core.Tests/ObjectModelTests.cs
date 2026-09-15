@@ -79,7 +79,7 @@ public class QualifiedNameTests
     {
         var q = QualifiedName.Parse("*LIBL/PGM1");
         var libs = QualifiedName.LibrariesIn(q, "CURLIB", new[] { "QSYS", "QGPL" }, new[] { "USRLB1" });
-        Assert.Equal(new[] { "QSYS", "QGPL", "USRLB1" }, libs);
+        Assert.Equal(new[] { "QSYS", "QGPL", "CURLIB", "USRLB1" }, libs);
     }
 }
 

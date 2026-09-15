@@ -9,6 +9,8 @@ public static class ObjectType
     public const string Command = "*CMD";
     public const string File = "*FILE";
     public const string Menu = "*MENU";
+    public const string PanelGroup = "*PNLGRP";
+    public const string MessageFile = "*MSGF";
     public const string MessageQueue = "*MSGQ";
     public const string DataQueue = "*DTAQ";
     public const string DataArea = "*DTAARA";
@@ -35,16 +37,17 @@ public static class ObjectType
     public const string Query = "*QRYDFN";
     public const string QueryManagementQuery = "*QMQRY";
     public const string Documentation = "*DOC";
+    public const string DataDictionary = "*DTADCT";
 
     public static readonly IReadOnlySet<string> All =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            Library, Program, Module, ServiceProgram, Command, File, Menu, MessageQueue,
+            Library, Program, Module, ServiceProgram, Command, File, Menu, PanelGroup, MessageQueue, MessageFile,
             DataQueue, DataArea, UserSpace, OutputQueue, JobDescription, JobQueue,
             SubsystemDescription, Class, UserProfile, AuthorizationList, Journal,
             JournalReceiver, DeviceDescription, ControllerDescription, LineDescription,
-            NetworkServer, BindingDirectory, SourcePhysicalFile, Symbol, ServiceGroup,
-            ProductionFile, DisplayFile, Query, QueryManagementQuery, Documentation,
+            NetworkServer, BindingDirectory, Symbol, ServiceGroup,
+            Query, QueryManagementQuery, Documentation, DataDictionary,
         };
 
     public static bool IsKnown(string value) => All.Contains(value);

@@ -9,6 +9,7 @@ public static class PasswordHasher
 
     public static string Hash(string password, int iterations = 210_000)
     {
+        if (iterations is < 10_000 or > 2_000_000) throw new ArgumentOutOfRangeException(nameof(iterations));
         var salt = RandomNumberGenerator.GetBytes(SaltSize);
         var hash = Pbkdf2(password, salt, iterations);
         return $"{iterations}${Convert.ToBase64String(salt)}${Convert.ToBase64String(hash)}";
@@ -22,9 +23,11 @@ public static class PasswordHasher
             return false;
         }
 
-        var iterations = int.Parse(parts[0]);
-        var salt = Convert.FromBase64String(parts[1]);
-        var expected = Convert.FromBase64String(parts[2]);
+        if (!int.TryParse(parts[0], out var iterations) || iterations is < 10_000 or > 2_000_000) return false;
+        byte[] salt, expected;
+        try { salt = Convert.FromBase64String(parts[1]); expected = Convert.FromBase64String(parts[2]); }
+        catch (FormatException) { return false; }
+        if (salt.Length != SaltSize || expected.Length != KeySize) return false;
         var actual = Pbkdf2(password, salt, iterations);
         return FixedTimeEquals(expected, actual);
     }

@@ -75,11 +75,26 @@ public class SessionTests : IDisposable
         Assert.Equal(SignOnState.Failed, controller.State);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void F6_password_change_requires_current_credentials_before_creating_a_job(bool correct)
+    {
+        var controller = SignOn(_system);
+        controller.SignOn.Form.WriteValue(0, "QSECOFR");
+        controller.Handle(new KeyPress(AidKey.Pf6));
+        Assert.Equal(SignOnState.ChangePassword, controller.State);
+        var current = File.ReadAllText(Path.Combine(_tempDir, "test.db.initial-password")).Trim();
+        FeedChangePassword(controller, correct ? current : "Wrong1", "Replacement1");
+        Assert.Equal(correct ? SignOnState.SignedIn : SignOnState.ChangePassword, controller.State);
+        Assert.Equal(correct ? 1 : 0, _system.Jobs.List().Count);
+    }
+
     [Fact]
     public void Default_password_forces_password_change()
     {
         var controller = SignOn(_system);
-        FeedSignOn(controller, "QSECOFR", "11111111");
+        FeedSignOn(controller, "QSECOFR", File.ReadAllText(_tempDir + "/test.db.initial-password").Trim());
 
         Assert.Equal(SignOnState.ChangePassword, controller.State);
         var heading = controller.Buffer.RowText(3);
@@ -90,10 +105,10 @@ public class SessionTests : IDisposable
     public void Change_password_completes_sign_on()
     {
         var controller = SignOn(_system);
-        FeedSignOn(controller, "QSECOFR", "11111111");
+        FeedSignOn(controller, "QSECOFR", File.ReadAllText(_tempDir + "/test.db.initial-password").Trim());
         Assert.Equal(SignOnState.ChangePassword, controller.State);
 
-        FeedChangePassword(controller, "11111111", "NEWPASS1");
+        FeedChangePassword(controller, File.ReadAllText(_tempDir + "/test.db.initial-password").Trim(), "NEWPASS1");
 
         Assert.Equal(SignOnState.SignedIn, controller.State);
 
@@ -106,9 +121,9 @@ public class SessionTests : IDisposable
     public void Mismatched_new_passwords_are_rejected()
     {
         var controller = SignOn(_system);
-        FeedSignOn(controller, "QSECOFR", "11111111");
+        FeedSignOn(controller, "QSECOFR", File.ReadAllText(_tempDir + "/test.db.initial-password").Trim());
 
-        FeedChangePassword(controller, "11111111", "NEWPASS1", verify: "OTHERPASS");
+        FeedChangePassword(controller, File.ReadAllText(_tempDir + "/test.db.initial-password").Trim(), "NEWPASS1", verify: "OTHERPASS");
 
         Assert.Equal(SignOnState.ChangePassword, controller.State);
     }
@@ -123,7 +138,7 @@ public class SessionTests : IDisposable
             Assert.Equal(SignOnState.Failed, controller.State);
         }
 
-        var result = _system.Security.Authenticate("QSECOFR", "11111111");
+        var result = _system.Security.Authenticate("QSECOFR", File.ReadAllText(_tempDir + "/test.db.initial-password").Trim());
         Assert.False(result.Success);
     }
 

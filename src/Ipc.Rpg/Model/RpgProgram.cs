@@ -85,6 +85,7 @@ public enum RpgFieldKind
     Time,
     Timestamp,
     Indicator,
+    ProcPtr,
 }
 
 public enum RpgFieldSource
@@ -236,6 +237,8 @@ public sealed class RpgProgram
 
     public List<RpgSubprocedure> Subprocedures { get; } = new();
 
+    public List<RpgPrototype> Prototypes { get; } = new();
+
     public List<RpgStatement> MainStatements { get; } = new();
 
     public bool IsFreeForm { get; set; }
@@ -267,4 +270,18 @@ public sealed class RpgProgram
 
     public RpgSubprocedure? FindSubprocedure(string name) =>
         Subprocedures.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    public RpgPrototype? FindPrototype(string name) =>
+        Prototypes.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
+}
+
+public sealed class RpgPrototype
+{
+    public required string Name { get; init; }
+
+    public string? ExternalName { get; init; }
+
+    public string? ReturnType { get; init; }
+
+    public List<string> Parameters { get; } = new();
 }

@@ -416,6 +416,151 @@ WriteAt(sb, 50, keywords, 30);
         Assert.Equal(99m, RpgValues.ToDecimal(Read(ctx, "RESULT")));
         Assert.Equal(7m, RpgValues.ToDecimal(Read(ctx, "P2")));
     }
+
+    [Fact]
+    public void Call_passes_named_plist_and_writes_back_updated_parameters()
+    {
+        string? calledName = null;
+        IReadOnlyList<object?>? calledParameters = null;
+        var host = new RpgHost
+        {
+            ProgramCaller = (library, name, parameters) =>
+            {
+                calledName = name;
+                calledParameters = parameters;
+                return new RpgExternalCallResult
+                {
+                    Success = true,
+                    UpdatedParameters = new object?[] { 10m, 20m },
+                };
+            },
+        };
+        var program = Compile(
+            DLine("A", "S", "7 0"),
+            DLine("B", "S", "7 0"),
+            CSpec("", "", "Z-ADD", "3", "A"),
+            CSpec("", "", "Z-ADD", "4", "B"),
+            CSpec("", "PL1", "PLIST", "", ""),
+            CSpec("", "A", "PARM", "", ""),
+            CSpec("", "B", "PARM", "", ""),
+            CSpec("", "'ADDER'", "CALL", "PL1", ""),
+            CSpec("", "*INLR", "SETON", "", ""));
+
+        var ctx = new RpgInterpreter(host).Run(program);
+
+        Assert.Equal("ADDER", calledName);
+        Assert.Equal(new object?[] { 3m, 4m }, calledParameters);
+        Assert.Equal(10m, RpgValues.ToDecimal(Read(ctx, "A")));
+        Assert.Equal(20m, RpgValues.ToDecimal(Read(ctx, "B")));
+    }
+
+    [Fact]
+    public void Callp_inline_arguments_call_external_program()
+    {
+        string? calledName = null;
+        IReadOnlyList<object?>? calledParameters = null;
+        var host = new RpgHost
+        {
+            ProgramCaller = (library, name, parameters) =>
+            {
+                calledName = name;
+                calledParameters = parameters;
+                return null;
+            },
+        };
+        var program = Compile(
+            "**free",
+            "callp ADD2(3:4);");
+
+        new RpgInterpreter(host).Run(program);
+
+        Assert.Equal("ADD2", calledName);
+        Assert.Equal(new object?[] { 3m, 4m }, calledParameters);
+    }
+
+    [Fact]
+    public void Callp_resolves_prototype_external_name()
+    {
+        string? calledName = null;
+        IReadOnlyList<object?>? calledParameters = null;
+        var host = new RpgHost
+        {
+            ProgramCaller = (library, name, parameters) =>
+            {
+                calledName = name;
+                calledParameters = parameters;
+                return null;
+            },
+        };
+        var program = Compile(
+            DLine("CALC", "PR", "", "EXTPROC('INNER')"),
+            "**free",
+            "callp calc(1:2);");
+
+        new RpgInterpreter(host).Run(program);
+
+        Assert.Equal("INNER", calledName);
+        Assert.Equal(new object?[] { 1m, 2m }, calledParameters);
+    }
+
+    [Fact]
+    public void Prototype_parms_bind_and_write_back()
+    {
+        string? calledName = null;
+        IReadOnlyList<object?>? calledParameters = null;
+        var host = new RpgHost
+        {
+            ProgramCaller = (library, name, parameters) =>
+            {
+                calledName = name;
+                calledParameters = parameters;
+                return new RpgExternalCallResult
+                {
+                    Success = true,
+                    UpdatedParameters = new object?[] { 50m, 60m },
+                };
+            },
+        };
+        var program = Compile(
+            DLine("CALC", "PR", "", "EXTPROC('CALCR')"),
+            DLine("", "", "7 0", "PARM"),
+            DLine("", "", "7 0", "PARM"),
+            "**free",
+            "callp calc(5:6);");
+
+        var ctx = new RpgInterpreter(host).Run(program);
+
+        Assert.Equal("CALCR", calledName);
+        Assert.Equal(new object?[] { 5m, 6m }, calledParameters);
+        Assert.Equal(50m, RpgValues.ToDecimal(Read(ctx, "P1")));
+        Assert.Equal(60m, RpgValues.ToDecimal(Read(ctx, "P2")));
+    }
+
+    [Fact]
+    public void Callp_through_procptr_field_calls_named_program()
+    {
+        string? calledName = null;
+        IReadOnlyList<object?>? calledParameters = null;
+        var host = new RpgHost
+        {
+            ProgramCaller = (library, name, parameters) =>
+            {
+                calledName = name;
+                calledParameters = parameters;
+                return null;
+            },
+        };
+        var program = Compile(
+            DLine("FN", "S", "", "PROCPTR"),
+            "**free",
+            "eval FN = 'REALPGM';",
+            "callp FN(5);");
+
+        new RpgInterpreter(host).Run(program);
+
+        Assert.Equal("REALPGM", calledName);
+        Assert.Equal(new object?[] { 5m }, calledParameters);
+    }
 }
 
 public class RpgFileTests : IDisposable
