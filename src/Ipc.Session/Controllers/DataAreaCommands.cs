@@ -25,7 +25,7 @@ public sealed partial class CommandService
         if (dimensions.Count == 1 && dimensions[0].StartsWith('(') && dimensions[0].EndsWith(')')) dimensions = CommandParser.Tokenize(dimensions[0][1..^1]);
         if (dimensions.Count > (type == "*DEC" ? 2 : 1)) throw new CpfException("IPC0003", "Invalid data-area dimensions.");
         var defaultLength = type switch { "*LGL" => 1, "*DEC" => 15, _ => value is ProgramBuffer raw ? raw.Length : value is string text ? Math.Max(1, StrictJobEncoding(ccsid).GetByteCount(text)) : 32 };
-        int Dimension(int index, int fallback) => dimensions.Count <= index ? fallback : int.TryParse(dimensions[index], NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1;
+        int Dimension(int index, int fallback) => dimensions.Count <= index ? fallback : int.TryParse((context?.Resolve(dimensions[index]) ?? dimensions[index]).Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : -1;
         var length = Dimension(0, defaultLength); var decimals = Dimension(1, type == "*DEC" && dimensions.Count == 0 ? 5 : 0);
         new DataAreaStore(_system.Connections).Create(library, name, type, length, decimals, value, ccsid, Text("TEXT"), Text("AUT", "*LIBCRTAUT"));
         return CommandResult.Ok("Data area " + library + "/" + name + " created.");

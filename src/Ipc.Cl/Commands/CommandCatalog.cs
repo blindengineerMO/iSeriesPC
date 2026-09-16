@@ -22,6 +22,8 @@ public sealed class CommandResult
     public string? MessageId { get; init; }
     public string? MessageData { get; init; }
     [System.Text.Json.Serialization.JsonIgnore]
+    public Ipc.Core.Work.ProgramBuffer? MessageDataBuffer { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore]
     public Ipc.Core.Work.ProgramMessageReference? ExceptionReference { get; init; }
 
     public PanelRequest? Panel { get; init; }
@@ -48,10 +50,10 @@ public sealed class CommandResult
         new() { Outcome = CommandOutcome.GoMenu, MenuName = menuName, MenuLibrary = menuLibrary };
 
     public static CommandResult Error(string message, string? messageId = null, string? messageData = null,
-        Ipc.Core.Work.ProgramMessageReference? exceptionReference = null) =>
+        Ipc.Core.Work.ProgramMessageReference? exceptionReference = null, Ipc.Core.Work.ProgramBuffer? messageDataBuffer = null) =>
         new() { Outcome = CommandOutcome.Error, Message = message,
             MessageId = messageId ?? (System.Text.RegularExpressions.Regex.IsMatch(message, @"\A[A-Z][A-Z0-9]{2}[0-9A-F]{4}:") ? message[..7] : "IPC0006"),
-            MessageData = messageData, ExceptionReference = exceptionReference };
+            MessageData = messageData, ExceptionReference = exceptionReference, MessageDataBuffer = messageDataBuffer };
 }
 
 public sealed record GroupJobRequest(string Action, string Name, string InitialProgram = "QCMD", string Description = "");

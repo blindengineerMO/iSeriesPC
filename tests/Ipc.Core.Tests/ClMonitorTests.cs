@@ -123,7 +123,7 @@ public sealed class ClMonitorTests
     [InlineData("FAIL\nMONMSG MSGID(CPF9801) CMPDTA(&DATA)")]
     [InlineData("FAIL\nMONMSG MSGID(CPF9801) CMPDTA('12345678901234567890123456789')")]
     [InlineData("SNDPGMMSG MSG('bad') MSGTYPE(*ESCAPE)")]
-    [InlineData("SNDPGMMSG MSGID(CPF9898) MSGF(OTHER) MSGDTA('bad')")]
+    [InlineData("SNDPGMMSG MSGID(CPF98ZZ) MSGF(OTHER) MSGDTA('bad')")]
     [InlineData("SNDPGMMSG MSGID(CPF9898) MSGF(QCPFMSG) MSG('bad')")]
     [InlineData("SNDPGMMSG MSGID(CPF9898) MSGF(QCPFMSG) MSGTYPE(*NOTIFY)")]
     public void Unsupported_monitor_placement_or_message_contract_is_rejected(string source) => Assert.Throws<ClCompileException>(() => Compile("BAD", source));

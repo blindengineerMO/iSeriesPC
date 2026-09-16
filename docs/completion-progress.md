@@ -370,3 +370,78 @@ through named and local areas, pad by bytes and support raw substrings. Cross-CC
 conversion fails before assignment; invalid display text falls back to hexadecimal.
 Null service changes cannot reset an existing area. The checklist remains
 33 complete / 73 open.
+
+
+C07 byte-function checkpoint (2026-09-16): 1023 tests, warning-free Release build
+and full display PTY pass. Hex constants preserve opaque bytes and CHAR inferred
+lengths count job-encoded bytes. %SST/%SUBSTRING and %BIN/%BINARY support reads
+and atomic CHGVAR writes, including the job's local data area. Independent signed
+fixtures, overlapping ranges, padding, invalid encodings, overflow and bounds are
+covered. Terminal CRTCLPGM→CALL verifies local-area substring and signed binary
+read/write. The checklist remains 33 complete / 73 open.
+
+
+C07 command-argument checkpoint (2026-09-16): 1033 tests, warning-free Release
+build and full display PTY pass. Qualified names, list elements, data-area
+dimensions and multiple message destinations resolve variables consistently.
+Variable contents cannot add command syntax, quoted literals retain their value,
+and CMD/CPP bindings preserve mixed case and apostrophes. Size/nesting limits and
+missing/invalid variables fail before dispatch. No additional checklist item is closed.
+
+
+C07 CALL and cleanup checkpoint (2026-09-16): 1081 tests, warning-free Release
+build and full display PTY pass. Direct/compiled CALLs share default CHAR/DEC and
+explicit CHAR/DEC/INT/UINT/LGL/FLT temporary layouts; independent packed, binary
+and IEEE fixtures and protocol-2 process captures agree at CCSIDs 37/1208.
+Expressions use private temporaries, references retain aliases, invalid layouts
+fail before execution and malformed temporary responses prevent reference writeback.
+CL CALL limits are 255 arguments and 1 MiB. Batch routing uses the shared typed
+execution path. Cleanup continues after a failing path/frame close, restores the
+parent and permits safe retries/reopening. The checklist remains 33 complete /
+73 open; procedure bindings, display I/O and wider command/message work remain.
+
+
+C07 sender checkpoint (2026-09-16): 1101 tests, warning-free Release build and
+full display PTY pass. Schema 22 retains original sender identities/timestamps
+across job end and exception forwarding. RCVMSG returns independent native
+SHORT/LONG layouts, preserves queue state on invalid output and returns the
+sender-copy correlation key for replies. Terminal MONMSG→RCVMSG verifies the
+originating program name. The checklist remains 33 complete / 73 open.
+
+
+C07 QCMDEXC checkpoint (2026-09-16): 1128 tests pass, followed by expanded real
+HTTP acceptance, warning-free Release build and full display PTY. A versioned
+QSYS/QCMDEXC program dispatches dynamic commands with the same identity and job
+state across direct CALL, compiled CL, RPG and the HTTP command bridge. Independent
+packed lengths, byte limits, MONMSG, authority/signature revocation, recursion and
+cancellation are covered. Existing seeded/custom programs are preserved. Native
+prompting, wider APIs and debugger dispatch remain open. The checklist remains
+33 complete / 73 open.
+
+
+C07 message-description checkpoint (2026-09-16): 1166 tests, warning-free Release
+build and full display PTY pass. Version-2 MSGF payloads retain legacy literal
+text while adding native IDs, first/second-level templates, severity, default
+metadata and bounded substitution fields. ADDMSGD/CHGMSGD/RMVMSGD/DSPMSGD/DLTMSGF
+and atomic RTVMSG share the store; packed/binary/varying/CCHAR reference fixtures,
+legacy preservation, authority and concurrent changes are covered. Predefined
+queue delivery and raw exception comparison data are the next dependency. The
+checklist remains 33 complete / 73 open.
+
+
+C07 predefined-message delivery checkpoint (2026-09-16): all 1187 tests pass,
+with no skipped tests, a warning-free Release build and full display PTY acceptance.
+Schema 23 preserves existing queue state and adds bounded snapshots of descriptions,
+replacement bytes and message-file identity. SNDPGMMSG uses live authority and
+snapshots text/help, severity and inquiry defaults; MONMSG compares raw text/hex
+replacement prefixes. RCVMSG returns help, replacement bytes, lengths and file/CCSID
+metadata, with atomic conversion/layout failures. Independent tests cover CCHAR
+conversion, edits/deletion/recreation, restart, migration, authority and metadata
+quotas. The terminal fixture verifies packed substitution data through a nested
+escape, MONMSG and RCVMSG. The old compiler test rejecting custom MSGF references
+now rejects an invalid message identifier; valid custom files have delivery tests.
+
+Paused at the user's request after this verified checkpoint. PLAN.md remains
+33 complete / 73 open. Resume within C07; display file I/O, procedure bindings,
+wider command/message delivery and the remaining completion categories are still
+unfinished. No broad checklist item was marked complete for this partial checkpoint.

@@ -75,7 +75,7 @@ public sealed class ClParameterTests
     public void Constant_arguments_are_private_and_repeated_calls_start_fresh()
     {
         var child = Compile("CHILD", "PGM PARM(&N)\nDCL &N *INT\nCHGVAR &N (&N + 1)\nSNDPGMMSG MSG(&N)\nRETURN");
-        var parent = Compile("PARENT", "CALL PGM(CHILD) PARM(4)\nCALL PGM(CHILD) PARM(4)");
+        var parent = Compile("PARENT", "CALL PGM(CHILD) PARM((4 (*INT 4)))\nCALL PGM(CHILD) PARM((4 (*INT 4)))");
         var messages = new List<string>();
         var result = new ClInterpreter((_, _) => child, _ => CommandResult.Ok(), messages.Add).Run(parent);
         Assert.False(result.IsError, result.Message);

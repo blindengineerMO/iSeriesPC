@@ -2,7 +2,7 @@ namespace Ipc.Core.Catalog;
 
 public static class SystemCatalog
 {
-    public const int SchemaVersion = 21;
+    public const int SchemaVersion = 23;
 
     public const string CreateMigrationHistoryTable = """
         CREATE TABLE IF NOT EXISTS sys_migrations (

@@ -206,6 +206,7 @@ public sealed class IpcSystem : IDisposable
         _subsystems.SeedDefaults();
         _menus.SeedDefaults();
         new Ipc.Services.Commands.CommandDefinitionStore(_connectionFactory).SeedDefaults();
+        Ipc.Services.Work.BuiltinProgramService.SeedDefaults(_connectionFactory);
         _subsystems.Start(JobKeys.InteractiveSubsystem);
         _subsystems.Start(JobKeys.BatchSubsystem);
         _subsystems.Start(JobKeys.CommunicationSubsystem);

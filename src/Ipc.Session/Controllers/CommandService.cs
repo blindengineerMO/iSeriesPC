@@ -799,12 +799,17 @@ public sealed partial class CommandService
             return CommandResult.Error("CALL requires PGM(program).");
         }
 
-        var parameters = call.Split("PARM").Select(CommandParser.Unquote).Cast<object?>().ToArray();
+        var supplied = call.Split("PARM");
+        if (supplied.Count > 255) return CommandResult.Error("CALL supports at most 255 parameters.");
+        var parameters = supplied.Select(value => (object?)ClCallArgument.Compile(value).Evaluate(
+            _ => throw new ClRuntimeException("Interactive CALL cannot reference CL variables."), _job?.Ccsid ?? _system.Config.Ccsid)).ToArray();
+        if (parameters.Cast<ProgramConstant>().Sum(value => (long)value.Buffer.Length) > 1048576) return CommandResult.Error("CALL arguments exceed 1 MiB.");
         return ExecuteProgram(target, parameters);
     }
     private CommandResult ExecuteProgram(string target, IReadOnlyList<object?> parameters)
     {
         var program = LoadProgramObject(LibraryUnknown, target);
+        if (program.Api is not null) return ExecuteBuiltinProgram(program.Api, parameters);
         if (program.External is not null)
         {
             using var scope = EnterProgram(program.External);
@@ -815,7 +820,7 @@ public sealed partial class CommandService
         if (program.Rpg is not null)
         {
             using var scope = EnterProgram(program.Rpg);
-            return ExecuteRpg(program.Rpg, parameters.Select(value => value is ProgramBuffer buffer ? buffer.ToText() : value).ToArray());
+            return ExecuteRpg(program.Rpg, BindRpgConstants(program.Rpg, parameters));
         }
 
         if (program.Cl is not null)
@@ -878,6 +883,11 @@ public sealed partial class CommandService
         try
         {
             var loaded = LoadProgramObject(library, name);
+            if (loaded.Api is not null)
+            {
+                var result = ExecuteBuiltinProgram(loaded.Api, parameters);
+                return new RpgExternalCallResult { Success = !result.IsError, Message = result.Message, UpdatedParameters = parameters };
+            }
             if (loaded.External is not null)
             {
                 using var scope = EnterProgram(loaded.External);
@@ -918,7 +928,7 @@ public sealed partial class CommandService
 
     private ClProgram? LoadProgram(string library, string name) => LoadProgramObject(library, name).Cl;
 
-    private (ClProgram? Cl, RpgProgram? Rpg, ObjectDescriptor? External) LoadProgramObject(string library, string name)
+    private (ClProgram? Cl, RpgProgram? Rpg, ObjectDescriptor? External, ObjectDescriptor? Api) LoadProgramObject(string library, string name)
     {
         var slash = name.IndexOf('/');
         if (slash >= 0)
@@ -933,16 +943,22 @@ public sealed partial class CommandService
             if (descriptor?.Source is { Length: > 0 } source)
             {
                 _system.ObjectSigning.RequireExecutable(descriptor);
+                if (descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute)
+                {
+                    Ipc.Services.Work.BuiltinProgramService.Validate(descriptor);
+                    _loadedDescriptors.Add(descriptor, descriptor);
+                    return (null, null, null, descriptor);
+                }
                 if (descriptor.Attribute == Ipc.Services.Work.ExternalProgramService.Attribute)
                 {
                     _loadedDescriptors.Add(descriptor, descriptor);
-                    return (null, null, descriptor);
+                    return (null, null, descriptor, null);
                 }
                 if (string.Equals(descriptor.Attribute, RpgAttribute, StringComparison.OrdinalIgnoreCase))
                 {
                     var rpg = RpgCompiler.Compile(library: lib, name: name, source: source);
                     _loadedDescriptors.Add(rpg, descriptor);
-                    return (null, rpg, null);
+                    return (null, rpg, null, null);
                 }
 
                 var fileBindings = descriptor.ExtendedAttributes?.TryGetValue(ClFileBindings.AttributeName, out var serializedFiles) == true ? ClFileBindings.Restore(source, serializedFiles) : null;
@@ -952,11 +968,11 @@ public sealed partial class CommandService
                     : compiler.Compile(name, lib, source, _cancellationToken);
                 if (fileBindings is not null && fileBindings.Files.Count != cl.Files.Count) throw new InvalidDataException("Unused compiled CL file bindings.");
                 _loadedDescriptors.Add(cl, descriptor);
-                return (cl, null, null);
+                return (cl, null, null, null);
             }
         }
 
-        return (null, null, null);
+        return (null, null, null, null);
     }
 
     private IEnumerable<string> SearchLibraries(string library) => _system.SearchLibraries(_job, library);

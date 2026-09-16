@@ -251,8 +251,8 @@ public sealed class ClMessageCommandTests : IDisposable
             IF (&TYPE *NE ' ') THEN(RETURN)
             RCVMSG MSGQ(QGPL/INBOX) MSGTYPE(*INQ) RMV(*NO) KEYVAR(&KEY)
             SNDRPY MSGQ(QGPL/INBOX) MSGKEY(&KEY) RPY('*DFT')
-            RCVMSG MSGTYPE(*RPY) MSGKEY(&COPY) MSG(&TEXT) RTNTYPE(&TYPE)
-            IF (&TYPE *EQ '21' *AND &TEXT *EQ '*DFT') THEN(SNDPGMMSG MSG('RETURN TYPES ACCEPTED'))
+            RCVMSG MSGTYPE(*RPY) MSGKEY(&COPY) MSG(&TEXT) RTNTYPE(&TYPE) KEYVAR(&KEY)
+            IF (&TYPE *EQ '21' *AND &TEXT *EQ '*DFT' *AND &KEY *EQ &COPY) THEN(SNDPGMMSG MSG('RETURN TYPES ACCEPTED'))
             ENDPGM
             """);
         var result = session.Execute("CALL QGPL/COPYTYPE"); Assert.False(result.IsError, result.Message);

@@ -1,9 +1,51 @@
-# Execution interfaces
+# System API checkpoint
 
-The current executable API is a command bridge to the shared server. The IBM system
-API ABI, IWS deployment, RSE compatibility and full domain REST surface remain C14/C16
-work. Their required names and formats are tracked in the [catalog](compatibility-matrix.md)
-and [release contracts](compatibility-contracts.md).
+The first executable catalog API is QSYS/QCMDEXC. The broader C14 registry,
+message/user-space/data-queue/work/security APIs and format contracts remain open.
+QCMDEXC is a versioned `*PGM` object with attribute IPCAPI. Normal library lookup,
+object use authority, signature validation and program scope apply. Startup seeds
+it only when absent; it never overwrites an existing or signed program. Relocated
+or changed adapter manifests fail validation. Programs named QCMDEXC in other
+libraries follow ordinary program lookup.
+
+## QCMDEXC
+
+`CALL QSYS/QCMDEXC PARM('CHGCURLIB QGPL' 14)` executes one command using the same
+dispatcher as terminal, CL and batch execution. The command sees the current job's
+library list, identity, adopted authority, locks, execution budget and cancellation.
+Commands and their processing programs retain live authority/signature checks.
+Command failures preserve their message ID for CL MONMSG and exception receipt.
+Nested dynamic calls retain the existing command/program recursion bounds.
+
+| Parameter | Input contract |
+|---|---|
+| Command | CHAR storage in the executing job CCSID |
+| Length | Packed DEC(15,5), an integer from 1 through 32702 within supplied storage |
+| Optional IGC control | CHAR(3), uppercase `IGC` |
+
+Direct and compiled CL calls use the same byte contract. Hex buffers can supply
+independent packed lengths; malformed digits/signs and mismatched declarations
+fail before dispatch. The interpreted RPG bridge supplies semantic character and
+decimal inputs; it does not certify a native RPG ABI. The typed host bridge also
+accepts immutable ProgramBuffer inputs. Input storage is never written back.
+Only the selected command bytes are decoded, so unused trailing storage may be
+binary. UTF-8 lengths count bytes; splitting an encoded character fails. Buffers
+with another CCSID fail rather than being silently transcoded. The supported
+CCSIDs currently require no extra DBCS state for IGC.
+
+This checkpoint accepts a single command line, rejects NUL/newline separators,
+and does not implement interactive prompting, proxy commands, command exit points
+or DBCS shift-state code pages. Commands returning a screen/menu/signoff request
+fail with CPF0006; terminal screens are not driven by this API. Listing-producing
+commands can return a normal command result to the host. CL-only declarations and
+variable-receive commands still require their compiled CL context. The HTTP command bridge below can invoke CALL QCMDEXC; full domain REST and
+debugger entry points remain pending their owning services.
+
+QcmdexcTests covers direct/compiled CL and RPG callers, independent packed bytes,
+CCSIDs 37/1208, malformed layouts, byte boundaries, unchanged inputs, maximum
+length, MONMSG, authority/trust revocation, bounded recursion and cancellation.
+The display PTY compiles CLAPI and checks a QCMDEXC call against RTVJOBA state.
+The parameter reference is IBM's [Execute Command API](https://www.ibm.com/docs/en/i/7.5?topic=ssw_ibm_i_75%2Fapis%2Fqcmdexc.html).
 
 ## HTTP command bridge
 
@@ -44,8 +86,8 @@ The wire format is length-prefixed JSON bounded to 256 KiB; the initial
 Bad credentials, password expiry, identity replacement and malformed requests fail.
 
 The server cancels interpreter loops when the connection closes. A disconnected job
-ends abnormally. C03 still requires complete service-level authority, PAM/SSO and audit;
-this development bridge is not a declaration of production-ready access control.
+ends abnormally. Shared service authority, PAM/SSO and audit are covered by C03 and the security
+contracts. The complete domain REST surface remains C16 work.
 
 `WebExecutionTests` uses a real HTTP listener and live Unix-socket server.
 `SessionServerTests` proves terminal/headless catalog sharing and independent jobs.

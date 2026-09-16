@@ -1467,7 +1467,17 @@
         "SEV",
         "TXTCCSID",
         "PGMQ",
-        "RTNTYPE"
+        "RTNTYPE",
+        "SENDER",
+        "SENDERFMT",
+        "SECLVL",
+        "SECLVLLEN",
+        "MSGDTA",
+        "MSGDTALEN",
+        "MSGF",
+        "MSGFLIB",
+        "SNDMSGFLIB",
+        "DTACCSID"
       ],
       "maxPositional": 0
     },
@@ -1561,7 +1571,13 @@
       "requirements": [
         "WP08-03"
       ],
-      "keywords": ["PGMQ", "MSGQ", "MSGKEY", "CLEAR", "RMVEXCP"],
+      "keywords": [
+        "PGMQ",
+        "MSGQ",
+        "MSGKEY",
+        "CLEAR",
+        "RMVEXCP"
+      ],
       "maxPositional": 0
     },
     {
@@ -3034,7 +3050,7 @@
       "kind": "api",
       "category": "apis",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "apis",
       "requirements": [
         "WP15-02"
@@ -3788,9 +3804,10 @@
       "status": "partial",
       "keywords": [
         "MSGF",
-        "TEXT"
+        "TEXT",
+        "CCSID"
       ],
-      "maxPositional": 0
+      "maxPositional": 1
     },
     {
       "name": "ADDMSGD",
@@ -3805,9 +3822,13 @@
       "keywords": [
         "MSGID",
         "MSGF",
-        "MSG"
+        "MSG",
+        "SECLVL",
+        "SEV",
+        "FMT",
+        "DFT"
       ],
-      "maxPositional": 0
+      "maxPositional": 5
     },
     {
       "name": "DSPHELP",
@@ -3950,6 +3971,100 @@
         "DTAMBRS"
       ],
       "maxPositional": 0
+    },
+    {
+      "name": "CHGMSGD",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGID",
+        "MSGF",
+        "MSG",
+        "SECLVL",
+        "SEV",
+        "FMT",
+        "DFT"
+      ],
+      "maxPositional": 5
+    },
+    {
+      "name": "RMVMSGD",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGID",
+        "MSGF"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "DSPMSGD",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGID",
+        "MSGF"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "DLTMSGF",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGF"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "RTVMSG",
+      "kind": "command",
+      "category": "messages",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MSGID",
+        "MSGF",
+        "MSGDTA",
+        "MSG",
+        "MSGLEN",
+        "SECLVL",
+        "SECLVLLEN",
+        "SEV",
+        "CCSID",
+        "MDTACCSID",
+        "TXTCCSID",
+        "DTACCSID"
+      ],
+      "maxPositional": 2
     }
   ],
   "aliases": {

@@ -1007,7 +1007,19 @@
         "src/Ipc.Services/Work/DataAreaStore.cs",
         "src/Ipc.Session/Controllers/DataAreaCommands.cs",
         "src/Ipc.Services/Messages/MessageQueueStore.cs",
-        "src/Ipc.Session/Controllers/MessageCommands.cs"
+        "src/Ipc.Session/Controllers/MessageCommands.cs",
+        "src/Ipc.Cl/Interpreter/ClByteExpressions.cs",
+        "src/Ipc.Cl/Interpreter/ClCommandArguments.cs",
+        "src/Ipc.Cl/Interpreter/ClCallArgument.cs",
+        "src/Ipc.Core/Work/ProgramConstant.cs",
+        "src/Ipc.Services/Work/BuiltinProgramService.cs",
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs",
+        "src/Ipc.Services/Messages/MessageDescription.cs",
+        "src/Ipc.Services/Messages/MessageDescriptionStore.cs",
+        "src/Ipc.Session/Controllers/MessageDescriptionCommands.cs",
+        "src/Ipc.Services/Messages/PredefinedMessage.cs",
+        "src/Ipc.Services/Sqlite/PredefinedMessageMigration.cs",
+        "src/Ipc.Session/Controllers/ClProgramMessages.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/ClTests.cs",
@@ -1025,15 +1037,25 @@
         "tests/Ipc.Core.Tests/DataAreaTests.cs",
         "tests/Ipc.Core.Tests/MessageQueueTests.cs",
         "tests/Ipc.Core.Tests/ClMessageCommandTests.cs",
-        "tests/Ipc.Core.Tests/ClRawCharacterTests.cs"
+        "tests/Ipc.Core.Tests/ClRawCharacterTests.cs",
+        "tests/Ipc.Core.Tests/ClByteFunctionTests.cs",
+        "tests/Ipc.Core.Tests/ClCommandArgumentTests.cs",
+        "tests/Ipc.Core.Tests/ClCallConstantTests.cs",
+        "tests/Ipc.Core.Tests/JobEnvironmentTests.cs",
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs",
+        "tests/Ipc.Core.Tests/MessageDescriptionTests.cs",
+        "tests/Ipc.Core.Tests/PredefinedMessageTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
         "docs/cl-runtime.md",
         "docs/data-areas.md",
-        "docs/message-queues.md"
+        "docs/message-queues.md",
+        "docs/api.md",
+        "docs/message-descriptions.md"
       ],
-      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open."
+      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open. Byte-function checkpoint: 1023 tests, warning-free build and full PTY pass; hex constants, byte substrings, signed binary fields and *LDA reads/writes are covered. Command-argument checkpoint: 1033 tests and full terminal acceptance pass for qualified/list variables, typed CMD quoting and atomic invalid-input rejection. CALL/cleanup checkpoint: 1081 tests, warning-free build and full PTY pass; direct/compiled native constants, private expression temporaries, aggregate bounds and failure-resilient frame cleanup are covered. Sender checkpoint: 1101 tests, warning-free build and full PTY pass; durable original sender identity/time, independent SHORT/LONG layouts and reply correlation keys are covered. QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open. Message-description checkpoint: 1166 tests, warning-free Release build and full display PTY pass. Versioned metadata, native substitution fixtures and atomic CL RTVMSG are covered; predefined queue delivery remains open. Predefined-message delivery snapshots text/help, raw replacement data, severity and inquiry defaults; MONMSG compares replacement prefixes. Tests cover schema 23 preservation, restart, file edits/deletion and authority, CCHAR conversion, output atomicity and metadata quotas. Broader C07/C11 work remains open. Delivery checkpoint: all 1187 tests, warning-free Release build and full display PTY pass, including nested predefined escape/raw MONMSG/RCVMSG acceptance."
     },
     {
       "id": "WP08-06",
@@ -1655,15 +1677,22 @@
       "id": "WP15-02",
       "source": "PLAN.md \u00a76 WP15",
       "requirement": "Curated command execution, message, user-space, data-queue, system-value, job, date, journal, security and diagnostic APIs, normalized in catalog.json; each requires ABI/reference-vector acceptance.",
-      "status": "planned",
-      "implementation": [],
-      "tests": [],
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work/BuiltinProgramService.cs",
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs"
+      ],
+      "tests": [
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs"
+      ],
       "documentation": [
         "docs/release-scope.md",
         "docs/compatibility-contracts.md",
-        "docs/object-model.md"
+        "docs/object-model.md",
+        "docs/api.md"
       ],
-      "evidence": "No implementation or acceptance evidence yet."
+      "evidence": "QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open."
     },
     {
       "id": "WP15-03",
@@ -1681,13 +1710,20 @@
       "id": "WP15-04",
       "source": "PLAN.md \u00a76 WP15",
       "requirement": "Tests per API with reference vectors.",
-      "status": "planned",
-      "implementation": [],
-      "tests": [],
-      "documentation": [
-        "docs/release-scope.md"
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Work/BuiltinProgramService.cs",
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs"
       ],
-      "evidence": "No implementation or acceptance evidence yet."
+      "tests": [
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/api.md"
+      ],
+      "evidence": "QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open."
     },
     {
       "id": "WP16-01",

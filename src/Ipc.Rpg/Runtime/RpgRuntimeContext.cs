@@ -23,6 +23,7 @@ public sealed class RpgRuntimeContext
             "*INT" => field.Kind is RpgFieldKind.Integer or RpgFieldKind.Binary && field.Decimals == 0 &&
                 (field.Length <= 5 ? 2 : field.Length <= 10 ? 4 : 8) == argument.Length,
             "*LGL" => field.Kind == RpgFieldKind.Indicator,
+            "*FLT" => field.Kind == RpgFieldKind.Float && field.Length == argument.Length,
             _ => false };
         if (!compatible) throw new RpgRuntimeException("CL/RPG reference parameter types or lengths do not match.");
         _ = Coerce(field, argument.Value);

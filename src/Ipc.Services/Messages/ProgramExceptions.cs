@@ -28,6 +28,7 @@ public sealed partial class MessageQueueStore
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         AuthorizeProgram(destination); cancellationToken.ThrowIfCancellationRequested();
         var severity = 40;
+        QueuedMessage? origin = null;
         if (existing is not null)
         {
             using var find = Command(connection, transaction, destination, """
@@ -44,9 +45,10 @@ public sealed partial class MessageQueueStore
             }
             if (existing.Queue == destination.ProgramQueue) { transaction.Commit(); return existing; }
             data = original.Message.Data; messageId = original.Message.MessageId; severity = original.Message.Severity;
+            origin = original.Message;
         }
         var key = Insert(connection, transaction, destination, data, "ESCAPE", messageId, severity, null,
-            new ProgramBuffer(Array.Empty<byte>(), data.Ccsid), null);
+            new ProgramBuffer(Array.Empty<byte>(), data.Ccsid), null, origin: origin);
         cancellationToken.ThrowIfCancellationRequested(); transaction.Commit(); return new(destination.ProgramQueue, key);
     }
 }

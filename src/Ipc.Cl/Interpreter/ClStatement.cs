@@ -56,6 +56,7 @@ public sealed class ClStatement
     public string? ProgramName { get; init; }
 
     public IReadOnlyList<string> Parameters { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<ClCallArgument> CallArguments { get; set; } = Array.Empty<ClCallArgument>();
 
     public CommandCall? Command { get; init; }
 

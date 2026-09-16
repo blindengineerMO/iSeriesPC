@@ -4,6 +4,7 @@ using Ipc.Core.Work;
 using Ipc.Services.Events;
 using Ipc.Services.Sqlite;
 using Ipc.Services.Messages;
+using System.Runtime.ExceptionServices;
 
 namespace Ipc.Services.Work;
 
@@ -38,8 +39,14 @@ public sealed class JobCallEnvironment : IDisposable
         frame.Parent is null ? "*EXT" : frame.Program, frame.Parent is null ? null : EnsureQueue(frame.Parent));
     private void CloseFrame(Frame frame)
     {
-        try { frame.Dispose(); }
-        finally { if (frame.Queue is { } queue) _messages.CloseProgramQueueForOwner(_job, queue); }
+        Cleanup(new Action[] { frame.Dispose, () => { if (frame.Queue is { } queue) _messages.CloseProgramQueueForOwner(_job, queue); } });
+    }
+    private static void Cleanup(IEnumerable<Action> actions)
+    {
+        ExceptionDispatchInfo? first = null;
+        foreach (var action in actions)
+            try { action(); } catch (Exception error) { first ??= ExceptionDispatchInfo.Capture(error); }
+        first?.Throw();
     }
     public void Override(JobFileOverride value)
     {
@@ -104,13 +111,15 @@ public sealed class JobCallEnvironment : IDisposable
         CheckIdentity();
         if (entry.Disposed) return;
         entry.CloseRequested |= close;
-        if (--entry.References == 0 && (!entry.Shared || entry.CloseRequested)) { entry.Dispose(); entry.Frame.Paths.Remove(entry.Key); }
+        if (--entry.References == 0 && (!entry.Shared || entry.CloseRequested))
+            try { entry.Dispose(); } finally { entry.Frame.Paths.Remove(entry.Key); }
     }
     public void Dispose()
     {
         CheckIdentity();
         if (_disposed) return; _disposed = true;
-        foreach (var frame in Frames()) CloseFrame(frame);
+        try { Cleanup(Frames().Select(frame => (Action)(() => CloseFrame(frame))).ToArray()); }
+        finally { _current = _root; }
     }
     internal sealed class Frame(Frame? parent = null, string program = "QCMD") : IDisposable
     {
@@ -120,7 +129,11 @@ public sealed class JobCallEnvironment : IDisposable
         public int Depth { get; } = (parent?.Depth ?? -1) + 1;
         public Dictionary<string, JobFileOverride> Overrides { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, PathEntry> Paths { get; } = new(StringComparer.Ordinal);
-        public void Dispose() { foreach (var path in Paths.Values) path.Dispose(); Paths.Clear(); Overrides.Clear(); }
+        public void Dispose()
+        {
+            try { Cleanup(Paths.Values.Select(path => (Action)path.Dispose).ToArray()); }
+            finally { Paths.Clear(); Overrides.Clear(); }
+        }
     }
     internal sealed class PathEntry(IDisposable value, Frame frame, string key, bool shared) : IDisposable
     {
@@ -133,8 +146,10 @@ public sealed class JobCallEnvironment : IDisposable
         private bool _ended;
         public void Dispose()
         {
-            if (_ended) return; _ended = true;
+            if (_ended) return;
+            if (owner._disposed) { _ended = true; return; }
             if (owner._current != frame) throw new InvalidOperationException("Call environments must unwind in stack order.");
+            _ended = true;
             try { owner.CloseFrame(frame); } finally { owner._current = parent; }
         }
     }
@@ -144,6 +159,12 @@ public sealed class JobOpenPath<T> : IDisposable where T : class, IDisposable
     private readonly JobCallEnvironment _owner; private readonly JobCallEnvironment.PathEntry _entry; private bool _disposed;
     internal JobOpenPath(JobCallEnvironment owner, JobCallEnvironment.PathEntry entry) { _owner = owner; _entry = entry; }
     public T Value { get { ObjectDisposedException.ThrowIf(_disposed || _entry.Disposed, this); _owner.RequireOwner(); return (T)_entry.Value; } }
-    public void Close() { if (_disposed) return; _owner.Release(_entry, close: true); _disposed = true; }
-    public void Dispose() { if (_disposed) return; _owner.Release(_entry); _disposed = true; }
+    public void Close() => Release(close: true);
+    public void Dispose() => Release(close: false);
+    private void Release(bool close)
+    {
+        if (_disposed) return;
+        try { _owner.Release(_entry, close); _disposed = true; }
+        finally { if (_entry.Disposed) _disposed = true; }
+    }
 }

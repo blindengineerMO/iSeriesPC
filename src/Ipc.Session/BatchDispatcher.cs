@@ -47,9 +47,8 @@ internal sealed class BatchDispatcher(IpcSystem system)
                     Ipc.Core.Objects.ObjectType.Class, Ipc.Core.Objects.Authorities.UseBits);
             }
             system.Jobs.WriteLog(job, "INFO", "IPC0120", 0, $"Routing {job.RoutingProgram}; class {job.JobClass}; run priority {job.RunPriority}; time slice {job.TimeSliceMilliseconds}ms.");
-            var routedCommand = job.RoutingProgram == "QSYS/QCMD" ? command :
-                $"CALL PGM({job.RoutingProgram}) PARM('{command.Replace("'", "''")}')";
-            var result = execution.Execute(routedCommand);
+            var result = job.RoutingProgram == "QSYS/QCMD" ? execution.Execute(command) :
+                execution.ExecuteProgram(job.RoutingProgram!, new object?[] { command });
             system.Jobs.WriteLog(job, result.IsError ? "ERROR" : "INFO", null, result.IsError ? 40 : 0, result.Message);
             execution.End(result.IsError ? JobCompletion.Abnormal : JobCompletion.Normal,
                 result.IsError ? result.Message ?? "Batch command failed." : "Batch command completed.");

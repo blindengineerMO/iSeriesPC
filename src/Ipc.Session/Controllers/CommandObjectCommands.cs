@@ -50,6 +50,7 @@ public sealed partial class CommandService
         catch (CpfException error) { return CommandResult.Error(error.Message); }
         catch (ClParseException error) { return CommandResult.Error("IPC0005: " + error.Message); }
         catch (Ipc.Cl.Interpreter.ClCompileException error) { return CommandResult.Error(error.Message); }
+        catch (Ipc.Cl.Interpreter.ClRuntimeException error) { return CommandResult.Error(error.Message, error.MessageId); }
         catch (InvalidDataException error) { return CommandResult.Error("IPC0006: " + error.Message); }
         catch (Exception error) when (error is ArgumentException or FormatException) { return CommandResult.Error("IPC0003: Invalid command or parameter."); }
         catch (Microsoft.Data.Sqlite.SqliteException) { return CommandResult.Error("IPC0201: Command catalog operation failed."); }

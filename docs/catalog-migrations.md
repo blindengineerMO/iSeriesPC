@@ -47,6 +47,17 @@ Existing replies retain code 21 (origin not previously recorded); nonempty store
 default data maps to message-default code 23, and empty data maps to system-default
 code 24. The migration does not change message bytes or reference keys.
 
+Schema 22 snapshots sender job identity, program, recipient and original send time.
+Existing job and recipient names are backfilled when still available; unknown
+historical sender programs remain blank. Forwarded exceptions preserve their
+original sender/time. Message bytes, reply codes, keys and sequence are unchanged.
+
+Schema 23 adds bounded, versioned predefined-message snapshots to queue entries.
+Definitions, replacement bytes/CCSID and original message-file identity survive
+edits, deletion and restart. Historical rows receive empty snapshot metadata;
+their bytes, keys, receive state, reply codes and sequence remain unchanged.
+Serialized metadata counts against existing queue/job byte limits.
+
 Schema 19 adds durable named message entries, bounded byte payloads, monotonic
 four-byte keys, receive/reply state and rename-aware reply destinations. See
 [message queues](message-queues.md). Existing named queues, including QSYSOPR,

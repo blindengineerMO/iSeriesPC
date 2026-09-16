@@ -15,7 +15,7 @@ public sealed class ClInterpreter
     private readonly Func<ClFileBinding, ClDatabaseCursor>? _openFile;
     private readonly Func<string, string, IReadOnlyList<Ipc.Core.Work.ProgramArgument>, CommandResult>? _externalCaller;
     private readonly Func<CommandCall, ClCommandContext, CommandResult?>? _contextCommandRunner;
-    private readonly Func<ClStatement, string, ClCommandContext, Ipc.Core.Work.ProgramMessageReference?>? _programMessageSender;
+    private readonly Func<ClStatement, object, ClCommandContext, ClProgramMessage>? _programMessageSender;
     private readonly Func<CommandResult, bool, CommandResult>? _failureReporter;
     private readonly Action<CommandResult>? _failureHandled;
     private readonly Func<Ipc.Core.Work.ProgramArgument>? _localDataArea;
@@ -27,7 +27,7 @@ public sealed class ClInterpreter
         CancellationToken cancellationToken = default, Func<ClProgram, IDisposable?>? programScope = null, Func<int>? ccsid = null, Func<ClFileBinding, ClDatabaseCursor>? openFile = null,
         Func<string, string, IReadOnlyList<Ipc.Core.Work.ProgramArgument>, CommandResult>? externalCaller = null,
         Func<CommandCall, ClCommandContext, CommandResult?>? contextCommandRunner = null,
-        Func<ClStatement, string, ClCommandContext, Ipc.Core.Work.ProgramMessageReference?>? programMessageSender = null,
+        Func<ClStatement, object, ClCommandContext, ClProgramMessage>? programMessageSender = null,
         Func<CommandResult, bool, CommandResult>? failureReporter = null, Action<CommandResult>? failureHandled = null,
         Func<Ipc.Core.Work.ProgramArgument>? localDataArea = null)
     {
@@ -57,9 +57,9 @@ public sealed class ClInterpreter
         var byteCount = 0L;
         foreach (var parameter in parameters)
         {
-            if (parameter is not (null or string or bool or byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal or Ipc.Core.Work.ProgramBuffer))
+            if (parameter is not (null or string or bool or byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal or Ipc.Core.Work.ProgramBuffer or Ipc.Core.Work.ProgramConstant))
                 return new(CommandResult.Error("Unsupported CL argument value."), Array.Empty<object?>());
-            byteCount += parameter is Ipc.Core.Work.ProgramBuffer buffer ? buffer.Length : Encoding.UTF8.GetByteCount(ClExpression.Text(parameter ?? ""));
+            byteCount += parameter is Ipc.Core.Work.ProgramConstant constant ? constant.Buffer.Length : parameter is Ipc.Core.Work.ProgramBuffer buffer ? buffer.Length : Encoding.UTF8.GetByteCount(ClExpression.Text(parameter ?? ""));
             if (byteCount > 1048576) return new(CommandResult.Error("CL arguments exceed 1 MiB."), Array.Empty<object?>());
         }
         var cells = new List<ClVariableCell>();
@@ -70,6 +70,7 @@ public sealed class ClInterpreter
             {
                 var definition = declarations.TryGetValue(program.EntryParameters[i], out var declaration) ? ClVariableDefinition.From(declaration, _ccsid()) : null;
                 var value = parameters[i] ?? "";
+                if (value is Ipc.Core.Work.ProgramConstant constant) { cells.Add(ClCallArgument.Cell(constant, definition)); continue; }
                 if (definition is null && value is Ipc.Core.Work.ProgramBuffer raw) definition = new ClVariableDefinition("*CHAR", raw.Length, 0);
                 if (definition?.Type == "*CHAR" && value is Ipc.Core.Work.ProgramBuffer characterBuffer)
                 {
@@ -268,15 +269,19 @@ public sealed class ClInterpreter
                     break;
 
                 case ClStatementKind.SendProgramMessage:
-                    var text = statement.Expression is { } message ? ClExpression.Text(EvaluateExpression(message)) : Evaluate(statement.Value, symbols);
-                    Ipc.Core.Work.ProgramMessageReference? messageReference = null;
+                    var messageValue = statement.Expression is { } message ? EvaluateExpression(message) : Evaluate(statement.Value, symbols);
+                    ClProgramMessage prepared;
                     if (_programMessageSender is not null)
-                        messageReference = _programMessageSender(statement, text, new(name => symbols.Cell(name).Borrow(), value => ResolveValue(value, symbols)));
-                    else if (statement.MessageType == "*INQ" || statement.Command?.GetOption("KEYVAR") is not null || statement.Command?.GetOption("TOMSGQ") is not null || statement.Command?.GetOption("TOPGMQ") is { } messageTarget && messageTarget != "*PRV")
-                        throw new ClRuntimeException("Program message queues require a message host.");
+                        prepared = _programMessageSender(statement, messageValue, new(name => symbols.Cell(name).Borrow(), value => ClCommandArguments.Resolve(value, name => symbols[name])));
+                    else
+                    {
+                        if (statement.MessageId is not (null or "CPF9898") || statement.MessageType == "*INQ" || statement.Command?.GetOption("KEYVAR") is not null || statement.Command?.GetOption("TOMSGQ") is not null || statement.Command?.GetOption("TOPGMQ") is { } messageTarget && messageTarget != "*PRV")
+                            throw new ClRuntimeException("Program message descriptions and queues require a message host.");
+                        prepared = new(ClExpression.Text(messageValue), statement.MessageId, messageValue as Ipc.Core.Work.ProgramBuffer);
+                    }
                     if (statement.MessageType == "*ESCAPE")
-                        return Locate(CommandResult.Error(text, statement.MessageId, text, messageReference), statement);
-                    _messageSink?.Invoke(text);
+                        return Locate(CommandResult.Error(prepared.Text, prepared.MessageId, prepared.Text, prepared.Reference, prepared.ReplacementData), statement);
+                    _messageSink?.Invoke(prepared.Text);
                     pc++;
                     break;
 
@@ -325,7 +330,7 @@ public sealed class ClInterpreter
     }
 
     private static CommandResult Locate(CommandResult result, ClStatement statement) => result.IsError && statement.Location is { } location
-        ? CommandResult.Error($"{location}: {result.Message}", result.MessageId, result.MessageData, result.ExceptionReference) : result;
+        ? CommandResult.Error($"{location}: {result.Message}", result.MessageId, result.MessageData, result.ExceptionReference, result.MessageDataBuffer) : result;
 
     private CommandResult ReportFailure(CommandResult failure, bool outgoing)
     {
@@ -380,9 +385,16 @@ public sealed class ClInterpreter
 
     private CommandResult ExecuteCall(ClStatement statement, ClVariables symbols, ref int callDepth)
     {
-        var parts = SplitProgramTarget(ResolveValue(statement.ProgramName, symbols).TrimEnd());
+        var parts = SplitProgramTarget(ClCommandArguments.Resolve(statement.ProgramName ?? "", name => symbols[name]).TrimEnd());
         var library = parts.library ?? "*LIBL";
         var name = parts.name;
+        long argumentBytes = 0;
+        void Account(int size)
+        {
+            _cancellationToken.ThrowIfCancellationRequested();
+            argumentBytes += size;
+            if (argumentBytes > 1048576) throw new ClRuntimeException("CALL arguments exceed 1 MiB.");
+        }
 
         var program = _programLoader(library, name);
         if (program is not null)
@@ -394,9 +406,11 @@ public sealed class ClInterpreter
             {
                 var argument = statement.Parameters[index].Trim();
                 var expected = declarations.TryGetValue(program.EntryParameters[index], out var declaration) ? ClVariableDefinition.From(declaration, _ccsid()) : null;
-                if (argument.StartsWith('&'))
+                var parsed = statement.CallArguments.Count == statement.Parameters.Count ? statement.CallArguments[index] : ClCallArgument.Compile(argument);
+                if (parsed.ReferenceName is { } variable)
                 {
-                    var cell = symbols.Cell(argument);
+                    var cell = symbols.Cell(variable);
+                    Account(cell.Definition?.StorageLength ?? Encoding.UTF8.GetByteCount(cell.Value));
                     if (cell.Definition is { } actual && expected is not null && actual != expected)
                         throw new ClRuntimeException("CL reference parameter type and length must match its declaration.");
                     if (expected is not null && cell.Definition is null) _ = expected.Assign(cell.Value, _ccsid());
@@ -404,8 +418,9 @@ public sealed class ClInterpreter
                 }
                 else
                 {
-                    var value = ClExpression.Compile(argument).Evaluate(_ => throw new ClRuntimeException("CALL constant cannot reference a variable."), _ccsid());
-                    parameters.Add(ConstantCell(value, expected));
+                    var value = parsed.Evaluate(name => ReadCallValue(symbols, name), _ccsid());
+                    Account(value.Buffer.Length);
+                    parameters.Add(ClCallArgument.Cell(value, expected));
                 }
             }
             return RunCore(program, parameters, ref callDepth);
@@ -415,11 +430,17 @@ public sealed class ClInterpreter
         {
             var cells = new Dictionary<ClVariableCell, Ipc.Core.Work.ProgramArgument>();
             var arguments = new List<Ipc.Core.Work.ProgramArgument>();
-            foreach (var parameter in statement.Parameters)
+            for (var index = 0; index < statement.Parameters.Count; index++)
             {
-                var argument = parameter.Trim();
-                var cell = argument.StartsWith('&') ? symbols.Cell(argument) : ConstantCell(
-                    ClExpression.Compile(argument).Evaluate(_ => throw new ClRuntimeException("CALL constant cannot reference a variable."), _ccsid()));
+                var argument = statement.Parameters[index].Trim();
+                var parsed = statement.CallArguments.Count == statement.Parameters.Count ? statement.CallArguments[index] : ClCallArgument.Compile(argument);
+                if (parsed.ReferenceName is not { } variable)
+                {
+                    var temporary = parsed.Evaluate(name => ReadCallValue(symbols, name), _ccsid());
+                    Account(temporary.Buffer.Length); arguments.Add(ClCallArgument.Temporary(temporary)); continue;
+                }
+                var cell = symbols.Cell(variable);
+                Account(cell.Definition?.StorageLength ?? Encoding.UTF8.GetByteCount(cell.Value));
                 if (!cells.TryGetValue(cell, out var reference))
                 {
                     reference = cell.Borrow();
@@ -442,18 +463,9 @@ public sealed class ClInterpreter
         return _commandRunner(fallback);
     }
 
-    private ClVariableCell ConstantCell(object value, ClVariableDefinition? expected = null)
-    {
-        if (value is Ipc.Core.Work.ProgramBuffer raw && (expected is null || expected.Type == "*CHAR"))
-        {
-            expected ??= new("*CHAR", Math.Max(1, raw.Length), 0);
-            var bytes = Enumerable.Repeat(Ipc.Core.Text.CodePage.FromCcsid(_ccsid()).GetBytes(" ")[0], expected.Length).ToArray();
-            raw.ToArray().AsSpan(0, Math.Min(raw.Length, bytes.Length)).CopyTo(bytes);
-            var cell = new ClVariableCell(expected.Default, expected, _ccsid());
-            cell.AssignBuffer(new(bytes, _ccsid())); return cell;
-        }
-        return new(expected?.Assign(value, _ccsid()) ?? ClExpression.Text(value), expected, _ccsid());
-    }
+    private static object CallValue(ClVariableCell cell) => (object?)cell.RawBuffer ?? cell.Definition?.Read(cell.Value) ?? cell.Value;
+    private object ReadCallValue(ClVariables symbols, string name) => name == "*LDA"
+        ? _localDataArea?.Invoke().ToBuffer() ?? throw new ClRuntimeException("*LDA requires a job host.") : CallValue(symbols.Cell(name));
 
     public CommandResult ExecuteCommand(CommandCall call)
     {
@@ -462,7 +474,7 @@ public sealed class ClInterpreter
 
     private CommandResult ExecuteCommand(CommandCall call, ClVariables symbols)
     {
-        if (_contextCommandRunner?.Invoke(call, new(name => symbols.Cell(name).Borrow(), value => ResolveValue(value, symbols))) is { } result) return result;
+        if (_contextCommandRunner?.Invoke(call, new(name => symbols.Cell(name).Borrow(), value => ClCommandArguments.Resolve(value, name => symbols[name]))) is { } result) return result;
         return _commandRunner(Substitute(call, symbols));
     }
 
@@ -551,15 +563,17 @@ public sealed class ClInterpreter
 
     private static CommandCall Substitute(CommandCall call, IReadOnlyDictionary<string, string> symbols)
     {
-        return new CommandCall
+        var expanded = new CommandCall
         {
             Name = call.Name,
-            Positional = call.Positional.Select(p => ResolveValue(p, symbols)).ToList(),
+            Positional = call.Positional.Select(p => ClCommandArguments.Render(p, name => symbols[name])).ToList(),
             Keywords = call.Keywords.ToDictionary(
                 kv => kv.Key,
-                kv => ResolveValue(kv.Value, symbols),
+                kv => ClCommandArguments.Render(kv.Value, name => symbols[name]),
                 StringComparer.OrdinalIgnoreCase),
         };
+        if (expanded.ToString().Length > 32768) throw new ClRuntimeException("Expanded command exceeds 32768 characters.");
+        return expanded;
     }
 }
 

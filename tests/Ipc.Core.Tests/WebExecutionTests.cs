@@ -45,6 +45,16 @@ public sealed class WebExecutionTests
             var job = new JobService(factory).GetRequired(reply.Job.Value);
             Assert.Equal(JobCompletion.Normal, job.CompletionCode);
             Assert.Contains(reply.Job.ToString()!, reply.Result!.Message);
+            var apiResponse = await client.PostAsJsonAsync("/api/commands", new { command = "CALL QCMDEXC PARM('DSPJOB' 6)" }, stop.Token);
+            apiResponse.EnsureSuccessStatusCode();
+            var apiReply = await apiResponse.Content.ReadFromJsonAsync<CommandReply>(stop.Token);
+            Assert.Equal("WEBUSER", apiReply!.Job!.Value.User);
+            Assert.Contains(apiReply.Job.ToString()!, apiReply.Result!.Message);
+            Assert.Equal(JobCompletion.Normal, new JobService(factory).GetRequired(apiReply.Job.Value).CompletionCode);
+            var apiDenied = await client.PostAsJsonAsync("/api/commands", new { command = "CALL QCMDEXC PARM('CRTLIB LIB(FORBIDDEN)' 21)" }, stop.Token);
+            Assert.Equal(HttpStatusCode.BadRequest, apiDenied.StatusCode);
+            var apiDeniedReply = await apiDenied.Content.ReadFromJsonAsync<CommandReply>(stop.Token);
+            Assert.Equal("CPF9802", apiDeniedReply!.Result!.MessageId);
             var denied = await client.PostAsJsonAsync("/api/commands", new { command = "CRTLIB LIB(FORBIDDEN)" }, stop.Token);
             Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
             var deniedReply = await denied.Content.ReadFromJsonAsync<CommandReply>(stop.Token);

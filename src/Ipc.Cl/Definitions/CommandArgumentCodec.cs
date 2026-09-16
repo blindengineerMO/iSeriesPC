@@ -34,7 +34,7 @@ public static class CommandArgumentCodec
         return result;
     }
     public static int Width(ParameterDefinition p) => p.DefaultLibrary is not null ? 20 : p.Type switch {
-        "*INT2" or "*UINT2" => 2, "*INT4" or "*UINT4" => 4, "*DEC" => (p.Length + 2) / 2,
+        "*INT2" or "*UINT2" => 2, "*INT4" or "*UINT4" => 4, "*INT8" or "*UINT8" => 8, "*DEC" => (p.Length + 2) / 2,
         "*LGL" => 1, "*DATE" => 7, "*TIME" => 6, _ => p.Length };
     private static byte[] Scalar(ParameterDefinition p, object? value, int ccsid)
     {
@@ -56,6 +56,8 @@ public static class CommandArgumentCodec
             case "*UINT2": BinaryPrimitives.WriteUInt16BigEndian(bytes, checked((ushort)number)); break;
             case "*INT4": BinaryPrimitives.WriteInt32BigEndian(bytes, checked((int)number)); break;
             case "*UINT4": BinaryPrimitives.WriteUInt32BigEndian(bytes, checked((uint)number)); break;
+            case "*INT8": BinaryPrimitives.WriteInt64BigEndian(bytes, checked((long)number)); break;
+            case "*UINT8": BinaryPrimitives.WriteUInt64BigEndian(bytes, checked((ulong)number)); break;
             case "*DEC":
                 var digits = Math.Abs(number).ToString("F" + p.Decimals, CultureInfo.InvariantCulture).Replace(".", "", StringComparison.Ordinal).PadLeft(width * 2 - 1, '0') + (number < 0 ? "D" : "C");
                 if (digits.Length != width * 2) throw CommandDefinition.Invalid("Packed CPP argument overflow.");

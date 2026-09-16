@@ -31,9 +31,8 @@ on invalid encoding raise a monitorable error. Numeric-to-CHAR conversions
 pad with leading zeroes and put a negative sign first. Character-to-DEC conversion
 truncates fractional positions; numeric assignments exceeding declared precision
 or scale fail. Untyped DCL and undeclared CHGVAR targets remain legacy string
-extensions. Pointer/based storage, hex initializers, substring/binary built-ins,
-are not yet implemented. Full native call-constant layout rules also remain open;
-the semantic bridge converts constants to the receiving declaration.
+extensions. Hex constants preserve exact bytes, including invalid text encodings;
+inferred CHAR lengths count encoded bytes. Pointer/based storage remains open.
 
 Limits are 25 nested DO groups, 64 nested control constructs/expression levels,
 4096 expression tokens, 32768 characters per continued command/expression, 100000
@@ -42,12 +41,29 @@ cancellation and the job execution budget. Errors retain original source/include
 locations. Unsupported constructs fail at compile time or through the command
 catalog; they do not gain compatibility status from parsing alone.
 
-Validation: 998 tests pass with a warning-free Release build. ClControlFlowTests
+Validation: 1187 tests, a warning-free Release build and full display PTY pass. ClControlFlowTests
 covers ascending/descending/empty loops, changing TO, zero BY, nested labelled
 exits, SELECT, IF/ELSE binding, typed values, errors, continuations and cancellation.
 ClExpressionTests supplies independent expression cases. The display PTY compiles
 and calls CLFLOW through CRTCLPGM, verifying typed arithmetic, DOFOR, ITERATE and
 SELECT against the expected result.
+
+`%SST`/`%SUBSTRING` read or assign a byte range in a declared CHAR variable or
+the job's 1024-byte `*LDA`. Positions are one-based; position and length must be
+positive integers within the buffer. Substring assignments preserve neighboring
+bytes, pad with job-CCSID blanks, and may split a multibyte character. The right
+side is evaluated before an overlapping write. `%BIN`/`%BINARY` read and assign
+signed, big-endian two- or four-byte fields in CHAR storage. Omitting position
+and length selects the whole variable, which must have one of those widths;
+an explicit length must be the constant 2 or 4. Writes truncate fractional
+numeric values and reject overflow with MCH1210 before changing storage.
+These functions work in expressions, CHGVAR targets and CALL expression
+temporaries; general command expression metadata remains open.
+ClByteFunctionTests checks independent signed byte fixtures, overlap, invalid
+ranges, atomic failures, bounded parsing and real job-local storage at CCSIDs
+37 and 1208. See IBM's [substring](https://www.ibm.com/docs/en/i/7.6.0?topic=procedure-substring-built-in-function)
+and [binary](https://www.ibm.com/docs/en/i/7.4.0?topic=procedure-binary-built-in-function)
+function contracts.
 
 References: [IBM DOFOR](https://www.ibm.com/docs/en/i/7.5.0?topic=d-do),
 [LEAVE](https://www.ibm.com/docs/en/i/7.5.0?topic=procedure-leave-command-in-cl-program),
@@ -61,13 +77,39 @@ RunWithArguments accepts semantic scalars or immutable ProgramBuffer inputs and
 returns updated parameters. Typed buffer lengths must match DCL. DEC uses packed
 sign/digit nibbles, INT/UINT use big-endian 2/4-byte storage, and CHAR/LGL use the
 buffer CCSID. Invalid signs/digits/padding/lengths fail before execution. Returned
-buffers use the executing job CCSID. Calls are bounded to 256 parameters and
+buffers use the executing job CCSID. CL CALL/PGM support at most 255 parameters and
 1 MiB of incoming argument data. CL reference parameters share cells, including
 aliases passed more than once; updates survive callee errors. Declared reference
-types and lengths must match. Constant arguments use private converted cells.
+types and lengths must match. Constant arguments use private temporary storage.
 RPG-to-CL calls receive semantic writeback through the existing RPG host result;
 CL-to-RPG scalar references and CL-to-native version-2 buffers now write back.
-CALLPRC and the full native constant ABI remain open.
+CALLPRC and procedure bindings remain open.
+
+CALL character constants and character expressions pass at least 32 bytes;
+longer values retain their encoded byte length. Numeric constants default to
+packed DEC(15,5). Hex constants pass their exact bytes and can initialize a
+different receiver layout. A shorter CHAR receiver reads its prefix; a larger
+receiver or incompatible numeric declaration fails before the callee executes.
+Explicit attributes such as `PARM((25.5 (*DEC 5 2)))` create a temporary with the
+specified layout. CHAR supports 1–32767 bytes, DEC up to 24 digits/9 decimals,
+INT/UINT 2/4/8 bytes, LGL one byte, and FLT IEEE big-endian 4/8 bytes. Eight-byte
+integer CALL temporaries are available even though OPM-style DCL INT remains
+limited to four bytes. Numeric fractions and overlong character values truncate
+when assigned to explicitly sized temporaries; overflow fails before dispatch.
+Expressions compile with the program and cannot write back into their operands.
+A plain variable retains its live reference even when attributes accompany it.
+
+Direct and compiled CALLs use the same constant layouts for CL, supported RPG
+scalar receivers and native protocol 2. Native protocol 1 retains its documented
+semantic scalar adapter. Untyped CL receivers retain the legacy scalar extension;
+raw hex buffers remain byte-preserving. Null CALL parameters are rejected. The
+1 MiB aggregate argument limit also applies to nested and host calls. Batch routing
+uses the shared typed program entry within the same identity, accounting, budget
+and lock scope, preserving the submitted command without rebuilding a CALL string.
+ClCallConstantTests and ExternalProgramTests supply independent bytes, native
+process captures, declaration failures, expression isolation and response validation.
+See IBM's [CALL parameter attributes](https://www.ibm.com/docs/en/i/7.5.0?topic=ssw_ibm_i_75%2Fcl%2Fcall.htm)
+and [parameter passing rules](https://www.ibm.com/docs/en/i/7.5.0?topic=pp-using-call-program-command-pass-control-called-program).
 
 MONMSG supports command and program scopes, exact IDs and two/four trailing-zero
 generic IDs, and constant CMPDTA prefixes up to 28 encoded bytes. Command monitors
@@ -77,8 +119,9 @@ program. Recovery can use command groups, GOTO or RETURN; program-level EXEC is
 restricted to GOTO. No-action handlers continue after the failed command, treating
 a failed IF condition as false. Invalid placement and parameters fail compilation.
 
-SNDPGMMSG supports immediate INFO/COMP/DIAG output and the predefined
-QCPFMSG/CPF9898 message with MSGDTA. MSGTYPE(*ESCAPE) ends the sender and propagates
+SNDPGMMSG supports immediate INFO/COMP/DIAG output and predefined MSGID/MSGF
+messages with raw MSGDTA and durable definition snapshots. MONMSG text/hex CMPDTA
+compares raw replacement prefixes independently of formatted text. MSGTYPE(*ESCAPE) ends the sender and propagates
 to its caller; it bypasses the sender's own monitors. IDs and substitution data
 remain separate from source-location text across calls. Arithmetic overflow and
 zero division identify MCH1210/MCH1211. Named and program queues support inquiry/
@@ -90,8 +133,9 @@ per frame. Explicit SNDPGMMSG escapes retain their original delivery key, avoidi
 a duplicate when the caller receives them. Returned-frame exceptions remain in
 DSPJOBLOG until removed. Host diagnostics use valid UTF-8 bounded to 4096 bytes;
 RCVMSG performs requested conversion. A full/revoked queue produces a monitorable
-delivery error without recursive error reporting. Wider message files and
-status/notify/break delivery remain open, as do ILE exception-handler semantics.
+delivery error without recursive error reporting. Advanced message formats, reply
+validity, overrides and status/notify/break delivery remain open, as do ILE
+exception-handler semantics.
 
 ClParameterTests supplies independent packed/integer/logical/character bytes,
 aliased references, error writeback, counts/signatures, variable program targets
@@ -148,6 +192,12 @@ cancellation and 8,300 reads within one command without exhausting the 8,192-loc
 budget. SqliteCancellationTests cancels an executing recursive query and verifies
 that the connection remains usable. Terminal acceptance compiles and calls CLREAD,
 monitors EOF and reopens the file before checking its data.
+
+Call/job cleanup attempts every open-path and frame close even if one fails, then
+reports the first failure. Failed closes remove cached handles, and callers regain
+their parent frame. Out-of-order unwind attempts can be retried in the correct order.
+JobEnvironmentTests verifies remaining resource release, inactive message queues,
+reopening after failure and repeated disposal without affecting another job.
 
 ALWVARLEN(*YES) exposes a two-byte big-endian data length followed by the maximum
 field payload padded with job-CCSID blanks. Numeric fields exceeding 15 digits map
@@ -228,3 +278,26 @@ References: [ADDLIBLE](https://www.ibm.com/docs/en/i/7.6.0?topic=beginning-add-l
 [CHGLIBL](https://www.ibm.com/docs/en/i/7.5.0?topic=ssw_ibm_i_75%2Fcl%2Fchglibl.html),
 [RTVJOBA](https://www.ibm.com/docs/en/i/7.6.0?topic=r-retrieve-job-attributes), and
 [RTVDTAARA](https://www.ibm.com/docs/en/i/7.5.0?topic=r-retrieve-data-area).
+
+
+## Command arguments
+
+CL resolves padded variables in each qualified-name component, individual list
+elements and nested lists. Values containing spaces, quotes or parentheses remain
+one scalar; quoted source text is not interpolated. Missing variables and invalid
+qualified components fail before dispatch. Expanded commands are bounded to 32768
+characters and list nesting to 64 levels. CALL program targets, data-area names
+and dimensions, and message destinations use the same resolver. CHGLIBL rejects
+a single variable containing multiple space-separated library names. The existing
+single-variable qualified CALL target remains an extension. General command
+expression/EXPR metadata is still pending. ClCommandArgumentTests covers typed
+CMD/CPP case and quote preservation, lists, failures and real service commands.
+Terminal CRTCLPGM→CALL verifies qualified data-area names and a dimension variable.
+See IBM's [list and qualified-name variables](https://www.ibm.com/docs/en/i/7.5.0?topic=commands-variables-use-specifying-list-qualified-name).
+
+
+QSYS/QCMDEXC now executes dynamic command strings through the shared dispatcher.
+Direct and compiled CL callers pass CHAR bytes and packed DEC(15,5) lengths;
+RPG has a semantic adapter. Live authority/signatures, job state, cancellation,
+recursion limits and command escape IDs are retained. See [API contracts](api.md)
+for exact layouts and the remaining prompting/API limitations.

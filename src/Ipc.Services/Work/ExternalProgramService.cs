@@ -59,9 +59,10 @@ public sealed class ExternalProgramService(SqliteConnectionFactory factory, Obje
         Validate(manifest);
         foreach (var file in manifest.Dependencies.Prepend(manifest.Executable))
             if (Pin(file.Path) != file) throw Invalid("External program executable or dependency changed; register a new program version.");
-        if (parameters.Count > 256 || parameters.Any(p => p is not (null or string or bool or byte or short or int or long or float or double or decimal or ProgramBuffer)))
+        if (parameters.Count > 256 || parameters.Any(p => p is not (null or string or bool or byte or short or int or long or float or double or decimal or ProgramBuffer or ProgramConstant)))
             throw Invalid("External program parameters must be at most 256 scalar values or program buffers.");
-        var wireParameters = parameters.Select(p => p is ProgramBuffer buffer
+        var adapted = parameters.Select(p => p is ProgramConstant constant ? manifest.ProtocolVersion == 1 ? constant.Value : constant.Buffer : p).ToArray();
+        var wireParameters = adapted.Select(p => p is ProgramBuffer buffer
             ? manifest.ProtocolVersion == 1 ? (object)buffer.ToText() : new { type = "buffer", ccsid = buffer.Ccsid, data = buffer.ToBase64() }
             : p).ToArray();
         var request = JsonSerializer.Serialize(new { version = manifest.ProtocolVersion, parameters = wireParameters }, JsonOptions);
@@ -105,7 +106,7 @@ public sealed class ExternalProgramService(SqliteConnectionFactory factory, Obje
                 !root.TryGetProperty("success", out var success) || success.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
                 throw Invalid("External program returned an invalid protocol response.");
             var message = root.TryGetProperty("message", out var m) ? m.GetString() ?? "" : "";
-            var updated = root.TryGetProperty("parameters", out var p) ? p.EnumerateArray().Select(value => Parameter(value, manifest.ProtocolVersion)).ToArray() : parameters.ToArray();
+            var updated = root.TryGetProperty("parameters", out var p) ? p.EnumerateArray().Select(value => Parameter(value, manifest.ProtocolVersion)).ToArray() : adapted;
             if (updated.Length != parameters.Count) throw Invalid("External program returned a different parameter count.");
             return new(success.GetBoolean(), Clean(message + (errors.Length == 0 ? "" : "\n" + errors)), updated);
         }

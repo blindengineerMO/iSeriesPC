@@ -17,7 +17,7 @@ The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
 Latest [completion checkpoint](docs/completion-progress.md): 33/106 checklist items
-complete, 998 tests passing, and real sign-on/display PTY acceptance passing.
+complete, 1187 tests passing, and real sign-on/display PTY acceptance passing.
 
 | WP | Component | Status |
 |----|-----------|--------|

@@ -104,20 +104,22 @@ A failed output leaves the session unavailable for input until a successful writ
 bindings; legacy HLPID-only records still expose their context. Editor modes, key sequences, renderer snapshots and real keyboard/resize acceptance
 are documented in [terminal-keyboard.md](terminal-keyboard.md).
 
-A minimal typed `*MSGF` text catalog supports the display dependency:
+The typed `*MSGF` description catalog supports the display dependency:
 
 ```
 CRTMSGF MSGF(QGPL/TEXTS)
 ADDMSGD MSGID(DSP0001) MSGF(QGPL/TEXTS) MSG('Quantity must be positive.')
 ```
 
-IDs are seven uppercase letters/digits; descriptions contain 1–512 printable
-characters, up to 4,096 descriptions per file. Adds are transactional and duplicate
-IDs fail. `MSGCON` copies text into the compiled panel, so its source message file
+New IDs have a three-character letter/alphanumeric prefix and four hexadecimal
+suffix positions; first-level templates allow 1–132 printable characters, up to
+4,096 descriptions per file. Legacy text remains readable. Adds are transactional
+and duplicate IDs fail. `MSGCON` copies text into the compiled panel, so its source message file
 is not needed afterward. `ERRMSGID` and `CHKMSGID` resolve the authorized message
 file through the current job's library list at display/validation time; deleting or
-renaming that late-bound file can make later displays fail. Complete message-file
-formats/replacement data and MSGQ delivery remain C11 work.
+renaming that late-bound file can make later displays fail. [Message descriptions](message-descriptions.md) now include substitution formats,
+second-level text, severity and CL retrieval. Predefined MSGQ delivery and the
+remaining message formats still belong to C07/C11.
 
 ## Subfiles and windows
 

@@ -46,7 +46,10 @@ public sealed class ExecutionSession : IDisposable
 
     public IReadOnlyList<string> DescribeCommand(string name) => _commands.DescribeCommand(name);
 
-    public CommandResult Execute(string command)
+    public CommandResult Execute(string command) => ExecuteCore(() => _commands.Execute(command));
+    internal CommandResult ExecuteProgram(string target, IReadOnlyList<object?> parameters) => ExecuteCore(() => _commands.RunProgram(target, parameters));
+
+    private CommandResult ExecuteCore(Func<CommandResult> invoke)
     {
         ObjectDisposedException.ThrowIf(_ended, this);
         using var identity = OperationIdentity.Enter(Job.UserProfile ?? Job.Key.User, Job.Key, Job.AuthSessionId);
@@ -72,7 +75,7 @@ public sealed class ExecutionSession : IDisposable
                 return CommandResult.Error("IPC0101: Session profile is unavailable or requires a password change.");
             }
             using var locks = new Ipc.Services.Work.JobLockStore(_system.Connections).EnterCommand(Job.Key, CancellationToken);
-            var result = _commands.Execute(command);
+            var result = invoke();
             outcome = result.Outcome.ToString();
             if (result.IsError && result.Message?.Contains("CPF9802", StringComparison.Ordinal) == true)
                 _system.DurableEvents.Append("security.authority.denied", new { request });

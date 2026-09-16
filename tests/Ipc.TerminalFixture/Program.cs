@@ -73,10 +73,44 @@ if (system is not null)
             files.SaveSourceMember("QGPL", "SOURCE", "CLRESP",
                 "PGM\nDCL &KEY *CHAR LEN(4)\nRCVMSG MSGQ(QGPL/INBOX) RMV(*NO) KEYVAR(&KEY)\n" +
                 "SNDRPY MSGQ(QGPL/INBOX) MSGKEY(&KEY) RPY('YES')\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLABICHILD",
+                "PGM PARM(&N &RAW &I)\nDCL &N *DEC LEN(15 5)\nDCL &RAW *CHAR LEN(4)\nDCL &I *INT\n" +
+                "IF (&N *NE 25.5 *OR &RAW *NE X'FF00FE01' *OR &I *NE 4) THEN(RETURN)\n" +
+                "CHGVAR &I 99\nSNDPGMMSG MSG('CALL LAYOUTS ACCEPTED')\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLCONST",
+                "PGM\nDCL &N *INT VALUE(3)\nCALL QGPL/CLABICHILD PARM(25.5 X'FF00FE01' ((&N + 1) (*INT 4)))\n" +
+                "IF (&N *NE 3) THEN(SNDPGMMSG MSG('TEMPORARY CHANGED CALLER'))\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLMSGTXT",
+                "PGM\nDCL &TEXT *CHAR LEN(30)\nDCL &HELP *CHAR LEN(40)\nDCL &SEV *DEC LEN(2 0)\n" +
+                "RTVMSG USR0001 QGPL/CLMSGS MSGDTA(X'01234D') MSG(&TEXT) SECLVL(&HELP) SEV(&SEV)\n" +
+                "IF (&TEXT *EQ 'Amount -12.34' *AND &HELP *EQ 'Balance -12.34' *AND &SEV *EQ 40) THEN(SNDPGMMSG MSG('PREDEFINED TEXT ACCEPTED'))\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLMSGFAIL",
+                "PGM\nSNDPGMMSG MSGID(USR0001) MSGF(QGPL/CLMSGS) MSGDTA(X'01234D') MSGTYPE(*ESCAPE)\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLMSGRCV",
+                "PGM\nDCL &TEXT *CHAR LEN(30)\nDCL &HELP *CHAR LEN(40)\nDCL &RAW *CHAR LEN(3)\nDCL &SEV *DEC LEN(2 0)\n" +
+                "CALL QGPL/CLMSGFAIL\nMONMSG MSGID(USR0001) CMPDTA(X'01234D') EXEC(DO)\n" +
+                "RCVMSG PGMQ(*SAME) MSGTYPE(*EXCP) MSG(&TEXT) SECLVL(&HELP) MSGDTA(&RAW) SEV(&SEV)\n" +
+                "IF (&TEXT *EQ 'Amount -12.34' *AND &HELP *EQ 'Balance -12.34' *AND &RAW *EQ X'01234D' *AND &SEV *EQ 40) THEN(SNDPGMMSG MSG('PREDEFINED QUEUE ACCEPTED'))\nENDDO\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLAPI",
+                "PGM\nDCL &CMD *CHAR LEN(40) VALUE('CHGCURLIB QGPL')\nDCL &LEN *DEC LEN(15 5) VALUE(14)\n" +
+                "DCL &LIB *CHAR LEN(10)\nCALL QSYS/QCMDEXC PARM(&CMD &LEN)\nRTVJOBA CURLIB(&LIB)\n" +
+                "IF (&LIB *EQ 'QGPL') THEN(SNDPGMMSG MSG('QCMDEXC ACCEPTED'))\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLARGS",
+                "PGM\nDCL &LIB *CHAR LEN(10) VALUE('QGPL')\nDCL &AREA *CHAR LEN(10) VALUE('ARGBYTES')\n" +
+                "DCL &LEN *DEC LEN(3 0) VALUE(2)\nDCL &RAW *CHAR LEN(2)\n" +
+                "CRTDTAARA DTAARA(&LIB/&AREA) TYPE(*CHAR) LEN(&LEN) VALUE(X'FF00')\n" +
+                "RTVDTAARA DTAARA(&LIB/&AREA) RTNVAR(&RAW)\nDLTDTAARA DTAARA(&LIB/&AREA)\n" +
+                "IF (&RAW *EQ X'FF00') THEN(SNDPGMMSG MSG('COMMAND ARGUMENTS ACCEPTED'))\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLBYTES",
+                "PGM\nDCL &RAW *CHAR LEN(4) VALUE(X'FFFFFFC7')\nDCL &N *DEC LEN(10 0)\n" +
+                "CHGVAR %SST(*LDA 1021 4) &RAW\nCHGVAR &RAW %SUBSTRING(*LDA 1021 4)\n" +
+                "CHGVAR &N %BINARY(&RAW)\nIF (&N *NE -57) THEN(RETURN)\n" +
+                "CHGVAR %BIN(&RAW 3 2) 32767\n" +
+                "IF (&RAW *EQ X'FFFF7FFF') THEN(SNDPGMMSG MSG('BYTE FUNCTIONS ACCEPTED'))\nENDPGM", null);
             files.SaveSourceMember("QGPL", "SOURCE", "CLERRMSG",
-                "PGM\nDCL &N *DEC LEN(2 0)\nDCL &ID *CHAR LEN(7)\nDCL &TYPE *CHAR LEN(2)\nCHGVAR &N (1 / 0)\n" +
-                "MONMSG MCH1211 EXEC(DO)\nRCVMSG MSGTYPE(*EXCP) MSGID(&ID) RTNTYPE(&TYPE)\n" +
-                "IF (&ID *EQ 'MCH1211' *AND &TYPE *EQ '15') THEN(SNDPGMMSG MSG('RUNTIME ERROR RECEIVED'))\nENDDO\nENDPGM", null);
+                "PGM\nDCL &N *DEC LEN(2 0)\nDCL &ID *CHAR LEN(7)\nDCL &TYPE *CHAR LEN(2)\nDCL &SENDER *CHAR LEN(720)\nCHGVAR &N (1 / 0)\n" +
+                "MONMSG MCH1211 EXEC(DO)\nRCVMSG MSGTYPE(*EXCP) MSGID(&ID) RTNTYPE(&TYPE) SENDER(&SENDER) SENDERFMT(*LONG)\n" +
+                "IF (&ID *EQ 'MCH1211' *AND &TYPE *EQ '15' *AND %SST(&SENDER 42 12) *EQ 'CLERRMSG') THEN(SNDPGMMSG MSG('RUNTIME ERROR RECEIVED'))\nENDDO\nENDPGM", null);
             files.SaveSourceMember("QGPL", "SOURCE", "CLQUEUE",
                 "PGM\nDCL &KEY *CHAR LEN(4)\nDCL &TEXT *CHAR LEN(8)\nDCL &TYPE *CHAR LEN(2)\n" +
                 "SNDMSG MSG('Proceed?') TOMSGQ(QGPL/INBOX) MSGTYPE(*INQ) RPYMSGQ(QGPL/REPLIES)\n" +

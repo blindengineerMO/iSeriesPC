@@ -22,8 +22,8 @@ The current command surface is:
 | DLTMSGQ | MSGQ |
 | SNDMSG | MSG, TOMSGQ, MSGTYPE(*INFO/*INQ), explicit RPYMSGQ for inquiries |
 | SNDRPY | MSGKEY, MSGQ, RPY (including *DFT), RMV |
-| SNDPGMMSG | MSG, QCPFMSG/CPF9898 with MSGDTA, MSGTYPE, TOPGMQ(*PRV/*SAME/*EXT), TOMSGQ, RPYMSGQ, KEYVAR |
-| RCVMSG | MSGQ (default *PGMQ), PGMQ, MSGTYPE, MSGKEY, WAIT, RMV, CCSID, KEYVAR, MSG, MSGLEN, MSGID, SEV, TXTCCSID, RTNTYPE |
+| SNDPGMMSG | MSG, MSGID, MSGF, MSGDTA, MSGTYPE, TOPGMQ(*PRV/*SAME/*EXT), TOMSGQ, RPYMSGQ, KEYVAR |
+| RCVMSG | MSGQ (default *PGMQ), PGMQ, MSGTYPE, MSGKEY, WAIT, RMV, CCSID, KEYVAR, MSG, MSGLEN, MSGID, SEV, TXTCCSID, RTNTYPE, SENDER, SENDERFMT, SECLVL, SECLVLLEN, MSGDTA, MSGDTALEN, MSGF, MSGFLIB, SNDMSGFLIB, DTACCSID |
 | DSPMSG | Explicit named MSGQ or *SYSOPR; bounded list with display, reply and confirmed removal |
 | RMVMSG | MSGQ, PGMQ (including *ALLINACT with CLEAR(*ALL)), MSGKEY, CLEAR(*BYKEY/*ALL/*KEEPUNANS/*OLD/*NEW), RMVEXCP (OPM frames) |
 
@@ -35,6 +35,32 @@ receiving. Failed CCSID conversion also leaves the message unconsumed. No messag
 at the end of WAIT returns blanks/zeroes; a missing explicit key raises CPF2410.
 Four-byte message keys remain opaque CL character buffers, including in UTF-8
 jobs. Text is padded/truncated by bytes; MSGLEN reports available length.
+
+Schema 22 snapshots sender job name/user/number, current profile, sending program
+and original send time. Forwarded exceptions retain their origin and identify the
+new recipient frame. RCVMSG SENDERFMT(*SHORT) requires at least 80 CHAR bytes;
+*LONG requires 720. SHORT returns the current profile only when at least 87 bytes
+are available. LONG follows the native fixed offsets; unavailable module,
+procedure and instruction fields remain blank, with known program statement
+counts zero. Extra storage and an empty receive are blank-filled. Times use UTC,
+including the documented 0yymmdd date and six microsecond digits. Historical
+unknown sender programs stay blank. Invalid layouts, encoding or job-number
+overflow fail before consumption. Reply KEYVAR for ANY/RPY returns the sender-copy
+correlation key. MessageSenderTests includes independent CCSID 37/1208 layouts,
+sender job termination, exception forwarding and migration preservation.
+
+Schema 23 snapshots predefined descriptions and replacement bytes. SNDPGMMSG
+resolves MSGID/MSGF at send time; queued text, help, severity and inquiry defaults
+survive edits, deletion and restart. RCVMSG MSGDTA returns replacement bytes,
+SECLVL returns help, and the corresponding lengths report available bytes before
+truncation. Length/CCSID outputs require DEC(5,0); file/library outputs require at
+least ten CHAR bytes. MSGFLIB retains the requested library (including *LIBL);
+SNDMSGFLIB is blank when the original file path/creation identity is gone.
+DTACCSID is zero for immediate/empty results, 65535 without CCHAR fields and the
+replacement encoding for CCHAR. CCSID(*HEX) retains original replacement bytes;
+other targets convert only CCHAR and rewrite its varying-length prefix. Formatting
+and conversion complete before receipt changes state. See
+[message descriptions](message-descriptions.md) for formats and current limits.
 
 Schema 21 retains exception-handled state and reply origin. RTNTYPE requires an
 exact two-byte CHAR return variable: 01 completion, 02 diagnostic, 04 information,
@@ -98,7 +124,7 @@ same transaction; a missing, denied or full reply destination leaves the inquiry
 unchanged. Immediate inquiries have an empty default reply; the service interface
 also accepts an explicit default, up to 132 bytes. Replies are bounded to 132 bytes.
 
-The store permits 4,096 live entries and 8 MiB of message/default-reply bytes per
+The store permits 4,096 live entries and 8 MiB of message/default-reply bytes and serialized predefined metadata per
 queue. Its service payload maximum is 4,096 bytes. Full queues raise CPF2460;
 automatic wrapping is not implemented. Keys are globally monotonic unsigned
 32-bit values, never reused after deletion, and fail on exhaustion. List calls
@@ -114,8 +140,8 @@ the inquiry queue plus send authority on its reply destination. Create, display,
 delete, library access and automatic command locks use the shared services.
 Explicit *EXCL allocations therefore apply to message operations too.
 
-Still open: ILE exception-handler state, richer predefined
-messages, SENDER and remaining return layouts, user/workstation queue
+Still open: ILE exception-handler state, advanced predefined formats,
+reply validity, overrides, operator second-level presentation and remaining return layouts, user/workstation queue
 selection and TOUSR, queue delivery attributes, break/notify dispatch,
 wrapping, message subfiles and the public API
 formats. The service can store completion/diagnostic/status/escape/notify entries;

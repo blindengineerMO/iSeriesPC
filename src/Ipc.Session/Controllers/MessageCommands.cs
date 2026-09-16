@@ -133,15 +133,18 @@ public sealed partial class CommandService
         if (context is null) throw new CpfException("IPC0003", "RCVMSG requires a compiled CL variable frame.");
         var source = Choice("MSGQ", "*PGMQ") == "*PGMQ" ? EnvironmentForJob().MessageQueue(Choice("PGMQ", "*SAME")) : new MessageQueueAddress(Queue(Choice("MSGQ")));
         if (source.Named is not null && call.GetOption("PGMQ") is not null) throw new CpfException("IPC0003", "PGMQ requires MSGQ(*PGMQ).");
+        var senderFormat = Choice("SENDERFMT", "*SHORT");
+        if (senderFormat is not ("*SHORT" or "*LONG") || call.GetOption("SENDERFMT") is not null && call.GetOption("SENDER") is null)
+            throw new CpfException("IPC0003", "SENDERFMT requires SENDER and must be *SHORT or *LONG.");
         var outputs = new Dictionary<string, ProgramArgument>();
-        foreach (var keyword in new[] { "MSG", "MSGLEN", "KEYVAR", "MSGID", "SEV", "TXTCCSID", "RTNTYPE" })
+        foreach (var keyword in new[] { "MSG", "MSGLEN", "KEYVAR", "MSGID", "SEV", "TXTCCSID", "RTNTYPE", "SENDER", "SECLVL", "SECLVLLEN", "MSGDTA", "MSGDTALEN", "MSGF", "MSGFLIB", "SNDMSGFLIB", "DTACCSID" })
         {
             if (call.GetOption(keyword) is not { } variable) continue;
             if (!variable.Trim().StartsWith('&')) throw new CpfException("IPC0003", keyword + " requires a return variable.");
             var argument = context.Variable(variable.Trim());
-            var numericLength = keyword switch { "SEV" => 2, "MSGLEN" or "TXTCCSID" => 5, _ => 0 };
+            var numericLength = keyword switch { "SEV" => 2, "MSGLEN" or "TXTCCSID" or "SECLVLLEN" or "MSGDTALEN" or "DTACCSID" => 5, _ => 0 };
             if (numericLength > 0 ? argument.Type != "*DEC" || argument.Length != numericLength || argument.Decimals != 0
-                : argument.Type != "*CHAR" || argument.Length < (keyword == "MSGID" ? 7 : keyword == "KEYVAR" ? 4 : 1) || keyword == "KEYVAR" && argument.Length != 4 || keyword == "RTNTYPE" && argument.Length != 2)
+                : argument.Type != "*CHAR" || argument.Length < (keyword == "SENDER" ? senderFormat == "*LONG" ? 720 : 80 : keyword == "MSGID" ? 7 : keyword is "MSGF" or "MSGFLIB" or "SNDMSGFLIB" ? 10 : keyword == "KEYVAR" ? 4 : 1) || keyword == "KEYVAR" && argument.Length != 4 || keyword == "RTNTYPE" && argument.Length != 2)
                 throw new CpfException("IPC0003", "Invalid return variable type or length for " + keyword + ".");
             outputs.Add(keyword, argument);
         }
@@ -167,17 +170,29 @@ public sealed partial class CommandService
         var senderCopy = selection == MessageSelection.Key && store.ListFrom(source, key - 1, 1).FirstOrDefault() is { Kind: "COPY" } copy && copy.Key == key;
         var received = store.ReceiveFrom(source, selection, key, removal == "*YES", wait, _cancellationToken,
             typeChoice is "*INFO" or "*INQ" or "*RPY" or "*COMP" or "*DIAG" or "*COPY" ? typeChoice[1..] : null, receiveCcsid,
-            requireReturnType: outputs.ContainsKey("RTNTYPE"), keepException: removal == "*KEEPEXCP");
+            requireReturnType: outputs.ContainsKey("RTNTYPE"), keepException: removal == "*KEEPEXCP",
+            senderLength: outputs.TryGetValue("SENDER", out var sender) ? sender.Length : 0, longSender: senderFormat == "*LONG", senderCcsid: ccsid);
         if (received is null && selection == MessageSelection.Key && !(senderCopy && typeChoice is "*ANY" or "*RPY")) throw new CpfException("CPF2410", "Requested message key or type was not found.");
+        var keyed = received is { Kind: "RPY", CorrelationKey: { } replyKey } && typeChoice is "*ANY" or "*RPY"
+            ? received with { Key = replyKey } : received;
+        var replacement = received?.ReplacementData ?? (received?.MessageId.Length > 0 ? received.Data : null);
         foreach (var (keyword, target) in outputs)
         {
             if (target.Type == "*DEC")
             {
-                target.Value = (decimal)(keyword switch { "MSGLEN" => received?.Data.Length ?? 0, "SEV" => received?.Severity ?? 0, _ => received?.Data.Ccsid ?? 0 });
+                target.Value = (decimal)(keyword switch { "MSGLEN" => received?.Data.Length ?? 0, "SEV" => received?.Severity ?? 0,
+                    "SECLVLLEN" => received?.SecondLevel?.Length ?? 0, "MSGDTALEN" => replacement?.Length ?? 0,
+                    "DTACCSID" => received is null || received.MessageId.Length == 0 ? 0 : received.Predefined?.Description.Fields.Any(field => field.Type == "*CCHAR") == true ? replacement!.Ccsid : 65535,
+                    _ => received?.Data.Ccsid ?? 0 });
                 continue;
             }
             var bytes = new byte[target.Length]; bytes.AsSpan().Fill(StrictJobEncoding(ccsid).GetBytes(" ")[0]);
-            var value = keyword switch { "MSG" => received?.Data.ToArray(), "KEYVAR" => received?.KeyBuffer(ccsid).ToArray(),
+            var value = keyword switch { "MSG" => received?.Data.ToArray(), "KEYVAR" => keyed?.KeyBuffer(ccsid).ToArray(),
+                "SENDER" => received?.SenderInformation?.ToArray(),
+                "SECLVL" => received?.SecondLevel?.ToArray(), "MSGDTA" => replacement?.ToArray(),
+                "MSGF" => StrictJobEncoding(ccsid).GetBytes(received?.Predefined?.File ?? ""),
+                "MSGFLIB" => StrictJobEncoding(ccsid).GetBytes(received?.Predefined?.RequestedLibrary ?? ""),
+                "SNDMSGFLIB" => StrictJobEncoding(ccsid).GetBytes(received?.ActualMessageFileLibrary ?? ""),
                 "RTNTYPE" => received is null ? null : StrictJobEncoding(ccsid).GetBytes(received.ReturnType!),
                 _ => received is null ? null : StrictJobEncoding(ccsid).GetBytes(received.MessageId) };
             if (value is not null) value.AsSpan(0, Math.Min(value.Length, bytes.Length)).CopyTo(bytes);

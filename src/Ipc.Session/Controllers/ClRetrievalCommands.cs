@@ -18,7 +18,7 @@ public sealed partial class CommandService
     private CommandResult? RunClContextCommand(CommandCall call, ClCommandContext context)
     {
         var name = BuiltinContract.CanonicalName(call.Name.Split('/')[^1]);
-        if (name is not ("RTVJOBA" or "RTVDTAARA" or "CHGDTAARA" or "CRTDTAARA" or "SNDMSG" or "RCVMSG" or "SNDRPY" or "RMVMSG")) return null;
+        if (name is not ("RTVJOBA" or "RTVDTAARA" or "CHGDTAARA" or "CRTDTAARA" or "SNDMSG" or "RCVMSG" or "SNDRPY" or "RMVMSG" or "RTVMSG")) return null;
         var key = ResolveCommandObject(call.Name);
         var definition = new CommandDefinitionStore(_system.Connections).Load(key.Library, key.Name.Value);
         if (definition.Builtin != name) return null; // A user command keeps ordinary CPP dispatch.
@@ -27,6 +27,7 @@ public sealed partial class CommandService
         var bound = CommandBinder.Bind(definition, canonical).Call;
         if (_job is null) throw new CpfException("CPF1241", "A job context is required.");
         new JobDataAreaStore(_system.Connections).RequireOwner(_job.Key);
+        if (name == "RTVMSG") return ExecuteMessageDescription(bound, context);
         if (name is "SNDMSG" or "RCVMSG" or "SNDRPY" or "RMVMSG") return ExecuteMessageCommand(bound, context);
         if (name == "CHGDTAARA") return ExecuteJobDataArea(bound, context);
         if (name == "CRTDTAARA") return CreateDataArea(bound, context);

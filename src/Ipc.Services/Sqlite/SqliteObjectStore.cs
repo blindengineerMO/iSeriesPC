@@ -47,6 +47,7 @@ public sealed class SqliteObjectStore : IObjectStore
             Create(descriptor, connection, commandTransaction); commandTransaction.Commit(); return;
         }
         descriptor.ValidateIdentity();
+        if (descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute) Ipc.Services.Work.BuiltinProgramService.Validate(descriptor);
         new Ipc.Services.Security.ServiceAuthorization(_factory).RequireCreate(descriptor);
         var definition = descriptor.ObjectType == ObjectType.Command ? Ipc.Services.Commands.CommandDefinitionStore.ValidatePayload(descriptor) : null;
         var commands = new Ipc.Services.Commands.CommandDefinitionStore(_factory);
@@ -60,6 +61,7 @@ public sealed class SqliteObjectStore : IObjectStore
     private static void Insert(ObjectDescriptor descriptor, SqliteConnection connection, SqliteTransaction? transaction)
     {
         descriptor.ValidateIdentity();
+        if (descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute) Ipc.Services.Work.BuiltinProgramService.Validate(descriptor);
         if (descriptor.ObjectType == ObjectType.UserProfile)
             throw new CpfException("IPC0003", "Create profiles through the profile service so credentials and metadata remain consistent.");
         using var cmd = connection.CreateCommand();
@@ -78,6 +80,7 @@ public sealed class SqliteObjectStore : IObjectStore
     public void Update(ObjectDescriptor descriptor)
     {
         descriptor.ValidateIdentity();
+        if (descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute) Ipc.Services.Work.BuiltinProgramService.Validate(descriptor);
         var authorization = new Ipc.Services.Security.ServiceAuthorization(_factory);
         authorization.RequireObject(descriptor.Library, descriptor.Name, descriptor.ObjectType, AuthorityBit.ObjectManagement);
         if (descriptor.ObjectType == ObjectType.Program && descriptor.Attribute == Ipc.Services.Work.ExternalProgramService.Attribute)

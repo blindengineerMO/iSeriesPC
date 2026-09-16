@@ -97,6 +97,61 @@ public sealed class JobEnvironmentTests : IDisposable
         session.End(JobCompletion.Normal, "done"); Assert.Equal(2, disposed);
         Assert.Throws<ObjectDisposedException>(() => _ = jobPath.Value);
     }
+
+    [Fact]
+    public void Failed_call_cleanup_closes_remaining_paths_and_message_queue_and_restores_parent()
+    {
+        using var session = Session(); var environment = _system.JobRuntime.Environment(session.Job.Key)!;
+        var rootQueue = environment.MessageQueue(); var call = environment.EnterCall("BROKEN"); var queue = environment.MessageQueue();
+        var closed = new List<int>();
+        var first = environment.OpenPath("bad", false, JobEnvironmentScope.Call, () => new Probe(() => { closed.Add(1); throw new IOException("close failure"); }));
+        var second = environment.OpenPath("good", false, JobEnvironmentScope.Call, () => new Probe(() => closed.Add(2)));
+        Assert.Equal("close failure", Assert.Throws<IOException>(() => call.Dispose()).Message);
+        Assert.Equal(new[] { 1, 2 }, closed); Assert.Equal(0, environment.OpenPathCount); Assert.Equal(rootQueue, environment.MessageQueue());
+        Assert.Throws<ObjectDisposedException>(() => _ = first.Value); Assert.Throws<ObjectDisposedException>(() => _ = second.Value);
+        Assert.Throws<CpfException>(() => new Ipc.Services.Messages.MessageQueueStore(_system.Connections).SendTo(new[] { queue }, new ProgramBuffer(new byte[] { 0xC1 }, 37)));
+        first.Dispose(); second.Dispose(); call.Dispose(); Assert.Equal(2, closed.Count);
+    }
+
+    [Fact]
+    public void Job_cleanup_continues_across_failed_frames_and_outstanding_leases_remain_idempotent()
+    {
+        using var session = Session(); using var other = Session(); var environment = _system.JobRuntime.Environment(session.Job.Key)!;
+        var closed = 0;
+        var root = environment.OpenPath("root", true, JobEnvironmentScope.Job, () => new Probe(() => closed++));
+        var outer = environment.EnterCall("OUTER"); var outerQueue = environment.MessageQueue();
+        var good = environment.OpenPath("outer", false, JobEnvironmentScope.Call, () => new Probe(() => closed++));
+        var inner = environment.EnterCall("INNER"); var innerQueue = environment.MessageQueue();
+        var bad = environment.OpenPath("inner", false, JobEnvironmentScope.Call, () => new Probe(() => { closed++; throw new IOException("failed inner"); }));
+        Assert.Throws<IOException>(() => environment.Dispose()); Assert.Equal(3, closed);
+        foreach (var queue in new[] { innerQueue, outerQueue })
+            Assert.Throws<CpfException>(() => new Ipc.Services.Messages.MessageQueueStore(_system.Connections).SendTo(new[] { queue }, new ProgramBuffer(new byte[] { 0xC1 }, 37)));
+        inner.Dispose(); outer.Dispose(); bad.Dispose(); good.Dispose(); root.Dispose(); environment.Dispose();
+        Assert.Equal(3, closed); Assert.Equal(0, _system.JobRuntime.Environment(other.Job.Key)!.OpenPathCount);
+    }
+
+    [Fact]
+    public void Rejected_out_of_order_call_close_can_be_retried_after_inner_unwinds()
+    {
+        using var session = Session(); var environment = _system.JobRuntime.Environment(session.Job.Key)!;
+        var outer = environment.EnterCall("OUTER"); var closed = 0;
+        var path = environment.OpenPath("outer", false, JobEnvironmentScope.Call, () => new Probe(() => closed++));
+        var inner = environment.EnterCall("INNER");
+        Assert.Throws<InvalidOperationException>(() => outer.Dispose()); Assert.Equal(0, closed);
+        inner.Dispose(); outer.Dispose(); path.Dispose(); Assert.Equal(1, closed); Assert.Equal(0, environment.OpenPathCount);
+    }
+
+    [Fact]
+    public void Failed_explicit_close_removes_a_shared_path_before_reopening_the_same_identity()
+    {
+        using var session = Session(); var environment = _system.JobRuntime.Environment(session.Job.Key)!;
+        var path = environment.OpenPath("shared", true, JobEnvironmentScope.Job, () => new Probe(() => throw new IOException("failed close")));
+        Assert.Throws<IOException>(() => path.Close()); Assert.Equal(0, environment.OpenPathCount);
+        path.Close(); path.Dispose();
+        var created = false;
+        using var reopened = environment.OpenPath("shared", true, JobEnvironmentScope.Job, () => { created = true; return new Probe(() => { }); });
+        Assert.True(created); Assert.NotNull(reopened.Value);
+    }
     [Fact]
     public void Nested_CL_calls_share_data_and_library_changes_but_restore_call_overrides_on_error()
     {

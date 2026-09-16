@@ -119,6 +119,39 @@ public sealed class ExternalProgramTests : IDisposable
     }
 
     [Theory]
+    [InlineData(37)]
+    [InlineData(1208)]
+    public void Native_protocol_two_CALL_constants_have_identical_direct_and_compiled_wire_bytes(int ccsid)
+    {
+        var path = Path.Combine(_directory, "call-constants.json"); Register("CONSTABI", "effect", path: path, protocol: 2);
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"), "ConstantFixture22");
+        var job = _system.Jobs.CreateInteractive("QSECOFR", ccsid: ccsid);
+        const string command = "CALL QGPL/CONSTABI PARM('ABC' 25.5 X'FF00' (-2.99 (*INT 4)) (1.5 (*FLT 8)))";
+        ClExternalCallTests.Create(_system, "CONSTWRAP", "CLP", command);
+        var service = new CommandService(_system, job); byte[][]? previous = null;
+        foreach (var call in new[] { command, "CALL QGPL/CONSTWRAP" })
+        {
+            var result = service.Execute(call); Assert.False(result.IsError, result.Message);
+            using var document = JsonDocument.Parse(File.ReadAllText(path));
+            var buffers = document.RootElement.EnumerateArray().Select(value => { Assert.Equal("buffer", value.GetProperty("type").GetString()); Assert.Equal(ccsid, value.GetProperty("ccsid").GetInt32()); return value.GetProperty("data").GetBytesFromBase64(); }).ToArray();
+            Assert.Equal(Ipc.Core.Text.CodePage.ToBytes(ccsid, "ABC" + new string(' ', 29)), buffers[0]);
+            Assert.Equal("000000002550000C", Convert.ToHexString(buffers[1])); Assert.Equal("FF00", Convert.ToHexString(buffers[2]));
+            Assert.Equal("FFFFFFFE", Convert.ToHexString(buffers[3])); Assert.Equal("3FF8000000000000", Convert.ToHexString(buffers[4]));
+            if (previous is not null) for (var index = 0; index < buffers.Length; index++) Assert.Equal(previous[index], buffers[index]);
+            previous = buffers;
+        }
+    }
+
+    [Fact]
+    public void Invalid_native_temporary_response_prevents_all_reference_writeback()
+    {
+        Register("BADCONST", "cl-update-bad", protocol: 2);
+        ClExternalCallTests.Create(_system, "CALLER", "CLP", "DCL &N *INT VALUE(3)\nCALL QGPL/BADCONST PARM(&N (4 (*INT 4)))\nMONMSG IPC0006\nSNDPGMMSG MSG(&N)");
+        var result = new CommandService(_system).Execute("CALL QGPL/CALLER");
+        Assert.False(result.IsError, result.Message); Assert.Equal("3", result.Message?.Trim());
+    }
+
+    [Theory]
     [InlineData("cl-update", "12:4")]
     [InlineData("cl-update-fail", "12:4")]
     [InlineData("cl-update-bad", "3:4")]

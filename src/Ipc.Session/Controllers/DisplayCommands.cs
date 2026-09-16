@@ -19,22 +19,12 @@ public sealed partial class CommandService
         _catalog.Register("DSPHELP", ExecutePanelGroup);
         _catalog.Register("CRTDSPF", ExecuteDisplayFile);
         _catalog.Register("RUNPNL", ExecuteDisplayFile);
-        _catalog.Register("CRTMSGF", ExecuteDisplayMessages);
-        _catalog.Register("ADDMSGD", ExecuteDisplayMessages);
+        RegisterMessageDescriptionCommands();
     }
     private string ResolveDisplayMessage(string id, string file)
     {
         var (library, name) = ResolveWorkObject(file.ToUpperInvariant(), ObjectType.MessageFile);
         return new Ipc.Services.Messages.MessageDescriptionStore(_system.Connections).Get(library, name, id);
-    }
-    private CommandResult ExecuteDisplayMessages(CommandCall call)
-    {
-        var create = call.Name.Equals("CRTMSGF", StringComparison.OrdinalIgnoreCase);
-        var (library, name) = ResolveWorkObject(CommandParser.Unquote(call.GetOption("MSGF")).ToUpperInvariant(), ObjectType.MessageFile, creating: create);
-        var messages = new Ipc.Services.Messages.MessageDescriptionStore(_system.Connections);
-        if (create) messages.Create(library, name, CommandParser.Unquote(call.GetOption("TEXT")));
-        else messages.Add(library, name, CommandParser.Unquote(call.GetOption("MSGID")).ToUpperInvariant(), CommandParser.Unquote(call.GetOption("MSG")));
-        return CommandResult.Ok("Message file updated.");
     }
     private CommandResult ExecuteDisplayFile(CommandCall call)
     {

@@ -8,6 +8,7 @@ namespace Ipc.Cl.Interpreter;
 public sealed partial class ClExpression
 {
     private readonly Node _root;
+    internal bool IsHexadecimalConstant => _root is BinaryLiteral;
     private ClExpression(Node root) { _root = root; }
     public static ClExpression Compile(string text) => new(new Parser(text).Parse());
     public object Evaluate(Func<string, object> variable, int ccsid = 37)

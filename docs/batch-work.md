@@ -28,7 +28,8 @@ Routing selects the first ascending-sequence match: full `*EQ`, a `*SECTION` sta
 the one-based comparison position, or `*ANY`. There is no unmatched-first-entry fallback.
 Missing routes/classes fail the claimed job with a completion log. `QSYS/QCMD` executes
 the submitted command. Other routing programs receive that complete command as their
-first parameter. They decide how to handle it. `ADDRTGE`, `CHGRTGE`, `RMVRTGE` support
+first parameter through the shared typed execution entry, with the same identity,
+CALL authority, accounting, cancellation and lock scope. They decide how to handle it. `ADDRTGE`, `CHGRTGE`, `RMVRTGE` support
 `SBSD`, `SEQNBR`, `CMPVAL(value [position])`, `PGM`, `CLS`, and the `CMPMODE` extension.
 
 `CRTCLS`/`CHGCLS` persist `RUNPTY(1..99)` and `TIMESLICE(1..10000)` milliseconds;
@@ -92,7 +93,7 @@ The child writes exactly one JSON response to standard output, then exits:
 ```
 
 Parameters are strings, numbers, booleans or null; at most 256 scalars and 64 KiB input.
-CL passes character values. RPG supplies scalar values and accepts returned parameters
+Protocol 1 retains semantic values for CL CALL constants. RPG supplies scalar values and accepts returned parameters
 through its external-call writeback path. Returned parameter count must match the call;
 omitting `parameters` preserves input values. Response version and `success` are required;
 unknown/duplicate response fields are rejected. Nonzero process exit, `success:false`,
@@ -110,7 +111,10 @@ and unsupported CCSIDs fail the response. Returned buffers become immutable
 `ProgramBuffer` values. Counts, input/output limits, cancellation, and scalar types
 are identical to version 1. Version 1 can receive a command buffer only when it
 round-trips exactly through its declared CCSID; otherwise the call fails before
-process launch. Interpreted CL/RPG byte-addressed storage remains tracked in C07/C09.
+process launch. Direct and compiled CL CALL constants use fixed native layouts in protocol 2,
+including default CHAR(32 minimum), packed DEC(15,5), raw hex and explicit
+CHAR/DEC/INT/UINT/LGL/FLT temporaries. See [CL runtime](cl-runtime.md).
+The broader CL/RPG storage and procedure work remains tracked in C07/C09.
 
 Timeout is 1–3600 seconds, default 60. Cancellation/timeout kills the active process tree
 and waits for its exit; temporary files are removed. Native code must keep children under

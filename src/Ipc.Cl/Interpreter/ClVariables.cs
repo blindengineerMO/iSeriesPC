@@ -63,3 +63,6 @@ internal sealed class ClVariables : IReadOnlyDictionary<string, string>
 public sealed record ClInvocationResult(Ipc.Cl.Commands.CommandResult Result, IReadOnlyList<object?> Parameters);
 
 public sealed record ClCommandContext(Func<string, Ipc.Core.Work.ProgramArgument> Variable, Func<string, string> Resolve);
+
+public sealed record ClProgramMessage(string Text, string? MessageId, Ipc.Core.Work.ProgramBuffer? ReplacementData,
+    Ipc.Core.Work.ProgramMessageReference? Reference = null);

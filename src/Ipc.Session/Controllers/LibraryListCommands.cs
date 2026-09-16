@@ -16,17 +16,17 @@ public sealed partial class CommandService
         switch (call.Name.ToUpperInvariant())
         {
             case "CHGLIBL":
-                var list = Value("LIBL", "*SAME");
-                if (list != "*SAME") libraries = list == "*NONE" ? new() : CommandParser.Tokenize(list.Trim('(', ')')).Select(CommandParser.Unquote).ToList();
+                var list = (call.GetOption("LIBL") ?? "*SAME").Trim().ToUpperInvariant();
+                if (list != "*SAME") libraries = list == "*NONE" ? new() : CommandParser.Tokenize(list.StartsWith('(') && list.EndsWith(')') ? list[1..^1] : list).Select(CommandParser.Unquote).ToList();
                 var changed = Value("CURLIB", "*SAME"); if (changed != "*SAME") current = changed;
                 break;
             case "CHGCURLIB": current = Value("CURLIB", "*CRTDFT"); break;
             case "ADDLIBLE":
                 var library = Value("LIB");
                 if (libraries.Contains(library)) throw new CpfException("CPF2103", "Library already exists in the user library list.");
-                var position = CommandParser.Tokenize(Value("POSITION", "*FIRST").Trim('(', ')'));
-                if (position.Count == 1 && position[0] is "*FIRST" or "*LAST") libraries.Insert(position[0] == "*FIRST" ? 0 : libraries.Count, library);
-                else if (position.Count == 2 && position[0] is "*BEFORE" or "*AFTER" or "*REPLACE")
+                var position = CommandParser.Tokenize(Value("POSITION", "*FIRST").Trim('(', ')')).Select(CommandParser.Unquote).ToArray();
+                if (position.Length == 1 && position[0] is "*FIRST" or "*LAST") libraries.Insert(position[0] == "*FIRST" ? 0 : libraries.Count, library);
+                else if (position.Length == 2 && position[0] is "*BEFORE" or "*AFTER" or "*REPLACE")
                 {
                     var index = libraries.IndexOf(position[1]);
                     if (index < 0) throw new CpfException("CPF2149", "Reference library is not in the user library list.");

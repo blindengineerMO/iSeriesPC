@@ -50,16 +50,22 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
         if (programHeaders.Length > 1) throw Error(programHeaders[1].Location!, "Only one PGM header is allowed.");
         foreach (var program in programHeaders)
         {
-            if (program.EntryParameters.Count > 256 || program.EntryParameters.Distinct(StringComparer.OrdinalIgnoreCase).Count() != program.EntryParameters.Count ||
+            if (program.EntryParameters.Count > 255 || program.EntryParameters.Distinct(StringComparer.OrdinalIgnoreCase).Count() != program.EntryParameters.Count ||
                 program.EntryParameters.Any(p => !Regex.IsMatch(p, declarations.TryGetValue(p, out var variable) && variable.FileVariable ? @"\A&[A-Za-z][A-Za-z0-9_]{0,20}\z" : @"\A&[A-Za-z][A-Za-z0-9_]{0,9}\z"))) throw Error(program.Location!, "Invalid or duplicate PGM entry parameter.");
         }
         foreach (var change in _statements.Where(s => s.Kind == ClStatementKind.Change))
             if (change.TargetExpression?.IsStorageTarget != true && (change.VariableName is null || !Regex.IsMatch(change.VariableName, @"\A&[A-Z][A-Z0-9_]{0,20}\z"))) throw Error(change.Location!, "CHGVAR requires a variable or byte-function target.");
         foreach (var statement in _statements)
+        {
+            foreach (var argument in statement.CallArguments)
+                foreach (var name in argument.CharacterStorageVariables)
+                    if (name != "*LDA" && (!declarations.TryGetValue(name, out var declared) || declared.DeclarationType != "*CHAR"))
+                        throw Error(statement.Location!, "Byte functions require a declared CHAR variable.");
             foreach (var expression in new[] { statement.Expression, statement.TerminalExpression, statement.TargetExpression })
                 foreach (var name in expression?.CharacterStorageVariables ?? Array.Empty<string>())
                     if (name != "*LDA" && (!declarations.TryGetValue(name, out var declared) || declared.DeclarationType != "*CHAR"))
                         throw Error(statement.Location!, "Byte functions require a declared CHAR variable.");
+        }
         return _statements;
     }
     private static bool SameDeclaration(ClStatement first, ClStatement second)
@@ -142,9 +148,10 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
                     {
                         Check(call, "PGM PARM", 1, line);
                         if (string.IsNullOrWhiteSpace(Parameter(call, "PGM", 0))) throw Error(line.Location, "CALL requires a program target.");
-                        if (call.Split("PARM").Count > 256) throw Error(line.Location, "CALL supports at most 256 parameters.");
+                        if (call.Split("PARM").Count > 255) throw Error(line.Location, "CALL supports at most 255 parameters.");
                     }
                     var statement = ClCompiler.ParseStatement(line.Text);
+                    if (statement.Kind == ClStatementKind.Call) statement.CallArguments = statement.Parameters.Select(ClCallArgument.Compile).ToArray();
                     if (statement.Kind == ClStatementKind.Change && statement.VariableName?.StartsWith('%') == true)
                         statement.TargetExpression = Expression(statement.VariableName, line);
                     if (statement.Kind is ClStatementKind.Change or ClStatementKind.SendProgramMessage)
@@ -206,6 +213,14 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
         if (ids.Length is < 1 or > 50 || ids.Any(id => !Regex.IsMatch(id, @"\A[A-Z][A-Z0-9]{2}[0-9A-F]{4}\z") || id.StartsWith("MCH", StringComparison.Ordinal) && id[3..].Any(c => !char.IsAsciiDigit(c))))
             throw Error(line.Location, "MONMSG requires 1 to 50 constant message identifiers.");
         var rawComparison = Parameter(call, "CMPDTA", 1);
+        string? comparisonHex = null;
+        if (rawComparison?.StartsWith("X'", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var bytes = ClExpression.Compile(rawComparison).Evaluate(_ => throw Error(line.Location, "CMPDTA requires a constant.")) as Ipc.Core.Work.ProgramBuffer
+                ?? throw Error(line.Location, "CMPDTA requires hexadecimal bytes.");
+            if (bytes.Length > 28) throw Error(line.Location, "MONMSG CMPDTA exceeds 28 bytes.");
+            comparisonHex = Convert.ToHexString(bytes.ToArray()); rawComparison = null;
+        }
         var comparison = rawComparison is null || rawComparison.Equals("*NONE", StringComparison.OrdinalIgnoreCase) ? null : CommandParser.Unquote(rawComparison);
         if (comparison is not null && rawComparison?.StartsWith('\'') == false) comparison = comparison.ToUpperInvariant();
         if (comparison?.Length > 28 || rawComparison?.StartsWith('&') == true) throw Error(line.Location, "MONMSG CMPDTA requires at most 28 constant bytes.");
@@ -218,7 +233,7 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
             Command(new(action, line.Location));
             _statements[skip].Jump = _statements.Count;
         }
-        monitors.Add(new(ids, comparison, handler));
+        monitors.Add(new(ids, comparison, handler, comparisonHex));
         _lastMonitorTarget = target; _declarations = programLevel;
     }
     private static ClStatement SendProgramMessage(CommandCall call, Line line)
@@ -228,7 +243,7 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
         var id = CommandParser.Unquote(call.GetOption("MSGID")).ToUpperInvariant();
         var file = CommandParser.Unquote(call.GetOption("MSGF")).ToUpperInvariant();
         if (type is not ("*INFO" or "*COMP" or "*DIAG" or "*ESCAPE" or "*INQ")) throw Error(line.Location, "This CL checkpoint does not support the requested message type.");
-        if (id.Length > 0 && (id != "CPF9898" || file is not ("QCPFMSG" or "QSYS/QCPFMSG"))) throw Error(line.Location, "Only predefined QCPFMSG CPF9898 is available in this CL checkpoint.");
+        if (id.Length > 0 && !Regex.IsMatch(id, @"\A(?:[A-Z][A-Z0-9]{2}[0-9A-F]{4}|&[A-Z][A-Z0-9_]{0,20})\z")) throw Error(line.Location, "Invalid predefined message identifier.");
         if (type == "*ESCAPE" && id.Length == 0) throw Error(line.Location, "Escape messages require MSGID and MSGF.");
         if (call.GetOption("TOPGMQ") is { } queue && queue.ToUpperInvariant() is not ("*PRV" or "*SAME" or "*EXT")) throw Error(line.Location, "TOPGMQ supports *PRV, *SAME and *EXT.");
         if (type == "*ESCAPE" && (call.GetOption("TOPGMQ")?.ToUpperInvariant() is not (null or "*PRV") || call.GetOption("TOMSGQ") is not null)) throw Error(line.Location, "Escape propagation currently requires TOPGMQ(*PRV).");

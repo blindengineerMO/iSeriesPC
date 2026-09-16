@@ -53,8 +53,8 @@ internal sealed record ClVariableDefinition(string Type, int Length, int Decimal
         if (Type == "*LGL") return Assign(buffer.ToText(), buffer.Ccsid);
         decimal number;
         if (Type is "*INT" or "*UINT")
-            number = Type == "*UINT" ? Length == 2 ? BinaryPrimitives.ReadUInt16BigEndian(bytes) : BinaryPrimitives.ReadUInt32BigEndian(bytes)
-                : Length == 2 ? (decimal)BinaryPrimitives.ReadInt16BigEndian(bytes) : BinaryPrimitives.ReadInt32BigEndian(bytes);
+            number = Type == "*UINT" ? Length == 2 ? BinaryPrimitives.ReadUInt16BigEndian(bytes) : Length == 4 ? BinaryPrimitives.ReadUInt32BigEndian(bytes) : BinaryPrimitives.ReadUInt64BigEndian(bytes)
+                : Length == 2 ? (decimal)BinaryPrimitives.ReadInt16BigEndian(bytes) : Length == 4 ? BinaryPrimitives.ReadInt32BigEndian(bytes) : BinaryPrimitives.ReadInt64BigEndian(bytes);
         else
         {
             var sign = bytes[^1] & 15;
@@ -107,8 +107,8 @@ internal sealed record ClVariableDefinition(string Type, int Length, int Decimal
         var number = Numeric(text);
         if (Type is "*INT" or "*UINT")
         {
-            var minimum = Type == "*UINT" ? 0m : Length == 2 ? short.MinValue : int.MinValue;
-            decimal maximum = Type == "*UINT" ? Length == 2 ? (decimal)ushort.MaxValue : uint.MaxValue : Length == 2 ? short.MaxValue : int.MaxValue;
+            var minimum = Type == "*UINT" ? 0m : Length == 2 ? short.MinValue : Length == 4 ? int.MinValue : long.MinValue;
+            decimal maximum = Type == "*UINT" ? Length == 2 ? (decimal)ushort.MaxValue : Length == 4 ? uint.MaxValue : ulong.MaxValue : Length == 2 ? short.MaxValue : Length == 4 ? int.MaxValue : long.MaxValue;
             if (decimal.Truncate(number) != number || number < minimum || number > maximum) throw new ClRuntimeException("Integer assignment exceeds its declared range.", "MCH1210");
             return number.ToString("0", CultureInfo.InvariantCulture);
         }
