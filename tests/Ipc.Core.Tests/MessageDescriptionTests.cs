@@ -117,7 +117,7 @@ public sealed class MessageDescriptionTests : IDisposable
         _system.Objects.Update(descriptor); _store.Add("QGPL", "TEXTS", "USR0001", "New");
         Assert.Equal(original, _store.Get("QGPL", "TEXTS", "OLDZZZZ"));
         Assert.Equal(original, MessageDescriptionFormat.Format(_store.GetDescription("QGPL", "TEXTS", "OLDZZZZ"), new(Array.Empty<byte>(), 37), 37).Text.ToText());
-        Assert.Contains("\"Version\":2", _system.Objects.GetRequired("QGPL", "TEXTS", ObjectType.MessageFile).Source);
+        Assert.Contains("\"Version\":3", _system.Objects.GetRequired("QGPL", "TEXTS", ObjectType.MessageFile).Source);
     }
 
     [Fact]

@@ -23,7 +23,7 @@ public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
         if (!CodePage.IsSupported(ccsid)) throw Invalid("Unsupported message-file CCSID.");
         try { new SqliteObjectStore(factory).Create(new ObjectDescriptor {
             Key = new(library, name), ObjectType = ObjectType.MessageFile, Description = description, Ccsid = ccsid,
-            Owner = OperationIdentity.Current?.Principal ?? "QSECOFR", Source = JsonSerializer.Serialize(new Payload(2, new()), Json) }); }
+            Owner = OperationIdentity.Current?.Principal ?? "QSECOFR", Source = JsonSerializer.Serialize(new Payload(3, new()), Json) }); }
         catch (Microsoft.Data.Sqlite.SqliteException error) when (error.SqliteExtendedErrorCode == 1555 || error.SqliteExtendedErrorCode == 2067)
         { throw new CpfException("CPF7302", "Message file already exists."); }
     }
@@ -41,7 +41,8 @@ public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
         });
     }
     public void Change(string library, string name, string id, string? text = null, string? secondLevel = null,
-        int? severity = null, IReadOnlyList<MessageDataField>? fields = null, string? defaultReply = null, bool replaceDefault = false)
+        int? severity = null, IReadOnlyList<MessageDataField>? fields = null, string? defaultReply = null, bool replaceDefault = false,
+        MessageReplyUpdate? replyUpdate = null)
     {
         ValidateId(id);
         Mutate(library, name, Authorities.UseBits | AuthorityBit.Update, (payload, _) => {
@@ -49,6 +50,7 @@ public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
             var changed = previous with { Text = text ?? previous.Text, SecondLevel = secondLevel ?? previous.SecondLevel,
                 Severity = severity ?? previous.Severity, Fields = fields ?? previous.Fields,
                 DefaultReply = replaceDefault ? defaultReply : previous.DefaultReply,
+                ReplyRules = replyUpdate?.Apply(previous.ReplyRules) ?? previous.ReplyRules,
                 LegacyLiteral = previous.LegacyLiteral && text is null && fields is null };
             MessageDescriptionFormat.Validate(changed, legacyText: text is null);
             payload.Messages[id] = Freeze(changed);
@@ -126,23 +128,25 @@ public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
             {
                 var legacy = JsonSerializer.Deserialize<LegacyPayload>(json, Json);
                 if (legacy?.Messages is null) throw Invalid("Invalid legacy message file.");
-                payload = new(2, legacy.Messages.ToDictionary(pair => pair.Key,
+                payload = new(3, legacy.Messages.ToDictionary(pair => pair.Key,
                     pair => new MessageDescription(pair.Value, "", 0, Array.Empty<MessageDataField>(), ccsid, LegacyLiteral: true)));
             }
-            else if (number == 2) payload = JsonSerializer.Deserialize<Payload>(json, Json) ?? throw Invalid("Invalid message file.");
+            else if (number is 2 or 3) payload = JsonSerializer.Deserialize<Payload>(json, Json) ?? throw Invalid("Invalid message file.");
             else throw Invalid("Unsupported message-file version.");
             if (payload.Messages is null || payload.Messages.Count > 4096) throw Invalid("Invalid message count.");
             foreach (var pair in payload.Messages)
             {
                 if (pair.Value is null || pair.Key.Length != 7 || !pair.Key.All(c => char.IsAsciiLetterUpper(c) || char.IsAsciiDigit(c))) throw Invalid("Invalid stored message identifier.");
                 MessageDescriptionFormat.Validate(pair.Value, legacyText: true);
+                if (number < 3 && pair.Value.ReplyRules is not null) throw Invalid("Reply rules require message-file version 3.");
             }
-            return payload;
+            return payload with { Version = 3 };
         }
         catch (Exception error) when (error is JsonException or InvalidOperationException)
         { throw Invalid("Invalid message-file payload."); }
     }
-    private static MessageDescription Freeze(MessageDescription value) => value with { Fields = Array.AsReadOnly(value.Fields.ToArray()) };
+    internal static MessageDescription Freeze(MessageDescription value) => value with {
+        Fields = Array.AsReadOnly(value.Fields.ToArray()), ReplyRules = value.ReplyRules?.Freeze() };
     public static void ValidateId(string id)
     {
         if (id is null || !Regex.IsMatch(id, @"\A[A-Z][A-Z0-9]{2}[0-9A-F]{4}\z")) throw new CpfException("CPF2499", "Invalid message identifier.");

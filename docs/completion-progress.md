@@ -1,4 +1,4 @@
-# Completion progress — 2026-09-15
+# Completion progress — 2026-10-16
 
 The user requested completion of all 106 PLAN.md checklist items. **33 items are
 complete and 73 remain open.** The app is under construction. PLAN.md is intentionally
@@ -441,7 +441,150 @@ quotas. The terminal fixture verifies packed substitution data through a nested
 escape, MONMSG and RCVMSG. The old compiler test rejecting custom MSGF references
 now rejects an invalid message identifier; valid custom files have delivery tests.
 
-Paused at the user's request after this verified checkpoint. PLAN.md remains
-33 complete / 73 open. Resume within C07; display file I/O, procedure bindings,
-wider command/message delivery and the remaining completion categories are still
-unfinished. No broad checklist item was marked complete for this partial checkpoint.
+Work paused after that checkpoint and resumed on 2026-10-16 within C07. Display
+file I/O, procedure bindings, wider command/message delivery and the remaining
+completion categories remain unfinished. No broad checklist item was marked
+complete for that partial checkpoint.
+
+
+C07 inquiry-reply checkpoint (2026-10-16): all **1239 tests pass**, with zero
+failed or skipped tests; the Release build has zero warnings/errors and the full
+display PTY acceptance passes. TYPE/LEN/VALUES/SPCVAL/RANGE/REL rules persist in version-3 message descriptions and version-2 queued snapshots.
+Version-1/2 descriptions and version-1 snapshots retain their earlier semantics.
+Explicit replies validate inside the reply transaction; CPF2422 preserves all
+inquiry/copy state, while accepted replies map special values and return type 22.
+Defaults use the sent snapshot and retain codes 23/24. CHGMSGD merges omitted
+fields under its write transaction and rejects incompatible changes atomically.
+
+52 new cases cover exact decimal and independent EBCDIC comparisons, type/length
+rules, compact special lists and escaped quotes, mapping, immutable metadata,
+authority, CL MONMSG recovery, output codes, default removal, invalid encoding,
+legacy descriptions and durable restart after file edits/deletion. The real
+operator PTY flow rejects an invalid F4 reply, preserves the inquiry, accepts a
+mapped retry and checks RTNTYPE 22 through compiled CL. The compatibility matrix
+and message/CL documentation describe the finite contract and open limitations.
+Checklist remains **33 complete / 73 open**; the broader C07/C11 items remain open.
+
+
+C07/C11 data-queue checkpoint (2026-10-16): durable local FIFO/LIFO/keyed DTAQs
+now expose CRTDTAQ/DLTDTAQ and the SNDDTAQ/RCVDTAQ/CLRDTAQ extension commands.
+Schema 24 retains opaque entries with raw byte ordering, FIFO duplicate keys,
+transactional receive/peek/clear, 4096-entry/16-MiB limits and sender snapshots.
+Waits release transactions and respond to cancellation, authority revocation and
+queue replacement. Job allocations, library defaults/AUTLs, and object copy/move/
+delete are integrated. Copies get new identities and start empty.
+
+46 new tests cover service and compiled CL behavior, byte fixtures and bounds,
+receiver atomicity/MONMSG, independent producer/consumer processes, killed waiters,
+disk reopen, schema-23 migration and contended-write cancellation. Real display
+PTY acceptance creates a keyed queue, compiles/calls CL with raw data/key buffers,
+peeks/receives/clears, displays bounded hex output and deletes the queue.
+See [data queues](data-queues.md) for the finite contract and destructive-receive
+crash semantics. Native API buffer bindings, DDM, journals and USRSPCs remain open.
+Checklist remains **33 complete / 73 open**; broader C07/C11 items are unchecked.
+
+
+The first full data-queue regression run exposed a startup-scheduling timeout in
+SqliteCancellationTests: confirmation of SQL startup from its
+thread-pool worker missed the five-second deadline, and the failure path skipped cancellation before
+connection cleanup. The fixture now uses a dedicated SQL worker, a signal from the executing query and unconditional cancellation/await during cleanup. The actual running-VM
+interrupt and connection-reuse assertions remain in place; the 47-case combined
+queue/cancellation filter passes after the correction.
+
+
+Final data-queue verification: **1285 tests pass**, zero failed/skipped; the
+Release solution build has zero warnings/errors, full display PTY acceptance
+passes and the generated compatibility inventory validates. The prior SQLite
+cancellation fixture failure is resolved by the deterministic worker/startup and
+cleanup correction described above. Broader checklist remains 33 complete / 73 open.
+
+
+C11/C14 native data-queue API checkpoint (2026-10-17): created Ipc.Api and bound
+QSYS/QSNDDTAQ, QRCVDTAQ and QCLRDTAQ to the existing durable queue service.
+Versioned IPCAPI program objects preserve normal authority, signing and call scope;
+startup leaves existing programs intact. Checked packed fields and complete optional
+groups support input prefixes, keyed selection, peek/removal, seconds/milliseconds,
+truncation and zero-size data receipt. Receiver assignments are prepared before
+dequeue, preserving entries and other outputs when sender/layout conversion fails.
+Sender headers use independent packed vectors; error receivers use big-endian
+lengths, partial message IDs and unchanged tails.
+
+57 new tests pass for CCSIDs 37/1208, raw bytes, maximum entry/receiver sizes,
+immutable and aliased outputs, short/partial/error receivers, MONMSG, cancellation,
+live queue/API authority and signing trust. An RPG caller exercises all three APIs
+through a CL wrapper with typed receivers. Direct RPG receive borrowing, exact IBM
+error distinctions, DDM, journals, USRSPCs and broader C14 APIs remain unfinished.
+The plan and inventory retain **33 complete / 73 open** broad checklist items.
+
+Final API checkpoint verification: **1342 tests pass**, zero failures/skips; the
+Release solution build has zero warnings/errors, locked restore passes, full
+display PTY acceptance passes with the new native API flow, and the generated
+compatibility report validates. Existing NuGet versions/hashes are unchanged.
+The startup fixture now includes the three new seeded programs in its object
+count, checks all four IPCAPI manifests, and disposes its in-memory system.
+The broad checklist remains **33 complete / 73 open**.
+
+
+C09/C14 RPG scalar API checkpoint (2026-10-17): direct CALL/PLIST and
+unprototyped CALLP/CALLB calls now borrow fixed CHAR and packed/decimal fields
+for built-in API targets. The host resolves authority/signing before requesting
+scoped cells; ordinary CL/RPG/process calls retain semantic argument/writeback.
+Repeated fields and outer CL aliases keep one identity. Cells and lazy factories
+expire on success, failure or cancellation. Queue output conversions and outer
+receiver validation run before dequeue; outputs update live storage directly.
+The job CCSID is read per call; argument counts and aggregate bytes are bounded.
+
+Raw native text such as *BLANK bypasses RPG assignment-keyword interpretation,
+and outer character buffers detach into text for retained storage. QCMDEXC now
+checks typed DEC(15,5) declarations on these paths, and its earlier semantic
+fixture uses that required declaration. Prototype calls retain their semantic
+adapter; prototype receivers, DS/arrays and full native byte storage remain open.
+42 new RPG API tests pass; the broad checklist remains **33 complete / 73 open**.
+
+The first full RPG API regression exposed a startup timeout in the existing
+RPG cancellation fixture: its thread-pool loop did not signal startup within five
+seconds, and the failure path skipped cancellation. CL/RPG cancellation fixtures
+now use dedicated workers, first-statement signals and unconditional cancellation/
+await during cleanup. The RPG fixture also includes an actual ON-ERROR handler
+and asserts cancellation bypasses it. Expanded terminal acceptance already passes
+for RPGDQAPI's direct keyed send/receive/clear without a CL wrapper.
+
+Final RPG API verification: **1384 tests pass**, zero failures or skipped tests;
+42 new cases cover direct CL-free RPG calls at CCSIDs 37/1208, key/sender/error
+outputs, truncation/peek/timeout, input/output conversion before queue mutation,
+aliases/lifetimes, count/byte bounds, unsupported storage, cancellation, outer
+receiver rejection and authority/MONMSG propagation. The corrected cancellation
+filter passes all three cases. Locked restore and the Release solution build pass
+with zero warnings/errors; full display PTY acceptance includes direct RPG keyed
+queue calls, and generated compatibility evidence validates. Broader checklist
+remains **33 complete / 73 open**; prototype receivers, full native RPG storage
+and the wider C09/C14 runtime remain unfinished.
+
+
+C09/C14 scalar prototype API checkpoint (2026-10-17): prototyped CALLP/CALLB
+now lend actual scalar fields to built-in APIs after exact formal/actual count,
+kind, length and scale checks. Missing/ambiguous metadata and unsupported formal
+options fail before dispatch. Literals/expressions use immutable character/packed
+temporaries with formal layouts; the API then checks its own signature. Named
+formals use private storage and cannot shadow actual variables. Multiple unnamed
+prototypes retain independent definitions. Ordinary targets keep semantic formal
+coercion/writeback, prepared lazily when the host reads their arguments.
+
+Native prototype calls leave formal temporaries unchanged while updating actual
+receivers; aliases and expiration preserve the existing scalar scope. The call
+parser now preserves colons in literals/nested expressions and doubled apostrophes.
+The expanded terminal fixture includes RPGPRAPI's prototyped keyed queue lifecycle.
+CONST/VALUE/OPTIONS, arrays/DS/native byte storage and general ILE binding remain
+open. The broad checklist remains **33 complete / 73 open**.
+
+Final prototype checkpoint verification: **1433 tests pass**, zero failures or
+skipped tests, including **49 new prototype cases**. Reference vectors and source
+programs cover QCMDEXC and the three queue APIs, literal/field layouts, exact
+formal matching, immutable receivers, real key/sender/error outputs, peek/truncation,
+aliases and expired lifetimes, ordinary copied fallback, ambiguous metadata,
+authority/MONMSG, signing-trust revocation and nested/quoted argument parsing.
+Locked restore and the Release solution build pass with zero warnings/errors.
+Full display PTY acceptance passes with RPGPRAPI's prototyped keyed lifecycle;
+the generated compatibility inventory validates. Broader checklist remains
+**33 complete / 73 open**; general prototype modes, native storage and ILE binding
+are unfinished.

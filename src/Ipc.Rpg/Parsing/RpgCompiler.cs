@@ -136,15 +136,19 @@ public static class RpgCompiler
             }
 
             currentDs = null;
-            if (currentPrototype is not null && type.Length == 0)
+            if (currentPrototype is not null && (type.Length == 0 || HasKeyword(keywords, "PARM")))
             {
                 prototypeParamIndex++;
+                // Named formal parameters describe a call layout, not a caller variable.
+                var storageName = name.Length == 0 ? $"P{prototypeParamIndex}" : $"__PR{program.Prototypes.Count}_{prototypeParamIndex}";
+                if (program.FindField(storageName) is not null) storageName = $"__PR{program.Prototypes.Count}_{prototypeParamIndex}";
                 var parameterField = ParseStandalone(
-                    name.Length > 0 ? name : $"P{prototypeParamIndex}", type, lengthText, decimalsText, keywords);
+                    storageName, type, lengthText, decimalsText, keywords);
                 if (parameterField is not null)
                 {
                     program.Fields.Add(parameterField);
                     currentPrototype.Parameters.Add(parameterField.Name);
+                    currentPrototype.ParameterKeywords.Add(parameterField.Name, keywords);
                 }
 
                 continue;

@@ -17,7 +17,10 @@ The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
 Latest [completion checkpoint](docs/completion-progress.md): 33/106 checklist items
-complete, 1187 tests passing, and real sign-on/display PTY acceptance passing.
+complete, 1433 tests passing, and real sign-on/display PTY acceptance passing.
+The latest C09/C14 work adds [RPG scalar prototype API calls](docs/api.md#scalar-prototype-calls)
+with checked formal/actual layouts, immutable constants and live caller receivers.
+QCMDEXC and native queue prototypes share scoped arguments and pre-dispatch validation.
 
 | WP | Component | Status |
 |----|-----------|--------|
@@ -32,6 +35,8 @@ complete, 1187 tests passing, and real sign-on/display PTY acceptance passing.
 | WP8 | CL command system + interpreter (*CMD catalog, CRTCLPGM, CALL, command line) | partial — see compatibility matrix |
 | WP9 | DDS compiler + SQLite file store (*FILE objects, members, record codec, CRTSRCPF/ADDSRCPFM/CRTPF/DSPPFM/ADDPFM/CPYF/DLTF) | partial — see compatibility matrix |
 | WP10 | RPG compiler + interpreter (fixed + free form, `/free` directives, data structures, expressions + `%` built-ins, file I/O, subroutines, subprocedures P/D + CALLP, prototypes PR/PARMs + `PROCPTR`, `CALL`/`CALLP` with PLIST + updated-parameter writeback, `ON-ERROR`/`*INLR`, messaging) | partial — see compatibility matrix |
+| WP12 | Messaging and data objects (durable MSGQ, typed DTAARA, FIFO/LIFO/keyed DTAQ) | partial — broader native APIs, USRSPCs and journals remain open |
+| WP15 | System API host (QCMDEXC and checked local data-queue programs) | partial — broader API registry, formats and crypto remain open |
 
 ## Layout
 
@@ -45,7 +50,7 @@ This is the target layout; the compatibility matrix distinguishes implemented an
 - `src/Ipc.Dsp` — DSPF compiler + panel/subfile runtime
 - `src/Ipc.Terminal` — ANSI 5250 renderer + input editor
 - `src/Ipc.Console` — `AS400Menu` SSH login-shell host + sign-on
-- `src/Ipc.Api` — system API runtime (QCMDEXC, QMHSNDM, QUS*, ...)
+- `src/Ipc.Api` — checked QSNDDTAQ/QRCVDTAQ/QCLRDTAQ program buffers; broader APIs planned
 - `src/Ipc.Session` — shared controllers, command orchestration, and terminal session transport
 - `src/Ipc.Server` — `as400server` catalog/session owner
 - `src/Ipc.Web` — ASP.NET Core REST + IWS-style program services + 5250-over-websocket

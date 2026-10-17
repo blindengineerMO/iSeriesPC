@@ -11,6 +11,13 @@ public sealed class RpgRuntimeContext
     internal void RebindHost(RpgHost host) => _host = host;
     private readonly Dictionary<string, object?> _slots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Ipc.Core.Work.ProgramArgument> _references = new(StringComparer.OrdinalIgnoreCase);
+    internal Ipc.Core.Work.ProgramArgument? Reference(string name) => _references.GetValueOrDefault(name);
+    internal object? ReadApiScalar(string name) => _references.TryGetValue(name, out var reference) ? reference.Value : _slots[name];
+    internal void WriteApiScalar(string name, object? value)
+    {
+        if (_references.TryGetValue(name, out var reference)) reference.Value = value;
+        else _slots[name] = value;
+    }
     internal void BindReference(string name, Ipc.Core.Work.ProgramArgument argument)
     {
         var field = _program.FindField(name) ?? throw new RpgRuntimeException($"Unknown entry field '{name}'.");
@@ -31,7 +38,16 @@ public sealed class RpgRuntimeContext
     }
     internal void ReleaseReferences()
     {
-        try { foreach (var reference in _references) _slots[reference.Key] = reference.Value.Value; }
+        try
+        {
+            foreach (var reference in _references)
+            {
+                var value = reference.Value.Value;
+                // Keep detached character storage semantic without interpreting raw API text as *BLANK keywords.
+                _slots[reference.Key] = value is Ipc.Core.Work.ProgramBuffer buffer && _program.FindField(reference.Key)?.Kind == RpgFieldKind.Character
+                    ? buffer.ToText() : value;
+            }
+        }
         finally { _references.Clear(); }
     }
     private readonly Dictionary<string, object?[]> _arrays = new(StringComparer.OrdinalIgnoreCase);

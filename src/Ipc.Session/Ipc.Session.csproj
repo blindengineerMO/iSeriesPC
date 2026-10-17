@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <ProjectReference Include="../Ipc.Api/Ipc.Api.csproj" />
     <ProjectReference Include="../Ipc.Services/Ipc.Services.csproj" />
     <ProjectReference Include="../Ipc.Terminal/Ipc.Terminal.csproj" />
     <ProjectReference Include="../Ipc.Cl/Ipc.Cl.csproj" />

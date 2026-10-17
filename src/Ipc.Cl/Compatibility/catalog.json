@@ -2122,22 +2122,37 @@
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "DTAQ",
+        "MAXLEN",
+        "TYPE",
+        "SEQ",
+        "KEYLEN",
+        "SENDERID",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 2
     },
     {
       "name": "DLTDTAQ",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "DTAQ"
+      ],
+      "maxPositional": 1
     },
     {
       "name": "CRTDTAARA",
@@ -2705,22 +2720,40 @@
       "kind": "command",
       "category": "data",
       "origin": "iSeriesPC extension",
-      "status": "planned",
-      "source": null,
+      "status": "partial",
+      "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "DTAQ",
+        "DATA",
+        "LEN",
+        "KEY"
+      ],
+      "maxPositional": 2
     },
     {
       "name": "RCVDTAQ",
       "kind": "command",
       "category": "data",
       "origin": "iSeriesPC extension",
-      "status": "planned",
-      "source": null,
+      "status": "partial",
+      "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "DTAQ",
+        "WAIT",
+        "KEY",
+        "KEYORDER",
+        "RMV",
+        "RTNVAR",
+        "LENVAR",
+        "KEYVAR"
+      ],
+      "maxPositional": 1
     },
     {
       "name": "CRTUSRSPC",
@@ -2962,7 +2995,7 @@
       "kind": "api",
       "category": "data-queues",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "data-queues",
       "requirements": [
         "WP15-02"
@@ -2973,7 +3006,7 @@
       "kind": "api",
       "category": "data-queues",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "data-queues",
       "requirements": [
         "WP15-02"
@@ -3006,7 +3039,7 @@
       "kind": "api",
       "category": "data-queues",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "data-queues",
       "requirements": [
         "WP15-02"
@@ -3826,7 +3859,13 @@
         "SECLVL",
         "SEV",
         "FMT",
-        "DFT"
+        "DFT",
+        "TYPE",
+        "LEN",
+        "VALUES",
+        "SPCVAL",
+        "RANGE",
+        "REL"
       ],
       "maxPositional": 5
     },
@@ -3989,7 +4028,13 @@
         "SECLVL",
         "SEV",
         "FMT",
-        "DFT"
+        "DFT",
+        "TYPE",
+        "LEN",
+        "VALUES",
+        "SPCVAL",
+        "RANGE",
+        "REL"
       ],
       "maxPositional": 5
     },
@@ -4065,6 +4110,24 @@
         "DTACCSID"
       ],
       "maxPositional": 2
+    },
+    {
+      "name": "CLRDTAQ",
+      "kind": "command",
+      "category": "data",
+      "origin": "iSeriesPC extension",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03",
+        "WP12-02"
+      ],
+      "keywords": [
+        "DTAQ",
+        "KEY",
+        "KEYORDER"
+      ],
+      "maxPositional": 1
     }
   ],
   "aliases": {

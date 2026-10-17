@@ -1,5 +1,9 @@
 # Catalog migrations and recovery
 
+Schema 24 adds indexed `*DTAQ` entries with cascading object references. Version-1
+IPCDQ1 definitions live in object payloads. Schema-23 message bytes/state remain
+unchanged; see [data queues](data-queues.md) for lifecycle and migration evidence.
+
 Schema 3 introduced the runner that replaces unconditional schema stamping with ordered, transactional
 migrations. `sys_meta.schema_version` and `sys_migrations` are updated in the same
 transaction as the schema changes. The history records version, name, SQL SHA-256,

@@ -154,8 +154,9 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
   values are trimmed/padded to the field length.
 - **Entry parameters**: `PLIST *ENTRY` with `PARM` targets binds `Run(params)` values into fields.
 - **Prototypes**: a D-spec with `PR` in the type column registers an `RpgPrototype` (name, optional
-  `EXTPROC('name')`/`EXTPGM('name')` external name). Blank-named D-specs that follow it become the
-  prototype's parameters (synthetic program fields `P1`, `P2`, … bound by reference). `CALLP`
+  `EXTPROC('name')`/`EXTPGM('name')` external name). Following typeless D-specs and
+  explicit A/P rows marked PARM become formal parameters. Named formals use
+  private generated storage; unnamed formals retain P1/P2 where available. `CALLP`
   resolves the callee name against prototypes before falling back to a bare external call, so
   `callp calc(1:2);` with an `EXTPROC('INNER')` prototype calls the host program `INNER`.
 - **Procedure pointers**: `PROCPTR` on a standalone field stores a program name; `CALLP name(args)`
@@ -164,6 +165,17 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
 - **PLIST writeback**: fixed `CALL 'pgm' PL` (and free `CALLP 'pgm'(PL)`) forwards the `PLIST`'s
   `PARM` fields to the host; when the host returns `RpgExternalCallResult.UpdatedParameters`, each
   entry is written back into the corresponding `PARM` field (by-reference semantics).
+- **Typed system API calls**: built-in IPCAPI targets can borrow fixed CHAR and
+  packed/decimal scalars from PLIST, unprototyped and supported prototyped inline CALLP/CALLB arguments.
+  Aliases remain live, outputs are checked before service mutation, and borrowed
+  cells/factories expire when the synchronous call ends. Queue APIs now receive
+  directly into RPG fields. Character byte widths, receiver conversion, quotas,
+  constants, prototype limitations and the host callback are documented in
+  [RPG scalar API calls](api.md#rpg-scalar-api-calls). Ordinary targets retain
+  their semantic call/writeback behavior.
+  Scalar prototypes check exact formal/actual layouts and keep literals immutable;
+  see [scalar prototype calls](api.md#scalar-prototype-calls). Argument separators
+  respect nested expressions and quoted colons; doubled apostrophes decode literally.
 
 ## 8. Files
 
@@ -183,7 +195,7 @@ name, kind (Zoned/Packed/Character/ProcPtr), length, decimals, `InitialValue`, `
 `IsDataStructure`, `Varying`, `Source`. Subroutines are `BEGSR…ENDSR` blocks re-parented out of the
 main stream, and subprocedures are P-spec blocks re-parented into `Subprocedures`
 (`RpgSubprocedure` — name, `Statements`, `Parameters`). Prototypes are D-spec `PR` rows in
-`Prototypes` (`RpgPrototype` — name, `ExternalName`, `Parameters`).
+`Prototypes` (`RpgPrototype` — name, `ExternalName`, `Parameters`, `ParameterKeywords`).
 
 ## 10. Limits and divergence notes
 

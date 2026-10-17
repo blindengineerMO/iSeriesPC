@@ -78,6 +78,13 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
             var formatted = MessageDescriptionFormat.Format(predefined.Description, predefined.Replacement, data.Ccsid);
             if (messageId.Length == 0 || formatted.Severity != severity || !formatted.Text.ToArray().AsSpan().SequenceEqual(data.ToArray()))
                 throw Invalid("Message text and predefined snapshot do not agree.");
+            if (kind == "INQ")
+            {
+                if (defaultReply is not null && (formatted.DefaultReply is null || defaultReply.Ccsid != data.Ccsid ||
+                    !defaultReply.ToArray().AsSpan().SequenceEqual(formatted.DefaultReply.ToArray())))
+                    throw Invalid("Default reply and predefined snapshot do not agree.");
+                defaultReply ??= formatted.DefaultReply;
+            }
             _ = new SqliteObjectStore(factory).GetRequired(predefined.Library, predefined.File, ObjectType.MessageFile);
         }
         var defaultReplyCode = defaultReply is null ? "24" : "23";
@@ -195,6 +202,13 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
         if (found.Message.Kind != "INQ" || found.Message.Replied) throw new CpfException("CPF2422", "Message is not an unanswered inquiry.");
         var destination = found.ReplyQueue ?? throw new CpfException("CPF2469", "Reply queue no longer exists.");
         Authorize(destination, SendAuthority, replyDelivery: true);
+        // Defaults (including automatic removal replies) are already validated as
+        // description metadata. Only explicit replies run VALUES/RANGE/REL/SPCVAL.
+        if (replyTypeCode == "21" && found.Message.Predefined?.Description is { ReplyRules: { Type: not "*NONE" } rules } description)
+        {
+            data = rules.Check(data, description.Ccsid, description.DefaultReply);
+            replyTypeCode = "22";
+        }
         using var copy = Command(connection, transaction, destination,
             "SELECT key FROM sys_message_entries WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program AND kind='COPY' AND correlation_key=$original LIMIT 1");
         copy.Parameters.AddWithValue("$original", (long)found.Message.Key);

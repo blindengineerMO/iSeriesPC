@@ -17,7 +17,7 @@ public sealed record PredefinedMessage(string Library, string File, string Reque
     public string Serialize()
     {
         Validate();
-        var text = JsonSerializer.Serialize(new Payload(1, Library, File, RequestedLibrary, FileCreated, Description, Replacement.ToBase64(), Replacement.Ccsid), Json);
+        var text = JsonSerializer.Serialize(new Payload(2, Library, File, RequestedLibrary, FileCreated, Description, Replacement.ToBase64(), Replacement.Ccsid), Json);
         if (Encoding.UTF8.GetByteCount(text) > 32767) throw Invalid();
         return text;
     }
@@ -36,10 +36,11 @@ public sealed record PredefinedMessage(string Library, string File, string Reque
                 else if (reader.TokenType == JsonTokenType.PropertyName && !properties.Peek().Add(reader.GetString()!)) throw Invalid();
             }
             var stored = JsonSerializer.Deserialize<Payload>(text, Json);
-            if (stored is null || stored.Version != 1 || stored.Data is null || stored.Data.Length > 684) throw Invalid();
+            if (stored is null || stored.Version is not (1 or 2) || stored.Description is null || stored.Data is null || stored.Data.Length > 684 ||
+                stored.Version == 1 && stored.Description.ReplyRules is not null) throw Invalid();
             var result = new PredefinedMessage(stored.Library, stored.File, stored.RequestedLibrary, stored.FileCreated,
                 stored.Description, new(Convert.FromBase64String(stored.Data), stored.Ccsid));
-            result.Validate(); return result with { Description = result.Description with { Fields = Array.AsReadOnly(result.Description.Fields.ToArray()) } };
+            result.Validate(); return result with { Description = MessageDescriptionStore.Freeze(result.Description) };
         }
         catch (Exception error) when (error is JsonException or FormatException or ArgumentException) { throw Invalid(); }
     }

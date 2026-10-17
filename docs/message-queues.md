@@ -65,7 +65,7 @@ and conversion complete before receipt changes state. See
 Schema 21 retains exception-handled state and reply origin. RTNTYPE requires an
 exact two-byte CHAR return variable: 01 completion, 02 diagnostic, 04 information,
 05 inquiry, 06 sender copy, 14/16 handled/unhandled notify, 15/17 handled/unhandled
-escape, 21 entered reply without validity checks, 23 explicit message default,
+escape, 21 unchecked entered reply, 22 checked entered reply, 23 explicit message default,
 24 system default (currently empty). An empty receive returns two blanks.
 Unsupported type layouts fail before receipt. MONMSG marks its received exception
 handled before recovery; RCVMSG reports the state at the time of receipt.
@@ -141,7 +141,7 @@ delete, library access and automatic command locks use the shared services.
 Explicit *EXCL allocations therefore apply to message operations too.
 
 Still open: ILE exception-handler state, advanced predefined formats,
-reply validity, overrides, operator second-level presentation and remaining return layouts, user/workstation queue
+reply-handling exits, overrides, operator second-level presentation and remaining return layouts, user/workstation queue
 selection and TOUSR, queue delivery attributes, break/notify dispatch,
 wrapping, message subfiles and the public API
 formats. The service can store completion/diagnostic/status/escape/notify entries;
@@ -164,3 +164,11 @@ References: [message command authority](https://www.ibm.com/docs/en/i/7.6.0?topi
 [message removal](https://www.ibm.com/docs/en/i/7.6.0?topic=messages-removing-from-message-queue),
 [CRTMSGQ](https://www.ibm.com/docs/en/i/7.5.0?topic=c-create-message-queue),
 [DSPMSG](https://www.ibm.com/docs/en/i/7.5.0?topic=d-display-messages).
+
+
+Predefined inquiry replies now enforce the saved description's TYPE/LEN/VALUES/
+SPCVAL/RANGE/REL rules through SNDRPY and the operator F4 prompt. Invalid replies
+raise CPF2422 inside the reply transaction, preserving inquiry and sender-copy
+state. Earlier unchecked descriptions retain their behavior. See
+[reply rules](message-descriptions.md#inquiry-reply-rules) for encoding, defaults,
+limits, migration and acceptance evidence.

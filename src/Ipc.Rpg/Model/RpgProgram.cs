@@ -284,4 +284,6 @@ public sealed class RpgPrototype
     public string? ReturnType { get; init; }
 
     public List<string> Parameters { get; } = new();
+
+    public Dictionary<string, string> ParameterKeywords { get; } = new(StringComparer.OrdinalIgnoreCase);
 }

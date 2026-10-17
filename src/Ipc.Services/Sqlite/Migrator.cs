@@ -89,6 +89,7 @@ public sealed class Migrator
         new SchemaMigration(21, "Message return types and exception receipt", new[] { MessageReturnTypeMigration.Sql }),
         new SchemaMigration(22, "Message sender snapshots", new[] { MessageSenderMigration.Sql }),
         new SchemaMigration(23, "Predefined message snapshots", new[] { PredefinedMessageMigration.Sql }),
+        new SchemaMigration(24, "Durable data queues", new[] { DataQueueMigration.Sql }),
     };
 
     public Migrator(SqliteConnectionFactory factory) : this(factory, Migrations) { }

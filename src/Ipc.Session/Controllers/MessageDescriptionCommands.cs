@@ -45,7 +45,14 @@ public sealed partial class CommandService
         if (call.Name == "DSPMSGD")
         {
             var entries = id == "*ALL" ? store.List(library, name) : new[] { new KeyValuePair<string, MessageDescription>(id, store.GetDescription(library, name, id)) };
-            return new() { Listing = entries.SelectMany(pair => new[] { pair.Key + "  Severity " + pair.Value.Severity + "  " + pair.Value.Text, pair.Value.SecondLevel }).Where(line => line.Length > 0).ToArray() };
+            return new() { Listing = entries.SelectMany(pair => new[] {
+                pair.Key + "  Severity " + pair.Value.Severity + "  " + pair.Value.Text, pair.Value.SecondLevel,
+                pair.Value.ReplyRules is { } rules ? "Reply: " + rules.Type + " LEN(" + (rules.Length == 0 ? "*TYPE" : rules.Length == -1 ? "*NONE" : rules.Length + " " + rules.Decimals) + ")" : "",
+                pair.Value.ReplyRules?.Values is { Count: > 0 } values ? "Values: " + string.Join(", ", values) : "",
+                pair.Value.ReplyRules?.SpecialValues is { Count: > 0 } special ? "Special values: " + string.Join(", ", special.Select(value => value.From + " -> " + (value.To ?? value.From))) : "",
+                pair.Value.ReplyRules?.Range is { } range ? "Range: " + range.Lower + " through " + range.Upper : "",
+                pair.Value.ReplyRules?.Relation is { } relation ? "Relation: " + relation.Operator + " " + relation.Value : ""
+            }).Where(line => line.Length > 0).ToArray() };
         }
         if (call.Name == "RTVMSG")
         {
@@ -105,14 +112,82 @@ public sealed partial class CommandService
         var fields = formats is null ? null : MessageDescriptionFormat.Parse(formats);
         var defaultReply = Text("DFT");
         if (call.GetOption("DFT")?.Equals("*NONE", StringComparison.OrdinalIgnoreCase) == true) defaultReply = null;
+        var replyUpdate = ParseMessageReplyUpdate(call, Resolve, adding);
         if (adding)
         {
             if (first is null) throw new CpfException("IPC0003", "ADDMSGD requires MSG.");
-            store.Add(library, name, id, new MessageDescription(first, second!, severity!.Value, fields!, jobCcsid, defaultReply));
+            store.Add(library, name, id, new MessageDescription(first, second!, severity!.Value, fields!, jobCcsid, defaultReply,
+                ReplyRules: replyUpdate?.Apply(null)));
         }
         else store.Change(library, name, id, first, second, severity, fields, defaultReply,
-            call.GetOption("DFT") is { } supplied && !supplied.Equals("*SAME", StringComparison.OrdinalIgnoreCase));
+            call.GetOption("DFT") is { } supplied && !supplied.Equals("*SAME", StringComparison.OrdinalIgnoreCase), replyUpdate);
         return CommandResult.Ok("Message description " + id + " updated.");
+    }
+
+    private static MessageReplyUpdate? ParseMessageReplyUpdate(CommandCall call, Func<string, string> resolve, bool adding)
+    {
+        string? Raw(string keyword)
+        {
+            var raw = call.GetOption(keyword);
+            return !adding && raw?.Equals("*SAME", StringComparison.OrdinalIgnoreCase) == true ? null : raw;
+        }
+        var keywords = new[] { "TYPE", "LEN", "VALUES", "SPCVAL", "RANGE", "REL" };
+        if (keywords.All(keyword => Raw(keyword) is null)) return null;
+        CpfException Invalid() => new("IPC0003", "Invalid message reply parameter list.");
+        bool None(string text) => text.Equals("*NONE", StringComparison.OrdinalIgnoreCase);
+        string[] Elements(string text) => CommandParser.Tokenize(text).Select(resolve).ToArray();
+        int Number(string text) => int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : throw Invalid();
+        var type = Raw("TYPE") is { } rawType ? resolve(rawType).ToUpperInvariant() : adding ? "*CHAR" : null;
+        int? length = adding ? 0 : null; int? decimals = adding ? 0 : null;
+        if (Raw("LEN") is { } rawLength)
+        {
+            var elements = Elements(rawLength);
+            if (elements.Length is < 1 or > 2) throw Invalid();
+            length = elements[0].ToUpperInvariant() switch { "*NONE" => -1, "*TYPE" => 0, _ => Number(elements[0]) };
+            if (length <= 0 && (elements.Length != 1 || elements[0].ToUpperInvariant() is not ("*TYPE" or "*NONE"))) throw Invalid();
+            decimals = elements.Length == 2 ? Number(elements[1]) : 0;
+        }
+        IReadOnlyList<string>? values = Raw("VALUES") is not { } rawValues ? null : None(rawValues) ? Array.Empty<string>() : Elements(rawValues);
+        if (Raw("VALUES") is { } suppliedValues && !None(suppliedValues) && values?.Count is not (>= 1 and <= 20)) throw Invalid();
+        IReadOnlyList<MessageReplyValue>? special = null;
+        if (Raw("SPCVAL") is { } rawSpecial)
+        {
+            var entries = new List<MessageReplyValue>();
+            if (!None(rawSpecial))
+            {
+                var separated = new System.Text.StringBuilder(); var quoted = false; var depth = 0;
+                foreach (var character in rawSpecial)
+                {
+                    separated.Append(character);
+                    if (character == '\'') quoted = !quoted;
+                    else if (!quoted && character == '(') depth++;
+                    else if (!quoted && character == ')' && --depth == 0) separated.Append(' ');
+                }
+                var tokens = CommandParser.Tokenize(separated.ToString());
+                if (tokens.Count is < 1 or > 20) throw Invalid();
+                foreach (var token in tokens)
+                {
+                    if (!token.StartsWith('(') || !token.EndsWith(')')) throw Invalid();
+                    var elements = Elements(token[1..^1]);
+                    if (elements.Length is < 1 or > 2) throw Invalid();
+                    entries.Add(new(elements[0], elements.Length == 2 ? elements[1] : null));
+                }
+            }
+            special = entries;
+        }
+        MessageReplyRange? range = null;
+        if (Raw("RANGE") is { } rawRange && !None(rawRange))
+        {
+            var elements = Elements(rawRange); if (elements.Length != 2) throw Invalid();
+            range = new(elements[0], elements[1]);
+        }
+        MessageReplyRelation? relation = null;
+        if (Raw("REL") is { } rawRelation && !None(rawRelation))
+        {
+            var elements = Elements(rawRelation); if (elements.Length != 2) throw Invalid();
+            relation = new(elements[0].ToUpperInvariant(), elements[1]);
+        }
+        return new(type, length, decimals, values, special, Raw("RANGE") is not null, range, Raw("REL") is not null, relation);
     }
 
     private ProgramBuffer MessageReplacementData(string raw, ClCommandContext? context)

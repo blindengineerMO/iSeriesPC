@@ -184,13 +184,18 @@ public class IpcSystemTests
     [Fact]
     public void Start_seeds_libraries_and_values()
     {
-        var system = IpcSystem.Create(":memory:");
+        using var system = IpcSystem.Create(":memory:");
         system.Start();
 
         Assert.True(system.Libraries.LibraryExists("QGPL"));
         Assert.Equal("40", system.SystemValues.Get(SystemValueNames.SecurityLevel).Value);
-        Assert.Equal(LibraryNames.SystemDefaults.Count + 14 + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
-        Assert.Equal("IPCAPI", system.Objects.GetRequired("QSYS", "QCMDEXC", ObjectType.Program).Attribute);
+        Assert.Equal(LibraryNames.SystemDefaults.Count + 17 + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
+        foreach (var api in new[] { "QCMDEXC", "QSNDDTAQ", "QRCVDTAQ", "QCLRDTAQ" })
+        {
+            var program = system.Objects.GetRequired("QSYS", api, ObjectType.Program);
+            Assert.Equal("IPCAPI", program.Attribute);
+            Assert.Equal("{\"api\":\"" + api + "\",\"version\":1}", program.Source);
+        }
         system.Log.Info("integration ok");
         Assert.Equal(2, system.Log.Recent(10).Count);
     }

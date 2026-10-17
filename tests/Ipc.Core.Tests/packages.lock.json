@@ -190,6 +190,12 @@
           "Ipc.Session": "[1.0.0, )"
         }
       },
+      "ipc.api": {
+        "type": "Project",
+        "dependencies": {
+          "Ipc.Services": "[1.0.0, )"
+        }
+      },
       "ipc.cl": {
         "type": "Project",
         "dependencies": {
@@ -237,6 +243,7 @@
       "ipc.session": {
         "type": "Project",
         "dependencies": {
+          "Ipc.Api": "[1.0.0, )",
           "Ipc.Cl": "[1.0.0, )",
           "Ipc.Db": "[1.0.0, )",
           "Ipc.Dsp": "[1.0.0, )",

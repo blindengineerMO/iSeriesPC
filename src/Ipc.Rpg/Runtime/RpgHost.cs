@@ -13,6 +13,10 @@ public sealed class RpgExternalCallResult
 
 public delegate RpgExternalCallResult? RpgCallHandler(string library, string name, IReadOnlyList<object?> parameters);
 
+/// <summary>Hosts borrow typed scalar arguments only for targets that support them.</summary>
+public delegate RpgExternalCallResult? RpgTypedCallHandler(string library, string name,
+    IReadOnlyList<object?> parameters, Func<IReadOnlyList<object?>>? borrowArguments);
+
 public delegate void RpgMessageHandler(string message);
 
 public delegate string? RpgReceiveHandler();
@@ -43,6 +47,8 @@ public interface IRpgFileAccess
 
 public sealed class RpgHost
 {
+    public Func<int> Ccsid { get; init; } = () => 37;
+
     public CancellationToken CancellationToken { get; init; }
 
     public IRpgFileAccess? Files { get; init; }
@@ -52,6 +58,8 @@ public sealed class RpgHost
     public Func<string, string, string?>? LibraryResolver { get; init; }
 
     public RpgCallHandler? ProgramCaller { get; init; }
+
+    public RpgTypedCallHandler? TypedProgramCaller { get; init; }
 
     public RpgMessageHandler? SendMessage { get; init; }
 

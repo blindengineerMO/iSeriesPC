@@ -541,25 +541,23 @@ public sealed class RpgExpressionParser
     private string ReadQuoted()
     {
         _position++;
-        var start = _position;
-        while (!AtEnd && Peek() != '\'')
+        var value = new global::System.Text.StringBuilder();
+        while (!AtEnd)
         {
-            if (Peek() == '\\')
+            var ch = _text[_position++];
+            if (ch == '\\' && !AtEnd)
             {
-                _position++;
+                // Preserve the existing backslash escape spelling.
+                value.Append(ch).Append(_text[_position++]); continue;
             }
-
-            _position++;
+            if (ch == '\'')
+            {
+                if (!AtEnd && Peek() == '\'') { value.Append('\''); _position++; continue; }
+                return value.ToString();
+            }
+            value.Append(ch);
         }
-
-        var value = _text[start.._position];
-        if (AtEnd)
-        {
-            throw new RpgCompileException(0, "Unterminated string literal.");
-        }
-
-        _position++;
-        return value;
+        throw new RpgCompileException(0, "Unterminated string literal.");
     }
 }
 

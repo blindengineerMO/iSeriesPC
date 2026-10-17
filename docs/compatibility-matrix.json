@@ -943,7 +943,10 @@
         "src/Ipc.Cl",
         "src/Ipc.Session/Controllers/CommandService.cs",
         "src/Ipc.Services/Messages/MessageQueueStore.cs",
-        "src/Ipc.Session/Controllers/MessageCommands.cs"
+        "src/Ipc.Session/Controllers/MessageCommands.cs",
+        "src/Ipc.Services/Messages/DataQueueStore.cs",
+        "src/Ipc.Session/Controllers/DataQueueCommands.cs",
+        "src/Ipc.Services/Sqlite/DataQueueMigration.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/ClTests.cs",
@@ -953,7 +956,10 @@
         "tools/pty-display-smoke.py",
         "tests/Ipc.Core.Tests/FileCopyTests.cs",
         "tests/Ipc.Core.Tests/MessageQueueTests.cs",
-        "tests/Ipc.Core.Tests/ClMessageCommandTests.cs"
+        "tests/Ipc.Core.Tests/ClMessageCommandTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueTests.cs",
+        "tests/Ipc.Core.Tests/ClDataQueueTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueProcessTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
@@ -962,9 +968,10 @@
         "docs/logical-files.md",
         "docs/object-command-progress.md",
         "docs/file-copy.md",
-        "docs/message-queues.md"
+        "docs/message-queues.md",
+        "docs/data-queues.md"
       ],
-      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open."
+      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open. Data-queue checkpoint: 46 new service/CL/process cases and full display PTY pass. Schema 24 adds durable FIFO/LIFO/keyed entries, exact binary selectors, bounded storage, atomic receive/output failures, waits/cancellation, sender snapshots, authority/revocation/AUTLs/locks and generic lifecycle. Independent processes prove competing delivery; migration, restart and killed waiters are covered. Native data-queue ABI and the wider C07/C11 work remain open. Final data-queue verification: all 1285 tests, warning-free Release build, full display PTY and generated inventory checks pass. An existing SQLite cancellation fixture startup timeout was corrected with a dedicated worker/start signal and unconditional cancellation cleanup."
     },
     {
       "id": "WP08-04",
@@ -1019,7 +1026,11 @@
         "src/Ipc.Session/Controllers/MessageDescriptionCommands.cs",
         "src/Ipc.Services/Messages/PredefinedMessage.cs",
         "src/Ipc.Services/Sqlite/PredefinedMessageMigration.cs",
-        "src/Ipc.Session/Controllers/ClProgramMessages.cs"
+        "src/Ipc.Session/Controllers/ClProgramMessages.cs",
+        "src/Ipc.Services/Messages/MessageReplyRules.cs",
+        "src/Ipc.Services/Messages/DataQueueStore.cs",
+        "src/Ipc.Session/Controllers/DataQueueCommands.cs",
+        "src/Ipc.Services/Sqlite/DataQueueMigration.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/ClTests.cs",
@@ -1045,7 +1056,11 @@
         "tests/Ipc.Core.Tests/QcmdexcTests.cs",
         "tests/Ipc.Core.Tests/WebExecutionTests.cs",
         "tests/Ipc.Core.Tests/MessageDescriptionTests.cs",
-        "tests/Ipc.Core.Tests/PredefinedMessageTests.cs"
+        "tests/Ipc.Core.Tests/PredefinedMessageTests.cs",
+        "tests/Ipc.Core.Tests/MessageReplyTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueTests.cs",
+        "tests/Ipc.Core.Tests/ClDataQueueTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueProcessTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
@@ -1053,9 +1068,10 @@
         "docs/data-areas.md",
         "docs/message-queues.md",
         "docs/api.md",
-        "docs/message-descriptions.md"
+        "docs/message-descriptions.md",
+        "docs/data-queues.md"
       ],
-      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open. Byte-function checkpoint: 1023 tests, warning-free build and full PTY pass; hex constants, byte substrings, signed binary fields and *LDA reads/writes are covered. Command-argument checkpoint: 1033 tests and full terminal acceptance pass for qualified/list variables, typed CMD quoting and atomic invalid-input rejection. CALL/cleanup checkpoint: 1081 tests, warning-free build and full PTY pass; direct/compiled native constants, private expression temporaries, aggregate bounds and failure-resilient frame cleanup are covered. Sender checkpoint: 1101 tests, warning-free build and full PTY pass; durable original sender identity/time, independent SHORT/LONG layouts and reply correlation keys are covered. QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open. Message-description checkpoint: 1166 tests, warning-free Release build and full display PTY pass. Versioned metadata, native substitution fixtures and atomic CL RTVMSG are covered; predefined queue delivery remains open. Predefined-message delivery snapshots text/help, raw replacement data, severity and inquiry defaults; MONMSG compares replacement prefixes. Tests cover schema 23 preservation, restart, file edits/deletion and authority, CCHAR conversion, output atomicity and metadata quotas. Broader C07/C11 work remains open. Delivery checkpoint: all 1187 tests, warning-free Release build and full display PTY pass, including nested predefined escape/raw MONMSG/RCVMSG acceptance."
+      "evidence": "998 tests and warning-free Release build pass; real PTY covers named/program inquiries, sender-copy binary keys, replies, message detail and confirmed removal. Schema 20 preserves routing/state/high-water keys; job ownership, inactive-frame cleanup, atomic failures and quotas are covered. Runtime failures reach MONMSG/RCVMSG and propagate once per caller; broader command/runtime, ILE exception and delivery requirements remain open. Byte-function checkpoint: 1023 tests, warning-free build and full PTY pass; hex constants, byte substrings, signed binary fields and *LDA reads/writes are covered. Command-argument checkpoint: 1033 tests and full terminal acceptance pass for qualified/list variables, typed CMD quoting and atomic invalid-input rejection. CALL/cleanup checkpoint: 1081 tests, warning-free build and full PTY pass; direct/compiled native constants, private expression temporaries, aggregate bounds and failure-resilient frame cleanup are covered. Sender checkpoint: 1101 tests, warning-free build and full PTY pass; durable original sender identity/time, independent SHORT/LONG layouts and reply correlation keys are covered. QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open. Message-description checkpoint: 1166 tests, warning-free Release build and full display PTY pass. Versioned metadata, native substitution fixtures and atomic CL RTVMSG are covered; predefined queue delivery remains open. Predefined-message delivery snapshots text/help, raw replacement data, severity and inquiry defaults; MONMSG compares replacement prefixes. Tests cover schema 23 preservation, restart, file edits/deletion and authority, CCHAR conversion, output atomicity and metadata quotas. Broader C07/C11 work remains open. Delivery checkpoint: all 1187 tests, warning-free Release build and full display PTY pass, including nested predefined escape/raw MONMSG/RCVMSG acceptance. Inquiry reply rules now snapshot TYPE/LEN/VALUES/SPCVAL/RANGE/REL; 52 additional tests cover compact/quoted special lists, typed/encoded comparisons, defaults, atomic rejection, CL MONMSG, authority, legacy descriptions and restart after file deletion. Real display PTY accepts an operator reply only after validation and confirms RTNTYPE 22. Final reply checkpoint: all 1239 tests pass, no skipped tests, warning-free Release build, full display PTY and generated inventory checks pass. Wider C07/C11 requirements remain open. Data-queue checkpoint: 46 new service/CL/process cases and full display PTY pass. Schema 24 adds durable FIFO/LIFO/keyed entries, exact binary selectors, bounded storage, atomic receive/output failures, waits/cancellation, sender snapshots, authority/revocation/AUTLs/locks and generic lifecycle. Independent processes prove competing delivery; migration, restart and killed waiters are covered. Native data-queue ABI and the wider C07/C11 work remain open. Final data-queue verification: all 1285 tests, warning-free Release build, full display PTY and generated inventory checks pass. An existing SQLite cancellation fixture startup timeout was corrected with a dedicated worker/start signal and unconditional cancellation cleanup."
     },
     {
       "id": "WP08-06",
@@ -1275,15 +1291,26 @@
       "requirement": "Lexer/parser \u2192 IR (fixed-column spec, free-form `**free`/`/free`), indicators, `D`/`F`/`C`/ `E`/`P`/`O` specs.",
       "status": "partial",
       "implementation": [
-        "src/Ipc.Rpg"
+        "src/Ipc.Rpg",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs"
       ],
       "tests": [
-        "tests/Ipc.Core.Tests/RpgTests.cs"
+        "tests/Ipc.Core.Tests/RpgTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tools/pty-display-smoke.py"
       ],
       "documentation": [
-        "docs/release-scope.md"
+        "docs/release-scope.md",
+        "docs/api.md",
+        "docs/rpg-spec.md"
       ],
-      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+      "evidence": "Owning code/test files only; full requirement acceptance is still open. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP10-02",
@@ -1323,15 +1350,32 @@
       "requirement": "Opcode core (documented subset in `rpg-spec.md`): calculation (ADD SUB MULT DIV MVR Z-ADD Z-SUB EVAL MOVE MOVEL BITOFF/BITON TEST CLEAR SETON SETOFF SETONLR DO DOU DOW FOR IF/ELSE/ ENDIF SELECT ...), DB I/O (CHAIN READ READE READP READPE WRITE UPDATE DELETE SETLL SETGT OPEN CLOSE FORCE COMMIT ROLBK), print/display (EXFMT WRITE READ DSPLY SNDPGMMSG/RCVMSG), program (CALL CALLB CALLP PARM PLIST RETRN), indicators/error (ON-ERROR, `*INLR`), `EXSR`, subprocedures (`P`/`D` specs), prototyped calls, service programs.",
       "status": "partial",
       "implementation": [
-        "src/Ipc.Rpg"
+        "src/Ipc.Rpg",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgHost.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Rpg/Runtime/RpgRuntimeContext.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
       ],
       "tests": [
-        "tests/Ipc.Core.Tests/RpgTests.cs"
+        "tests/Ipc.Core.Tests/RpgTests.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
       ],
       "documentation": [
-        "docs/release-scope.md"
+        "docs/release-scope.md",
+        "docs/api.md",
+        "docs/rpg-spec.md",
+        "docs/data-queues.md"
       ],
-      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+      "evidence": "Owning code/test files only; full requirement acceptance is still open. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP10-05",
@@ -1355,15 +1399,32 @@
       "requirement": "Compile-to-IR (`CRTBNDRPG`) + execute (`CALL`); MONMSG-style and `*STATUS` handling.",
       "status": "partial",
       "implementation": [
-        "src/Ipc.Rpg"
+        "src/Ipc.Rpg",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgHost.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Rpg/Runtime/RpgRuntimeContext.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
       ],
       "tests": [
-        "tests/Ipc.Core.Tests/RpgTests.cs"
+        "tests/Ipc.Core.Tests/RpgTests.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
       ],
       "documentation": [
-        "docs/release-scope.md"
+        "docs/release-scope.md",
+        "docs/api.md",
+        "docs/rpg-spec.md",
+        "docs/data-queues.md"
       ],
-      "evidence": "Owning code/test files only; full requirement acceptance is still open."
+      "evidence": "Owning code/test files only; full requirement acceptance is still open. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP10-07",
@@ -1477,13 +1538,43 @@
       "id": "WP12-02",
       "source": "PLAN.md \u00a76 WP12",
       "requirement": "Data queues `*DTAQ`: FIFO/LIFO/keyed; SNDDTAQ/RCVDTAQ + `QUSCRTDQ/QSNDDTAQ/QRDVDTAQ` APIs.",
-      "status": "planned",
-      "implementation": [],
-      "tests": [],
-      "documentation": [
-        "docs/release-scope.md"
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Services/Messages/DataQueueStore.cs",
+        "src/Ipc.Session/Controllers/DataQueueCommands.cs",
+        "src/Ipc.Services/Sqlite/DataQueueMigration.cs",
+        "src/Ipc.Api/DataQueueApi.cs",
+        "src/Ipc.Api/ApiArguments.cs",
+        "src/Ipc.Services/Work/BuiltinProgramService.cs",
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgHost.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Rpg/Runtime/RpgRuntimeContext.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
       ],
-      "evidence": "No implementation or acceptance evidence yet."
+      "tests": [
+        "tests/Ipc.Core.Tests/DataQueueTests.cs",
+        "tests/Ipc.Core.Tests/ClDataQueueTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueProcessTests.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/DataQueueApiTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/data-queues.md",
+        "docs/api.md",
+        "docs/rpg-spec.md"
+      ],
+      "evidence": "Data-queue checkpoint: 46 new service/CL/process cases and full display PTY pass. Schema 24 adds durable FIFO/LIFO/keyed entries, exact binary selectors, bounded storage, atomic receive/output failures, waits/cancellation, sender snapshots, authority/revocation/AUTLs/locks and generic lifecycle. Independent processes prove competing delivery; migration, restart and killed waiters are covered. Native data-queue ABI and the wider C07/C11 work remain open. Final data-queue verification: all 1285 tests, warning-free Release build, full display PTY and generated inventory checks pass. An existing SQLite cancellation fixture startup timeout was corrected with a dedicated worker/start signal and unconditional cancellation cleanup. Native queue API checkpoint (2026-10-17): Ipc.Api implements local STD QSNDDTAQ/QRCVDTAQ/QCLRDTAQ with checked packed fields, complete optional groups, atomic writable receivers, truncation/peek/timeout, sender headers and big-endian error receivers. 57 new cases pass, covering independent byte vectors, CCSIDs 37/1208, maximum lengths, unchanged outputs/tails, MONMSG, RPG through a typed CL wrapper, cancellation, live authority and signing trust. Direct RPG receive borrowing, exact native error distinctions, DDM, journals and broader APIs remain open. Final verification: all 1342 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full display PTY including native queue APIs and generated inventory validation pass. Startup acceptance now verifies the updated seed count and all four IPCAPI manifests. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP12-03",
@@ -1665,13 +1756,38 @@
       "id": "WP15-01",
       "source": "PLAN.md \u00a76 WP15",
       "requirement": "API execution host with classic CVT-style parameter ABI (20-byte + variable-length).",
-      "status": "planned",
-      "implementation": [],
-      "tests": [],
-      "documentation": [
-        "docs/release-scope.md"
+      "status": "partial",
+      "implementation": [
+        "src/Ipc.Api/DataQueueApi.cs",
+        "src/Ipc.Api/ApiArguments.cs",
+        "src/Ipc.Services/Work/BuiltinProgramService.cs",
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgHost.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Rpg/Runtime/RpgRuntimeContext.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
       ],
-      "evidence": "No implementation or acceptance evidence yet."
+      "tests": [
+        "tests/Ipc.Core.Tests/DataQueueApiTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/ServicesTests.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.Core.Tests/QcmdexcTests.cs",
+        "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
+      ],
+      "documentation": [
+        "docs/release-scope.md",
+        "docs/api.md",
+        "docs/data-queues.md",
+        "docs/rpg-spec.md"
+      ],
+      "evidence": "Native queue API checkpoint (2026-10-17): Ipc.Api implements local STD QSNDDTAQ/QRCVDTAQ/QCLRDTAQ with checked packed fields, complete optional groups, atomic writable receivers, truncation/peek/timeout, sender headers and big-endian error receivers. 57 new cases pass, covering independent byte vectors, CCSIDs 37/1208, maximum lengths, unchanged outputs/tails, MONMSG, RPG through a typed CL wrapper, cancellation, live authority and signing trust. Direct RPG receive borrowing, exact native error distinctions, DDM, journals and broader APIs remain open. Final verification: all 1342 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full display PTY including native queue APIs and generated inventory validation pass. Startup acceptance now verifies the updated seed count and all four IPCAPI manifests. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP15-02",
@@ -1680,19 +1796,38 @@
       "status": "partial",
       "implementation": [
         "src/Ipc.Services/Work/BuiltinProgramService.cs",
-        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs"
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs",
+        "src/Ipc.Api/DataQueueApi.cs",
+        "src/Ipc.Api/ApiArguments.cs",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgHost.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Rpg/Runtime/RpgRuntimeContext.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/QcmdexcTests.cs",
-        "tests/Ipc.Core.Tests/WebExecutionTests.cs"
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueApiTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/ServicesTests.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
         "docs/compatibility-contracts.md",
         "docs/object-model.md",
-        "docs/api.md"
+        "docs/api.md",
+        "docs/data-queues.md",
+        "docs/rpg-spec.md"
       ],
-      "evidence": "QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open."
+      "evidence": "QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open. Native queue API checkpoint (2026-10-17): Ipc.Api implements local STD QSNDDTAQ/QRCVDTAQ/QCLRDTAQ with checked packed fields, complete optional groups, atomic writable receivers, truncation/peek/timeout, sender headers and big-endian error receivers. 57 new cases pass, covering independent byte vectors, CCSIDs 37/1208, maximum lengths, unchanged outputs/tails, MONMSG, RPG through a typed CL wrapper, cancellation, live authority and signing trust. Direct RPG receive borrowing, exact native error distinctions, DDM, journals and broader APIs remain open. Final verification: all 1342 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full display PTY including native queue APIs and generated inventory validation pass. Startup acceptance now verifies the updated seed count and all four IPCAPI manifests. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP15-03",
@@ -1713,17 +1848,36 @@
       "status": "partial",
       "implementation": [
         "src/Ipc.Services/Work/BuiltinProgramService.cs",
-        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs"
+        "src/Ipc.Session/Controllers/BuiltinProgramCalls.cs",
+        "src/Ipc.Api/DataQueueApi.cs",
+        "src/Ipc.Api/ApiArguments.cs",
+        "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
+        "src/Ipc.Rpg/Runtime/RpgHost.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Rpg/Runtime/RpgRuntimeContext.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Rpg/Model/RpgProgram.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/QcmdexcTests.cs",
-        "tests/Ipc.Core.Tests/WebExecutionTests.cs"
+        "tests/Ipc.Core.Tests/WebExecutionTests.cs",
+        "tests/Ipc.Core.Tests/DataQueueApiTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs",
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/ServicesTests.cs",
+        "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
+        "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
-        "docs/api.md"
+        "docs/api.md",
+        "docs/data-queues.md",
+        "docs/rpg-spec.md"
       ],
-      "evidence": "QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open."
+      "evidence": "QCMDEXC checkpoint: 1128 tests, expanded real HTTP acceptance, warning-free Release build and full display PTY pass. Direct/compiled CL and RPG calls share command dispatch with byte/packed bounds, same-job state, authority/signature checks, MONMSG and cancellation. Prompting and broader API/debugger contracts remain open. Native queue API checkpoint (2026-10-17): Ipc.Api implements local STD QSNDDTAQ/QRCVDTAQ/QCLRDTAQ with checked packed fields, complete optional groups, atomic writable receivers, truncation/peek/timeout, sender headers and big-endian error receivers. 57 new cases pass, covering independent byte vectors, CCSIDs 37/1208, maximum lengths, unchanged outputs/tails, MONMSG, RPG through a typed CL wrapper, cancellation, live authority and signing trust. Direct RPG receive borrowing, exact native error distinctions, DDM, journals and broader APIs remain open. Final verification: all 1342 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full display PTY including native queue APIs and generated inventory validation pass. Startup acceptance now verifies the updated seed count and all four IPCAPI manifests. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
     },
     {
       "id": "WP16-01",

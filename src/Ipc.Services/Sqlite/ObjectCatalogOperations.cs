@@ -201,6 +201,8 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                     ccsid,attribute,format,public_authority,source,json_remove(attrs,'$."ipc.signature"')
                 FROM sys_objects WHERE lib=$lib AND name=$name AND type=$type
                 """);
+            if (type == ObjectType.DataQueue)
+                op.Run("UPDATE sys_objects SET source=json_set(source,'$.Definition.Identity',lower(hex(randomblob(16)))) WHERE lib=$targetLib AND name=$targetName AND type='*DTAQ'");
             op.Run("INSERT INTO sys_file_defs SELECT $targetLib,$targetName,type,json_set(def,'$.name',$targetName) FROM sys_file_defs WHERE lib=$lib AND name=$name AND type=$type");
             op.Run("INSERT INTO sys_file_members SELECT $targetLib,$targetName,type,mbr,$now FROM sys_file_members WHERE lib=$lib AND name=$name AND type=$type");
             op.Run("INSERT INTO sys_authorities SELECT $targetLib,$targetName,type,holder,is_authl,bits FROM sys_authorities WHERE lib=$lib AND name=$name AND type=$type");

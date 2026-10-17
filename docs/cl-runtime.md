@@ -134,8 +134,22 @@ a duplicate when the caller receives them. Returned-frame exceptions remain in
 DSPJOBLOG until removed. Host diagnostics use valid UTF-8 bounded to 4096 bytes;
 RCVMSG performs requested conversion. A full/revoked queue produces a monitorable
 delivery error without recursive error reporting. Advanced message formats, reply
-validity, overrides and status/notify/break delivery remain open, as do ILE
+handling exits, overrides and status/notify/break delivery remain open, as do ILE
 exception-handler semantics.
+
+Predefined inquiries support saved TYPE/LEN/VALUES/SPCVAL/RANGE/REL reply rules.
+Invalid explicit replies raise monitorable CPF2422 without consuming the inquiry;
+accepted replies return RTNTYPE 22. Defaults retain their separate return codes.
+See [message descriptions](message-descriptions.md#inquiry-reply-rules) for the
+bounded character/numeric contract and legacy compatibility.
+
+SNDDTAQ/RCVDTAQ/CLRDTAQ now share a durable FIFO/LIFO/keyed data-queue service.
+Compiled CL preserves raw CHAR data/key bytes and receives data, key and length
+with monitorable, atomic layout failures. See [data queues](data-queues.md) for
+extension commands, limits and waiting/cancellation. Native QSNDDTAQ/QRCVDTAQ/
+QCLRDTAQ now use the same queues with checked packed layouts and writable CL
+receivers. Their timeout/trailing-byte, truncation, sender and error-code behavior
+is documented in [system APIs](api.md#local-data-queue-program-apis).
 
 ClParameterTests supplies independent packed/integer/logical/character bytes,
 aliased references, error writeback, counts/signatures, variable program targets

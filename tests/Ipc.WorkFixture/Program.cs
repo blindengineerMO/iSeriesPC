@@ -14,6 +14,22 @@ public static class Program
         File.WriteAllText(Path.Combine(root, $"ready-{Environment.ProcessId}"), "ready");
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         while (!File.Exists(Path.Combine(root, "start"))) await Task.Delay(10, stop.Token);
+        if (mode is "data-produce" or "data-consume")
+        {
+            var dataQueues = new Ipc.Services.Messages.DataQueueStore(factory);
+            var received = new List<long>();
+            for (var index = 0; index < count; index++)
+            {
+                if (mode == "data-produce")
+                {
+                    var value = ((long)Environment.ProcessId << 32) | (uint)index;
+                    dataQueues.Send(new("QGPL", "DATA"), new(BitConverter.GetBytes(value), 37), cancellationToken: stop.Token);
+                    received.Add(value);
+                }
+                else received.Add(BitConverter.ToInt64(dataQueues.Receive(new("QGPL", "DATA"), wait: TimeSpan.FromSeconds(15), cancellationToken: stop.Token)!.Data.ToArray()));
+            }
+            Console.Write(JsonSerializer.Serialize(received)); return 0;
+        }
         if (mode is "lock-hold" or "lock-wait")
         {
             var job = jobs.CreateInteractive("QUSER"); var locks = new JobLockStore(factory);

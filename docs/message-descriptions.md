@@ -9,18 +9,19 @@ letter/alphanumeric prefix and four hexadecimal suffix positions. See IBM's
 [identifier rules](https://www.ibm.com/docs/en/i/7.5.0?topic=file-assigning-message-identifier)
 and [description fields](https://www.ibm.com/docs/ssw_ibm_i_74/rzajq/rzajqviewmessagefiledata.htm).
 
-The previous version-1 text dictionary is read without modifying the catalog.
-Its next successful change writes version 2, retaining old text, identifiers and
+Version-1 text dictionaries and version-2 descriptions are read without modifying the catalog.
+Their next successful change writes version 3, retaining old text, identifiers and
 literal ampersands, including the earlier 512-character extension. New text uses
 the native limit. Unknown versions, duplicate JSON properties, unknown properties,
 invalid layouts and oversized payloads fail before mutation. Stored snapshots do
-not expose mutable field lists. The object payload upgrade needs no migration. Catalog schema 23 adds durable
+not expose mutable field or reply-rule lists. Queued snapshot version 2 adds reply rules;
+version-1 snapshots remain readable. The payload upgrade needs no migration. Catalog schema 23 adds durable
 predefined-message snapshots to queue entries.
 
 | Command | Current contract |
 |---|---|
 | CRTMSGF | MSGF, TEXT, CCSID; supported concrete job code pages |
-| ADDMSGD | MSGID, MSGF, MSG, SECLVL, SEV, FMT, DFT |
+| ADDMSGD | MSGID, MSGF, MSG, SECLVL, SEV, FMT, DFT, TYPE, LEN, VALUES, SPCVAL, RANGE, REL |
 | CHGMSGD | Same description fields; omitted fields or unquoted *SAME retain values |
 | RMVMSGD | MSGID (one identifier or *ALL), MSGF |
 | DSPMSGD | MSGID (one identifier or *ALL), MSGF; text listing |
@@ -49,8 +50,8 @@ replacement contents as further substitutions. These layouts follow IBM's
 CHAR preserves original bytes and trims trailing blanks; QTDCHAR adds apostrophes;
 HEX produces X'…'. Only CCHAR replacement bytes are converted between CCSIDs.
 Templates and numeric formatting use the requested output CCSID. *HEX suppresses
-conversion of character replacement data. UTC/date/pointer formats, reply-validity
-rules, dump/default programs, alert/problem-log metadata and overrides are still
+conversion of character replacement data. UTC/date/pointer formats,
+dump/default programs, alert/problem-log metadata and overrides are still
 unsupported. Help formatting controls are retained in text; full terminal wrapping
 and indentation remain open. Predefined inquiries snapshot the description default
 reply at send time; later edits do not change their default.
@@ -86,5 +87,48 @@ revoked. SNDMSGFLIB is blank if the original path/creation identity no longer ex
 The existing CPF9898 adapter remains available when no real QCPFMSG file exists;
 it supplies immediate text without a predefined snapshot. MONMSG text and hex
 CMPDTA compare raw substitution prefixes, independently of formatted display text.
-Operator second-level presentation, richer formats, reply validity, overrides and
+Operator second-level presentation, richer formats, reply-handling exits, overrides and
 the broader C07/C11 delivery requirements remain open.
+
+
+## Inquiry reply rules
+
+ADDMSGD/CHGMSGD accept TYPE, LEN, VALUES, SPCVAL, RANGE and REL. TYPE supports
+CHAR, DEC, ALPHA and NAME; explicit NONE requires LEN(*NONE) and cleared constraints
+and default. LEN accepts *TYPE or a length and optional decimal positions. Decimal
+replies support 15 digits and nine fractional positions; LEN without a scale
+uses zero. Lists and special mappings allow at most 20 entries of 32 encoded bytes.
+VALUES, RANGE and REL are mutually exclusive. See IBM's
+[reply-validation overview](https://www.ibm.com/docs/en/i/7.4.0?topic=file-specifying-validity-checking-replies).
+
+CHGMSGD applies omitted/*SAME fields to the current description inside its write
+transaction. TYPE changes require LEN; incompatible retained fields reject the
+entire change. DSPMSGD lists the saved rules. Earlier descriptions retain their
+unchecked behavior until rules are explicitly configured.
+
+Explicit replies use the sent snapshot, even after the original file is edited,
+deleted or revoked. Matching special values map before type/length checking and
+bypass VALUES/RANGE/REL. Default replies satisfy type/length independently of the
+selection constraints. Removing an unanswered inquiry uses its saved default;
+without one, the existing empty system-default response is retained.
+
+The current character contract measures encoded bytes, uses message-file CCSID
+collation and trims trailing padding blanks. ALPHA/NAME use ASCII letters/digits;
+all-letter explicit NAME replies become uppercase. Decimal syntax uses an optional leading
+sign and dot, exact comparison, and rejects exponent/grouping notation. Character
+range/relation comparisons pad or truncate to the boundary width while preserving
+the full accepted reply. Mapped text must fit the replying buffer's CCSID. Explicit
+NONE and older descriptions preserve opaque reply bytes.
+
+SNDRPY and the DSPMSG option-2/F4 flow share transactional validation. CPF2422
+leaves the inquiry, seen/replied flags and sender copy unchanged. Success returns
+RCVMSG RTNTYPE 22 for checked replies; unchecked replies retain 21 and defaults
+retain 23/24. Reply exits, notify-reply delivery and native predefined-reply
+65535 handling remain open; this runtime uses each ProgramBuffer's concrete CCSID.
+See IBM's [send-reply contract](https://www.ibm.com/docs/en/i/7.4.0?topic=s-send-reply).
+
+MessageReplyTests covers independent numeric and EBCDIC comparisons, CL monitoring,
+special mappings, atomic changes/replies, immutable snapshots, legacy payloads,
+authority, encoding failures, default removal and restart after file deletion.
+The display PTY fixture rejects a bad operator reply, cancels/reopens F4, sends a
+mapped reply and receives its checked return code through compiled CL.

@@ -12,7 +12,8 @@ namespace Ipc.Services.Messages;
 
 public sealed record MessageDataField(string Type, int Length, int Decimals = 0, int LengthPrefix = 0);
 public sealed record MessageDescription(string Text, string SecondLevel, int Severity,
-    IReadOnlyList<MessageDataField> Fields, int Ccsid, string? DefaultReply = null, bool LegacyLiteral = false);
+    IReadOnlyList<MessageDataField> Fields, int Ccsid, string? DefaultReply = null, bool LegacyLiteral = false,
+    MessageReplyRules? ReplyRules = null);
 public sealed record FormattedMessage(ProgramBuffer Text, ProgramBuffer SecondLevel, int Severity, ProgramBuffer? DefaultReply);
 
 public static class MessageDescriptionFormat
@@ -49,6 +50,7 @@ public static class MessageDescriptionFormat
             throw Invalid("Invalid message text, severity or CCSID.");
         if (description.LegacyLiteral && (!legacyText || description.Fields.Count != 0)) throw Invalid("Invalid legacy literal message.");
         ValidateFields(description.Fields);
+        description.ReplyRules?.Validate(description.Ccsid, description.DefaultReply);
         foreach (Match match in Regex.Matches(description.LegacyLiteral ? "" : description.Text + description.SecondLevel, @"&([0-9]+)"))
             if (!int.TryParse(match.Groups[1].Value, out var field) || field < 1 || field > description.Fields.Count)
                 throw Invalid("Message text references an undefined substitution field.");

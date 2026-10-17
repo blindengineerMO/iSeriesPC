@@ -86,6 +86,7 @@ public sealed partial class CommandService
         RegisterLockCommands();
         RegisterEnvironmentCommands();
         RegisterDisplayCommands();
+        RegisterDataQueueCommands();
         RegisterGroupCommands();
         RegisterWorkScreenCommands();
         RegisterProfileCommands();
@@ -854,11 +855,12 @@ public sealed partial class CommandService
 
     private RpgHost BuildRpgHost() => new()
     {
+        Ccsid = () => _job?.Ccsid ?? _system.Config.Ccsid,
         CancellationToken = _cancellationToken,
         Files = new RpgSqliteFileAccess(_files),
         OpenFile = _job is null ? null : OpenRpgFile,
         LibraryResolver = (_, fileName) => FindFileLibrary(fileName),
-        ProgramCaller = CallExternalProgram,
+        TypedProgramCaller = CallExternalProgram,
         SendMessage = message => _messages.AppendLine(message),
         Display = text => _messages.AppendLine(text),
         ReceiveMessage = () => null,
@@ -878,15 +880,20 @@ public sealed partial class CommandService
         return null;
     }
 
-    private RpgExternalCallResult? CallExternalProgram(string library, string name, IReadOnlyList<object?> parameters)
+    private RpgExternalCallResult? CallExternalProgram(string library, string name, IReadOnlyList<object?> parameters,
+        Func<IReadOnlyList<object?>>? borrowArguments)
     {
         try
         {
             var loaded = LoadProgramObject(library, name);
             if (loaded.Api is not null)
             {
-                var result = ExecuteBuiltinProgram(loaded.Api, parameters);
-                return new RpgExternalCallResult { Success = !result.IsError, Message = result.Message, UpdatedParameters = parameters };
+                IReadOnlyList<object?> apiArguments;
+                try { apiArguments = borrowArguments?.Invoke() ?? parameters; }
+                catch (CpfException error) { return new RpgExternalCallResult { Success = false, Message = error.Message }; }
+                var result = ExecuteBuiltinProgram(loaded.Api, apiArguments);
+                return new RpgExternalCallResult { Success = !result.IsError, Message = result.Message,
+                    UpdatedParameters = borrowArguments is null ? parameters : Array.Empty<object?>() };
             }
             if (loaded.External is not null)
             {

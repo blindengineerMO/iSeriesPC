@@ -11,32 +11,40 @@ public sealed class InterpreterCancellationTests
     public async Task Cl_loop_observes_cancellation_after_execution_starts()
     {
         using var stop = new CancellationTokenSource();
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var started = new ManualResetEventSlim();
         var program = new ClCompiler().Compile("LOOP", "QGPL",
             "PGM\nLOOP:\nSNDPGMMSG MSG('tick')\nGOTO LOOP\nENDPGM");
         var interpreter = new ClInterpreter((_, _) => null, _ => CommandResult.Ok(),
-            _ => started.TrySetResult(), stop.Token);
-        var run = Task.Run(() => interpreter.Run(program));
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        stop.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+            _ => started.Set(), stop.Token);
+        var run = Task.Factory.StartNew(() => interpreter.Run(program), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try { Assert.True(started.Wait(TimeSpan.FromSeconds(10)), "CL loop did not reach its first statement."); }
+        finally
+        {
+            stop.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
     }
 
     [Fact]
     public async Task Rpg_loop_observes_cancellation_without_swallowing_it_in_error_handler()
     {
         using var stop = new CancellationTokenSource();
-        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var program = RpgCompiler.Compile("LOOP", "QGPL", "**free\ndow 1 = 1;\ndsply 'tick';\nenddo;");
+        using var started = new ManualResetEventSlim();
+        var handled = false;
+        var program = RpgCompiler.Compile("LOOP", "QGPL", "**free\ndow 1 = 1;\ndsply 'tick';\nenddo;\non-error;\ndsply 'handler';");
         var interpreter = new RpgInterpreter(new RpgHost
         {
             CancellationToken = stop.Token,
-            Display = _ => started.TrySetResult(),
+            Display = text => { if (text == "tick") started.Set(); else handled = true; },
         });
-        var run = Task.Run(() => interpreter.Run(program));
-        await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        stop.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+        var run = Task.Factory.StartNew(() => interpreter.Run(program), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try { Assert.True(started.Wait(TimeSpan.FromSeconds(10)), "RPG loop did not reach its first statement."); }
+        finally
+        {
+            stop.Cancel();
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        Assert.False(handled);
     }
 
     [Fact]

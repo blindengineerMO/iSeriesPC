@@ -1037,12 +1037,43 @@ public sealed class RpgInterpreter
         return -1;
     }
 
-    private RpgExternalCallResult? CallExternal(RpgStatement statement, string name, IReadOnlyList<object?> parameters)
+    private RpgExternalCallResult? CallExternal(RpgStatement statement, string name, IReadOnlyList<object?> parameters,
+        RpgRuntimeContext? context = null, IReadOnlyList<RpgExpr>? arguments = null, RpgPrototype? prototype = null,
+        Func<IReadOnlyList<object?>>? prepareSemantic = null)
     {
-        var result = _host.ProgramCaller?.Invoke("*LIBL", name, parameters);
-        if (result is { Success: false } && statement.Indicator1 == 0)
-            throw new RpgRuntimeException(result.Message ?? $"External program {name} failed.");
-        return result;
+        RpgArgumentScope? scope = null;
+        using var semantic = prepareSemantic is null ? null : new SemanticArguments(prepareSemantic);
+        var active = true;
+        try
+        {
+            IReadOnlyList<object?> Borrow()
+            {
+                ObjectDisposedException.ThrowIf(!active, this);
+                return (scope ??= new RpgArgumentScope(context!, arguments!, parameters, _host.Ccsid(), prototype)).Arguments;
+            }
+            var legacy = _host.TypedProgramCaller is null ? prepareSemantic?.Invoke() ?? parameters : parameters;
+            var result = _host.TypedProgramCaller is { } typed
+                ? typed("*LIBL", name, (IReadOnlyList<object?>?)semantic ?? parameters, context is not null && arguments is not null ? Borrow : null)
+                : _host.ProgramCaller?.Invoke("*LIBL", name, legacy);
+            if (semantic is not null && result is not null && ReferenceEquals(result.UpdatedParameters, semantic))
+                result = new() { Success = result.Success, Message = result.Message, UpdatedParameters = semantic.ToArray() };
+            if (result is { Success: false } && statement.Indicator1 == 0)
+                throw new RpgRuntimeException(result.Message ?? $"External program {name} failed.");
+            return result;
+        }
+        finally { active = false; scope?.Dispose(); }
+    }
+
+    private sealed class SemanticArguments(Func<IReadOnlyList<object?>> prepare) : IReadOnlyList<object?>, IDisposable
+    {
+        private Func<IReadOnlyList<object?>>? _prepare = prepare;
+        private IReadOnlyList<object?>? _values;
+        private IReadOnlyList<object?> Values => _values ??= (_prepare ?? throw new ObjectDisposedException(nameof(SemanticArguments)))();
+        public int Count => Values.Count;
+        public object? this[int index] => Values[index];
+        public IEnumerator<object?> GetEnumerator() => Values.GetEnumerator();
+        global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public void Dispose() => _prepare = null;
     }
 
     private int CallOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
@@ -1060,7 +1091,8 @@ public sealed class RpgInterpreter
 
         var plistName = stmt.Factor2;
         var parameters = CollectParameters(stmt, ctx);
-        var result = CallExternal(stmt, programName, parameters);
+        var result = CallExternal(stmt, programName, parameters, ctx,
+            string.IsNullOrWhiteSpace(plistName) ? [] : CollectPlistFieldNames(ctx.Program, plistName).Select(RpgExpressionParser.Parse).ToArray());
         if (result is null)
         {
             if (stmt.Indicator1 != 0)
@@ -1107,10 +1139,11 @@ public sealed class RpgInterpreter
             {
                 inner = inner[..^1];
             }
+            else throw new RpgRuntimeException("Unclosed RPG call argument list.");
 
             if (inner.Trim().Length > 0)
             {
-                foreach (var argument in inner.Split(':'))
+                foreach (var argument in SplitCallArguments(inner))
                 {
                     rawArguments.Add(argument);
                     arguments.Add(RpgExpressionParser.Parse(argument));
@@ -1148,7 +1181,8 @@ public sealed class RpgInterpreter
         if (!string.IsNullOrWhiteSpace(plistName))
         {
             var parameters = CollectPlistValues(ctx.Program, plistName, ctx);
-            var result = CallExternal(stmt, name, parameters);
+            var result = CallExternal(stmt, name, parameters, ctx,
+                CollectPlistFieldNames(ctx.Program, plistName).Select(n => (RpgExpr)new RpgFieldRef(n)).ToArray());
             if (result is not null)
             {
                 if (!result.Success && stmt.Indicator1 != 0)
@@ -1168,11 +1202,12 @@ public sealed class RpgInterpreter
         if (prototype is not null)
         {
             var externalName = prototype.ExternalName ?? prototype.Name;
-            BindPrototypeParameters(ctx, prototype, arguments);
-            var values = prototype.Parameters.Count > 0
-                ? prototype.Parameters.Select(p => ctx.ReadValue(p)).ToList()
-                : evaluated;
-            var result = CallExternal(stmt, externalName, values);
+            IReadOnlyList<object?> PrepareSemantic()
+            {
+                BindPrototypeParameters(ctx, prototype, evaluated);
+                return prototype.Parameters.Count > 0 ? prototype.Parameters.Select(ctx.ReadValue).ToArray() : evaluated.ToArray();
+            }
+            var result = CallExternal(stmt, externalName, evaluated, ctx, arguments, prototype, PrepareSemantic);
             if (result is not null)
             {
                 if (!result.Success && stmt.Indicator1 != 0)
@@ -1192,7 +1227,7 @@ public sealed class RpgInterpreter
             var target = RpgValues.ToText(ctx.ReadValue(name));
             if (target.Length > 0)
             {
-                var result = CallExternal(stmt, target, evaluated);
+                var result = CallExternal(stmt, target, evaluated, ctx, arguments);
                 if (result is not null)
                 {
                     if (!result.Success && stmt.Indicator1 != 0)
@@ -1207,7 +1242,7 @@ public sealed class RpgInterpreter
             return -1;
         }
 
-        var external = CallExternal(stmt, name, evaluated);
+        var external = CallExternal(stmt, name, evaluated, ctx, arguments);
         if (external is not null && !external.Success && stmt.Indicator1 != 0)
         {
             ctx.Indicators[stmt.Indicator1] = true;
@@ -1217,11 +1252,41 @@ public sealed class RpgInterpreter
         return -1;
     }
 
-    private static void BindPrototypeParameters(RpgRuntimeContext ctx, RpgPrototype prototype, IReadOnlyList<RpgExpr> arguments)
+    private static IEnumerable<string> SplitCallArguments(string text)
+    {
+        var start = 0; var depth = 0; var quoted = false;
+        for (var index = 0; index < text.Length; index++)
+        {
+            var ch = text[index];
+            if (quoted && ch == '\\' && index + 1 < text.Length) { index++; continue; }
+            if (ch == '\'')
+            {
+                if (quoted && index + 1 < text.Length && text[index + 1] == '\'') { index++; continue; }
+                quoted = !quoted;
+            }
+            else if (!quoted)
+            {
+                if (ch == '(') depth++;
+                else if (ch == ')' && --depth < 0) throw new RpgRuntimeException("Unbalanced RPG call argument.");
+                else if (ch == ':' && depth == 0)
+                {
+                    var part = text[start..index].Trim();
+                    if (part.Length == 0) throw new RpgRuntimeException("Empty RPG call argument.");
+                    yield return part; start = index + 1;
+                }
+            }
+        }
+        if (quoted || depth != 0) throw new RpgRuntimeException("Unclosed RPG call expression or literal.");
+        var last = text[start..].Trim();
+        if (last.Length == 0) throw new RpgRuntimeException("Empty RPG call argument.");
+        yield return last;
+    }
+
+    private static void BindPrototypeParameters(RpgRuntimeContext ctx, RpgPrototype prototype, IReadOnlyList<object?> arguments)
     {
         for (var index = 0; index < prototype.Parameters.Count && index < arguments.Count; index++)
         {
-            ctx.WriteValue(prototype.Parameters[index], arguments[index].Eval(ctx));
+            ctx.WriteValue(prototype.Parameters[index], arguments[index]);
         }
     }
 

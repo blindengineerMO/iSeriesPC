@@ -20,6 +20,11 @@ public sealed partial class CommandService
         _cancellationToken.ThrowIfCancellationRequested();
         try
         {
+            if (program.Name != "QCMDEXC")
+            {
+                new Ipc.Api.DataQueueApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid, _cancellationToken).Invoke(program.Name, parameters);
+                return CommandResult.Ok();
+            }
             if (parameters.Count is < 2 or > 3) throw InvalidApi("QCMDEXC requires two or three parameters.");
             var command = ApiCharacter(parameters[0]);
             var length = ApiCommandLength(parameters[1]);

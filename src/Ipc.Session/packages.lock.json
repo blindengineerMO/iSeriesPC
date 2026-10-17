@@ -52,6 +52,12 @@
         "resolved": "10.0.12",
         "contentHash": "L2PHm7ewfjQYgbhBUB+lXiewxoNo+rhn06geWeUJP3qYCDnkL+Qibv6TEPMlMsF/zab4cU2bE8BWTBqzHZYiYg=="
       },
+      "ipc.api": {
+        "type": "Project",
+        "dependencies": {
+          "Ipc.Services": "[1.0.0, )"
+        }
+      },
       "ipc.cl": {
         "type": "Project",
         "dependencies": {

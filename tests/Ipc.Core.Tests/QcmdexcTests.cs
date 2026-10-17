@@ -133,10 +133,11 @@ public sealed class QcmdexcTests : IDisposable
     }
 
     [Fact]
-    public void Rpg_semantic_adapter_runs_the_same_command_in_the_same_job()
+    public void Rpg_typed_adapter_runs_the_same_command_in_the_same_job()
     {
         var character = ClExternalCallTests.Declaration("CMD", "A", "32").ToCharArray(); character[40] = ' ';
-        var declaration = new string(character) + ClExternalCallTests.Declaration("LEN", "P", "15");
+        var length = ClExternalCallTests.Declaration("LEN", "P", "15").ToCharArray(); length[40] = '5';
+        var declaration = new string(character) + new string(length);
         var source = declaration + ClExternalCallTests.Calculation("*ENTRY", "PLIST") + ClExternalCallTests.Calculation("CMD", "PARM") +
             ClExternalCallTests.Calculation("LEN", "PARM") + ClExternalCallTests.Calculation("PL1", "PLIST") +
             ClExternalCallTests.Calculation("CMD", "PARM") + ClExternalCallTests.Calculation("LEN", "PARM") + ClExternalCallTests.Calculation("'QCMDEXC'", "CALL", "PL1");

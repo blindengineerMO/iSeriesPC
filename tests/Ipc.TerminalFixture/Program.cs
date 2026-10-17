@@ -60,6 +60,39 @@ if (system is not null)
             files.SaveSourceMember("QGPL", "SOURCE", "CLRPG",
                 "PGM\nDCL &N *DEC LEN(5 0) VALUE(5)\nCALL PGM(QGPL/RPGADJUST) PARM(&N)\n" +
                 "IF (&N *EQ 12) THEN(SNDPGMMSG MSG('RPG WRITEBACK ACCEPTED'))\nENDPGM", null);
+            system.Objects.Create(new Ipc.Core.Objects.ObjectDescriptor { Key = new("QGPL", "RPGDQAPI"), ObjectType = "*PGM", Attribute = "RPG",
+                Source = RpgLine('D', (7, "Q"), (21, "A"), (38, "10")) + RpgLine('D', (7, "LIB"), (21, "A"), (38, "10")) +
+                    RpgLine('D', (7, "LENGTH"), (21, "P"), (38, "5"), (40, "0")) + RpgLine('D', (7, "TEXT"), (21, "A"), (38, "8")) +
+                    RpgLine('D', (7, "WAIT"), (21, "P"), (38, "5"), (40, "0")) + RpgLine('D', (7, "KEYLEN"), (21, "P"), (38, "3"), (40, "0")) +
+                    RpgLine('D', (7, "KEY"), (21, "A"), (38, "2")) + RpgLine('D', (7, "SLEN"), (21, "P"), (38, "3"), (40, "0")) +
+                    RpgLine('D', (7, "SENDER"), (21, "A"), (38, "44")) + """
+                    **free
+                    eval Q = 'WORKDQ';
+                    eval LIB = 'QGPL';
+                    eval LENGTH = 5;
+                    eval TEXT = 'READY';
+                    eval KEYLEN = 2;
+                    eval KEY = 'AB';
+                    eval SLEN = 44;
+                    callp QSNDDTAQ(Q:LIB:LENGTH:TEXT:KEYLEN:KEY);
+                    eval TEXT = 'TAILTAIL';
+                    callp QRCVDTAQ(Q:LIB:LENGTH:TEXT:WAIT:'EQ':KEYLEN:KEY:SLEN:SENDER);
+                    if LENGTH = 5;
+                    if TEXT = 'READYAIL';
+                    sndpgmmsg 'DIRECT RPG API ACCEPTED';
+                    endif;
+                    endif;
+                    callp QCLRDTAQ(Q:LIB);
+                    """ });
+            string Prototype(string name, string api, params (string Name, string Type, string Width)[] fields)
+                => RpgLine('D', (7, name), (21, "PR"), (50, "EXTPGM('" + api + "')")) + string.Concat(fields.Select(field =>
+                    field.Type == "P" ? RpgLine('D', (7, field.Name), (21, field.Type), (38, field.Width), (40, "0"), (50, "PARM")) :
+                    RpgLine('D', (7, field.Name), (21, field.Type), (38, field.Width), (50, "PARM"))));
+            var prototypeQueueSource = Prototype("SEND", "QSNDDTAQ", ("Q", "A", "10"), ("LIB", "A", "10"), ("LENGTH", "P", "5"), ("TEXT", "A", "8"), ("KEYLEN", "P", "3"), ("KEY", "A", "2")) +
+                Prototype("RECV", "QRCVDTAQ", ("Q", "A", "10"), ("LIB", "A", "10"), ("LENGTH", "P", "5"), ("TEXT", "A", "8"), ("WAIT", "P", "5"), ("ORDER", "A", "2"), ("KEYLEN", "P", "3"), ("KEY", "A", "2"), ("SLEN", "P", "3"), ("SENDER", "A", "44")) +
+                Prototype("CLEAR", "QCLRDTAQ", ("Q", "A", "10"), ("LIB", "A", "10")) +
+                system.Objects.GetRequired("QGPL", "RPGDQAPI", "*PGM").Source!.Replace("callp QSNDDTAQ", "callp SEND").Replace("callp QRCVDTAQ", "callp RECV").Replace("callp QCLRDTAQ", "callp CLEAR").Replace("DIRECT RPG API ACCEPTED", "PROTOTYPE API ACCEPTED");
+            system.Objects.Create(new Ipc.Core.Objects.ObjectDescriptor { Key = new("QGPL", "RPGPRAPI"), ObjectType = "*PGM", Attribute = "RPG", Source = prototypeQueueSource });
             files.SaveSourceMember("QGPL", "SOURCE", "CLENV",
                 "PGM\nDCL &WHO *CHAR LEN(10)\nDCL &DATA *CHAR LEN(3)\nDCL &POS *INT VALUE(2)\n" +
                 "RTVJOBA USER(&WHO)\nCHGDTAARA DTAARA(*LDA (&POS 3)) VALUE('ABC')\n" +
@@ -86,6 +119,43 @@ if (system is not null)
                 "IF (&TEXT *EQ 'Amount -12.34' *AND &HELP *EQ 'Balance -12.34' *AND &SEV *EQ 40) THEN(SNDPGMMSG MSG('PREDEFINED TEXT ACCEPTED'))\nENDPGM", null);
             files.SaveSourceMember("QGPL", "SOURCE", "CLMSGFAIL",
                 "PGM\nSNDPGMMSG MSGID(USR0001) MSGF(QGPL/CLMSGS) MSGDTA(X'01234D') MSGTYPE(*ESCAPE)\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLINQOP",
+                "PGM\nSNDPGMMSG MSGID(USR0002) MSGF(QGPL/CLMSGS) MSGTYPE(*INQ) TOMSGQ(QGPL/INBOX) RPYMSGQ(QGPL/REPLIES)\nENDPGM", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLDQWORK", """
+                PGM
+                DCL &DATA *CHAR LEN(8) VALUE(X'FF00FE0100000000')
+                DCL &KEY *CHAR LEN(2) VALUE(X'0011')
+                DCL &RETURNED *CHAR LEN(2)
+                DCL &SIZE *DEC LEN(5 0)
+                SNDDTAQ QGPL/WORKDQ DATA(&DATA) LEN(4) KEY(&KEY)
+                RCVDTAQ QGPL/WORKDQ KEY(&KEY) RMV(*NO) RTNVAR(&DATA) LENVAR(&SIZE) KEYVAR(&RETURNED)
+                IF (&SIZE *NE 4 *OR %SST(&DATA 1 4) *NE X'FF00FE01' *OR &RETURNED *NE &KEY) THEN(RETURN)
+                RCVDTAQ QGPL/WORKDQ KEY(&KEY) RTNVAR(&DATA)
+                SNDDTAQ QGPL/WORKDQ DATA('CLEAR ME') KEY(&KEY)
+                CLRDTAQ QGPL/WORKDQ KEY(&KEY)
+                RCVDTAQ QGPL/WORKDQ KEY(&KEY) LENVAR(&SIZE)
+                IF (&SIZE *EQ 0) THEN(SNDPGMMSG MSG('DATA QUEUE ACCEPTED'))
+                ENDPGM
+                """, null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLDQAPI", """
+                PGM
+                DCL &DATA *CHAR LEN(8) VALUE(X'0707070707070707')
+                DCL &KEY *CHAR LEN(2) VALUE(X'0011')
+                DCL &LENGTH *DEC LEN(5 0) VALUE(99)
+                DCL &SENDER *CHAR LEN(44)
+                DCL &ERROR *CHAR LEN(16) VALUE(X'00000010000000000000000000000000')
+                CALL QSNDDTAQ PARM('WORKDQ' 'QGPL' X'00004C' X'FF00FE01' X'002C' &KEY)
+                CALL QRCVDTAQ PARM('WORKDQ' 'QGPL' &LENGTH &DATA X'00000C' 'EQ' X'002C' &KEY X'044C' &SENDER '*NO' X'00002C' &ERROR '*MSEC')
+                IF (&LENGTH *NE 4 *OR &DATA *NE X'FF00070707070707' *OR %SST(&SENDER 1 8) *NE X'0000044C0000044C' *OR %SST(&ERROR 5 4) *NE X'00000000') THEN(RETURN)
+                CALL QCLRDTAQ PARM('WORKDQ' 'QGPL' 'EQ' X'002C' &KEY &ERROR)
+                CALL QRCVDTAQ PARM('WORKDQ' 'QGPL' &LENGTH &DATA X'00000C' 'EQ' X'002C' &KEY X'000C' '')
+                IF (&LENGTH *EQ 0 *AND &DATA *EQ X'FF00070707070707') THEN(SNDPGMMSG MSG('NATIVE QUEUE API ACCEPTED'))
+                ENDPGM
+                """, null);
+            files.SaveSourceMember("QGPL", "SOURCE", "CLCHKRPY",
+                "PGM\nDCL &RPY *CHAR LEN(3)\nDCL &TYPE *CHAR LEN(2)\n" +
+                "RCVMSG MSGQ(QGPL/REPLIES) MSGTYPE(*RPY) MSG(&RPY) RTNTYPE(&TYPE)\n" +
+                "IF (&RPY *EQ 'Y' *AND &TYPE *EQ '22') THEN(SNDPGMMSG MSG('OPERATOR VALIDATION ACCEPTED'))\nENDPGM", null);
             files.SaveSourceMember("QGPL", "SOURCE", "CLMSGRCV",
                 "PGM\nDCL &TEXT *CHAR LEN(30)\nDCL &HELP *CHAR LEN(40)\nDCL &RAW *CHAR LEN(3)\nDCL &SEV *DEC LEN(2 0)\n" +
                 "CALL QGPL/CLMSGFAIL\nMONMSG MSGID(USR0001) CMPDTA(X'01234D') EXEC(DO)\n" +

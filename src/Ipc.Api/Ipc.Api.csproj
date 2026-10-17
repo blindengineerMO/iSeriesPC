@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Ipc.Services/Ipc.Services.csproj" />
+  </ItemGroup>
+</Project>
