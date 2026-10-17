@@ -16,16 +16,23 @@ namespace Ipc.Session.Sources;
 public sealed class ProgramSourceResolver(IpcSystem system, Job? job = null, CancellationToken cancellationToken = default)
 {
     private readonly SqliteFileStore _files = new(system.Connections, system.Objects);
-    public SourceDocument Member(string file, string member)
+    public SourceDocument Member(string file, string member, bool searchMembers = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var key = QualifiedName.Parse(file.ToUpperInvariant(), "*LIBL"); member = member.ToUpperInvariant();
         if (!ObjectName.IsValid(member)) throw new CpfException("IPC0006", "Invalid source member name.");
-        var library = system.SearchLibraries(job, key.Library).FirstOrDefault(l => _files.FileExists(l, key.Name.Value))
-            ?? throw new CpfException("CPF9801", "Source file " + file + " not found.");
-        var source = _files.ReadSourceMember(library, key.Name.Value, member);
-        if (source.Revision is null) throw new CpfException("CPF2817", "Source member " + member + " not found.");
-        return new($"{library}/{key.Name}({member})", source.Source);
+        var foundFile = false;
+        foreach (var library in system.SearchLibraries(job, key.Library))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_files.FileExists(library, key.Name.Value)) continue;
+            foundFile = true;
+            var source = _files.ReadSourceMember(library, key.Name.Value, member);
+            if (source.Revision is not null) return new($"{library}/{key.Name}({member})", source.Source);
+            if (!searchMembers) break;
+        }
+        throw foundFile ? new CpfException("CPF2817", "Source member " + member + " not found.")
+            : new CpfException("CPF9801", "Source file " + file + " not found.");
     }
     public SourceDocument Stream(string path)
     {
@@ -58,6 +65,18 @@ public sealed class ProgramSourceResolver(IpcSystem system, Job? job = null, Can
         if (ObjectName.IsValid(reference.ToUpperInvariant()) && origin.Identity.IndexOf('(') is var parent && parent > 0)
             return Member(origin.Identity[..parent], reference);
         throw new ArgumentException("Member includes use MEMBER, LIB/FILE(MEMBER), or LIB/FILE,MEMBER. Stream sources resolve filesystem paths.");
+    }
+
+    public SourceDocument ResolveRpg(SourceDocument origin, string reference)
+    {
+        if (Path.IsPathRooted(origin.Identity)) return Resolve(origin, reference);
+        if (ObjectName.IsValid(reference.ToUpperInvariant())) return Member("QRPGLESRC", reference, searchMembers: true);
+        var comma = reference.IndexOf(',');
+        if (comma > 0 && reference.LastIndexOf(',') == comma)
+            return Member(reference[..comma], reference[(comma + 1)..], searchMembers: true);
+        // Parenthesized references are the same explicit extension used by CL.
+        if (reference.IndexOf('(') > 0 && reference.EndsWith(')')) return Resolve(origin, reference);
+        throw new ArgumentException("RPG member includes use MEMBER, FILE,MEMBER or LIB/FILE,MEMBER; stream sources resolve filesystem paths.");
     }
 
     private static FileStream OpenSource(string path)

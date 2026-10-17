@@ -1,7 +1,7 @@
-# Completion progress — 2026-10-16
+# Completion progress — 2026-10-17
 
-The user requested completion of all 106 PLAN.md checklist items. **33 items are
-complete and 73 remain open.** The app is under construction. PLAN.md is intentionally
+The user requested completion of all 106 PLAN.md checklist items. **34 items are
+complete and 72 remain open.** The app is under construction. PLAN.md is intentionally
 Git-ignored; this tracked note preserves the implementation checkpoint and evidence.
 
 ## Completed checklist items
@@ -261,7 +261,20 @@ No additional broad command-category or database-semantics item is checked off.
     sources use strict UTF-8 and reject Linux FIFOs without blocking. All 756 tests pass,
     with real CRTCLPGM → CALL conditional/include PTY acceptance. See source-preprocessing.md.
     The current Release build has zero warnings; C07 interpreter and broad command-category
-    tasks remain open, as do RPG preprocessing and debugger integration in C09/C15.
+    tasks remain open; RPG preprocessing is completed below and debugger integration
+    remains in C15.
+
+34. C09: bounded RPG source preprocessing supports `/COPY`/`/INCLUDE`, `/DEFINE`/
+    `/UNDEFINE`, `/IF`/`/ELSEIF`/`/ELSE`/`/ENDIF`, and listing-only `/TITLE`/`/EJECT`/
+    `/SPACE`. CRTBNDRPG shares authority-aware member/strict UTF-8 stream resolution
+    and hash-bound compiled snapshots/maps with CL while retaining RPG grammar.
+    QRPGLESRC defaults, library-list/current-library searches and relative streams
+    are tested. Compiler/runtime diagnostics retain original locations and include
+    chains; native errors retain CPF metadata. Existing programs survive source
+    edits, deletion and revoked read authority; recompilation checks live access.
+    54 new regression cases and terminal CRTBNDRPG → CALL acceptance pass. Broader
+    RPG/ILE syntax, embedded SQL and debugger controls remain open. See
+    [source preprocessing](source-preprocessing.md#rpg-directives).
 
 
 C07 interpreter checkpoint: 806 tests pass and the Release build has no warnings.
@@ -588,3 +601,14 @@ Full display PTY acceptance passes with RPGPRAPI's prototyped keyed lifecycle;
 the generated compatibility inventory validates. Broader checklist remains
 **33 complete / 73 open**; general prototype modes, native storage and ILE binding
 are unfinished.
+
+
+C09 RPG preprocessing final verification (2026-10-17): **1487 tests pass**, zero
+failures or skips, including **54 new preprocessing cases**. Locked restore and
+the Release build pass with zero build warnings/errors. Full display PTY acceptance
+passes, including terminal CRTBNDRPG creation and CALL of nested conditional copy
+members. Generated inventory validation and whitespace checks pass. G04 is supported
+for the documented CL extension and bounded RPG grammar; wider WP10 requirements
+remain partial. Listing-only programs compile and call successfully with empty
+executable text, and source-location reporting preserves CPF type/severity as well
+as message IDs. The checklist is now **34 complete / 72 open**.

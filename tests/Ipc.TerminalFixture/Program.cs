@@ -31,6 +31,11 @@ if (system is not null)
             files.SaveSourceMember("QGPL", "SOURCE", "CLPREP",
                 "PGM\n/DEFINE ENABLED\n/IF DEFINED(ENABLED)\n/INCLUDE CLINC\n/ELSE\nUNAVAILABLE\n/ENDIF\nENDPGM", null);
             files.SaveSourceMember("QGPL", "SOURCE", "CLINC", "SNDPGMMSG MSG('PREPROCESS ACCEPTED')", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "RPGPREP",
+                "**free\n/DEFINE ENABLED\n/IF DEFINED(ENABLED)\n/COPY QGPL/SOURCE,RPGINC\n/ELSE\n/COPY MISSING\n/ENDIF", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "RPGINC",
+                "/TITLE RPG inclusion acceptance\n/SPACE 2\n/EJECT\n/INCLUDE QGPL/SOURCE,RPGPART", null);
+            files.SaveSourceMember("QGPL", "SOURCE", "RPGPART", "sndpgmmsg 'RPG PREPROCESS ACCEPTED';", null);
             system.Objects.Create(new Ipc.Core.Objects.ObjectDescriptor { Key = new("QGPL", "CLADJUST"), ObjectType = "*PGM", Attribute = "CLP",
                 Source = "PGM PARM(&N)\nDCL &N *DEC LEN(7 0)\nCHGVAR &N (&N + 1)\nRETURN" });
             system.Objects.Create(new Ipc.Core.Objects.ObjectDescriptor { Key = new("QGPL", "CLESCAPE"), ObjectType = "*PGM", Attribute = "CLP",

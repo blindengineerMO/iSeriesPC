@@ -15,8 +15,14 @@ public sealed class SourcePreprocessException(SourceLocation location, string me
 }
 
 /// <summary>CL's explicitly defined inclusion extension. Resolution and authority belong to the caller.</summary>
-public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocument>? resolve = null)
+public sealed class SourcePreprocessor
 {
+    private readonly Func<SourceDocument, string, SourceDocument>? resolve;
+    private readonly bool rpg;
+    public SourcePreprocessor(Func<SourceDocument, string, SourceDocument>? resolve = null) : this(resolve, false) { }
+    internal SourcePreprocessor(Func<SourceDocument, string, SourceDocument>? resolve, bool rpg)
+    { this.resolve = resolve; this.rpg = rpg; }
+
     public PreprocessedSource Expand(SourceDocument root, CancellationToken cancellationToken = default)
     {
         var sources = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -50,18 +56,22 @@ public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocume
                 cancellationToken.ThrowIfCancellationRequested();
                 var original = lines[index]; var startedInQuote = quote; var startedInComment = comment;
                 var lineComment = !comment && !quote && (original.TrimStart().StartsWith('*') || original.TrimStart().StartsWith("//", StringComparison.Ordinal));
-                var raw = lineComment ? original : StripComments(original, ref comment, ref quote); var text = raw.TrimStart();
+                var raw = rpg ? StripRpgLine(original) : lineComment ? original : StripComments(original, ref comment, ref quote); var text = raw.TrimStart();
                 var location = new SourceLocation(document.Identity, index + 1, raw.Length - text.Length + 1, stack);
                 if (!startedInComment && comment) commentStart = location;
                 SourcePreprocessException Error(string message) => new(location, message);
                 if (raw.Length > 8192) throw Error("Source line exceeds 8192 characters.");
-                if (startedInQuote || !text.StartsWith('/') || text.StartsWith("//", StringComparison.Ordinal))
+                void Emit()
                 {
-                    if (!enabled) continue;
                     outputBytes += Encoding.UTF8.GetByteCount(raw) + 1;
                     mapSize += location.Source.Length + stack.Sum(s => s.Length) + 48;
                     if (output.Count >= 50000 || outputBytes > 4194304 || mapSize > 4194304) throw Error("Expanded source or location map exceeds its bounded size.");
-                    output.Add(raw); locations.Add(location); continue;
+                    output.Add(raw); locations.Add(location);
+                }
+                if (startedInQuote || !text.StartsWith('/') || text.StartsWith("//", StringComparison.Ordinal))
+                {
+                    if (enabled) Emit();
+                    continue;
                 }
                 var separator = text.IndexOfAny(new[] { ' ', '\t' });
                 var directive = (separator < 0 ? text : text[..separator]).ToUpperInvariant();
@@ -69,9 +79,10 @@ public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocume
                 switch (directive)
                 {
                     case "/INCLUDE":
+                    case "/COPY" when rpg:
                         var reference = IncludeReference(argument, Error);
                         if (!enabled) break;
-                        if (resolve is null) throw Error("CL /INCLUDE requires a source resolver.");
+                        if (resolve is null) throw Error((rpg ? "RPG " + directive : "CL /INCLUDE") + " requires a source resolver.");
                         SourceDocument included;
                         try { included = resolve(document, reference); }
                         catch (Ipc.Core.Messages.CpfException failure)
@@ -84,10 +95,21 @@ public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocume
                         if (!Symbol(argument)) throw Error("/DEFINE requires one symbol (1–64 letters, digits or underscores, starting with a letter).");
                         if (enabled && symbols.Add(argument) && symbols.Count > 256) throw Error("Compilation exceeds 256 defined symbols.");
                         break;
+                    case "/UNDEFINE" when rpg:
+                        if (!Symbol(argument)) throw Error("/UNDEFINE requires one symbol.");
+                        if (enabled) symbols.Remove(argument);
+                        break;
                     case "/IF":
-                        var result = Condition(argument, symbols, enabled, Error);
+                        var result = Condition(argument, symbols, enabled, Error, rpg);
                         if (conditions.Count >= 64) throw Error("Conditional nesting exceeds 64.");
                         conditions.Add(new(enabled, result, false, location)); enabled = enabled && result; break;
+                    case "/ELSEIF" when rpg:
+                        if (conditions.Count == 0 || conditions[^1].ElseSeen) throw Error("Unmatched /ELSEIF or /ELSEIF after /ELSE.");
+                        var previous = conditions[^1];
+                        var branch = Condition(argument, symbols, previous.ParentEnabled && !previous.Result, Error, true);
+                        enabled = previous.ParentEnabled && !previous.Result && branch;
+                        conditions[^1] = previous with { Result = previous.Result || branch };
+                        break;
                     case "/ELSE":
                         if (argument.Length != 0 || conditions.Count == 0 || conditions[^1].ElseSeen) throw Error("Unmatched, repeated or malformed /ELSE.");
                         var condition = conditions[^1]; conditions[^1] = condition with { ElseSeen = true };
@@ -95,8 +117,21 @@ public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocume
                     case "/ENDIF":
                         if (argument.Length != 0 || conditions.Count == 0) throw Error("Unmatched or malformed /ENDIF.");
                         enabled = conditions[^1].ParentEnabled; conditions.RemoveAt(conditions.Count - 1); break;
+                    case "/TITLE" when rpg:
+                        break; // Listing metadata is retained in the original source snapshot.
+                    case "/EJECT" when rpg:
+                        if (argument.Length != 0) throw Error("/EJECT takes no argument.");
+                        break;
+                    case "/SPACE" when rpg:
+                        if (argument.Length != 0 && !Regex.IsMatch(argument, @"\A[0-9]+\z", RegexOptions.CultureInvariant))
+                            throw Error("/SPACE requires an unsigned line count or no argument.");
+                        break;
+                    case "/FREE" or "/END-FREE" when rpg:
+                        if (argument.Length != 0) throw Error(directive + " takes no argument.");
+                        if (enabled) Emit();
+                        break;
                     default:
-                        throw Error("Unsupported CL preprocessing directive " + directive + "; RPG directives are not native CL syntax.");
+                        throw Error(rpg ? "Unsupported RPG preprocessing directive " + directive + "." : "Unsupported CL preprocessing directive " + directive + "; RPG directives are not native CL syntax.");
                 }
             }
             if (conditions.Count != 0) throw new SourcePreprocessException(conditions[^1].Location, "Unclosed /IF; each source member must balance its own conditionals.");
@@ -107,6 +142,27 @@ public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocume
         return new(string.Join('\n', output), locations, sources);
     }
     private sealed record Conditional(bool ParentEnabled, bool Result, bool ElseSeen, SourceLocation Location);
+    private static string StripRpgLine(string line)
+    {
+        // Preserve columns while recognizing sequence-prefixed directives and fixed comments.
+        if (line.Length > 6 && line[6] == '*' && line[..6].All(c => c == ' ' || char.IsAsciiDigit(c))) return new string(' ', line.Length);
+        var result = line.ToCharArray();
+        if (line.Length > 6 && line[..6].All(c => c == ' ' || char.IsAsciiDigit(c)) && line[6..].TrimStart().StartsWith('/'))
+            Array.Fill(result, ' ', 0, 6);
+        var quoted = false;
+        for (var index = 0; index < line.Length; index++)
+        {
+            if (line[index] == '\'')
+            {
+                if (quoted && index + 1 < line.Length && line[index + 1] == '\'') index++;
+                else quoted = !quoted;
+            }
+            else if (quoted && line[index] == '\\' && index + 1 < line.Length) index++;
+            else if (!quoted && line[index] == '/' && index + 1 < line.Length && line[index + 1] == '/')
+            { Array.Fill(result, ' ', index, line.Length - index); break; }
+        }
+        return new string(result);
+    }
     private static string StripComments(string line, ref bool comment, ref bool quote)
     {
         var result = line.ToCharArray();
@@ -131,10 +187,11 @@ public sealed class SourcePreprocessor(Func<SourceDocument, string, SourceDocume
         return new string(result);
     }
     private static bool Symbol(string name) => Regex.IsMatch(name, @"\A[A-Za-z][A-Za-z0-9_]{0,63}\z", RegexOptions.CultureInvariant);
-    private static bool Condition(string text, HashSet<string> symbols, bool active, Func<string, SourcePreprocessException> error)
+    private static bool Condition(string text, HashSet<string> symbols, bool active, Func<string, SourcePreprocessException> error, bool rpg = false)
     {
-        var match = Regex.Match(text, @"\A(?:(NOT|\*NOT)\s+)?DEFINED\(\s*([A-Za-z][A-Za-z0-9_]{0,63})\s*\)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var match = Regex.Match(text, rpg ? @"\A(?:(NOT)\s+)?DEFINED\(\s*([A-Za-z][A-Za-z0-9_]{0,63})\s*\)\z" : @"\A(?:(NOT|\*NOT)\s+)?DEFINED\(\s*([A-Za-z][A-Za-z0-9_]{0,63})\s*\)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (match.Success) return match.Groups[1].Success != symbols.Contains(match.Groups[2].Value);
+        if (rpg) throw error("/IF and /ELSEIF require DEFINED(symbol) or NOT DEFINED(symbol).");
         if (!Symbol(text)) throw error("/IF requires DEFINED(symbol), NOT DEFINED(symbol), or a defined symbol.");
         if (active && !symbols.Contains(text)) throw error("Undefined conditional symbol " + text + ".");
         return symbols.Contains(text);

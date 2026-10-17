@@ -158,27 +158,32 @@ public sealed class RpgInterpreter
             {
                 jump = ExecuteOp(statement, statements, context, state);
             }
-            catch (RpgRuntimeException)
+            catch (RpgRuntimeException error)
             {
                 if (_handlingError)
                 {
-                    throw;
+                    throw Located(error, statement);
                 }
 
                 var handler = NextOnError(statements, pc);
                 if (handler < 0)
                 {
-                    throw;
+                    throw Located(error, statement);
                 }
 
                 _handlingError = true;
                 pc = handler;
                 continue;
             }
+            catch (Ipc.Core.Messages.CpfException error) when (statement.Location is { })
+            { throw new Ipc.Core.Messages.CpfException(error.MessageId, $"{statement.Location}: {error.Message}", error.MessageType, error.Severity); }
 
             pc = jump >= 0 ? jump : pc + 1;
         }
     }
+
+    private static RpgRuntimeException Located(RpgRuntimeException error, RpgStatement statement)
+        => error.Location is null && statement.Location is { } location ? new(location, error.Message) : error;
 
     private static int NextOnError(IReadOnlyList<RpgStatement> statements, int after)
     {

@@ -2,36 +2,58 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Ipc.Rpg.Model;
 using Ipc.Rpg.Runtime;
+using Ipc.Core.Compilation;
 
 namespace Ipc.Rpg.Parsing;
 
 public static class RpgCompiler
 {
-    public static RpgProgram Compile(string library, string name, string source)
+    public static RpgProgram Compile(string library, string name, string source, CancellationToken cancellationToken = default)
+        => Compile(library, name, new SourceDocument(library + "/" + name, source), cancellationToken: cancellationToken);
+
+    public static RpgProgram Compile(string library, string name, SourceDocument source,
+        Func<SourceDocument, string, SourceDocument>? resolver = null, CancellationToken cancellationToken = default)
     {
-        var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant() };
-        var specificationLines = ReadSpecs(source);
+        try { return Compile(library, name, new RpgSourcePreprocessor(resolver).Expand(source, cancellationToken), cancellationToken); }
+        catch (SourcePreprocessException error) { throw new RpgCompileException(error.Location, error.Message); }
+    }
 
-        var freeForm = specificationLines.Any(l =>
-            l.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase));
-        program.IsFreeForm = freeForm;
-        ParseDeclarations(specificationLines, program);
-        ParseStatements(specificationLines, program, freeForm);
-        ExtractSubroutines(program);
-        ExtractSubprocedures(program);
-        ResolveBlocks(program.MainStatements);
-        foreach (var subroutine in program.Subroutines)
+    public static RpgProgram Compile(string library, string name, PreprocessedSource source, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant(), Source = source };
+        var specificationLines = ReadSpecs(source.Text);
+
+        try
         {
-            ResolveBlocks(subroutine.Statements);
-        }
+            var freeForm = specificationLines.Any(l =>
+                l.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase));
+            program.IsFreeForm = freeForm;
+            ParseDeclarations(specificationLines, program, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            ParseStatements(specificationLines, program, freeForm, cancellationToken);
+            foreach (var statement in program.MainStatements)
+                if (statement.LineNumber > 0 && statement.LineNumber <= source.Locations.Count)
+                    statement.Location = source.Locations[statement.LineNumber - 1];
+            cancellationToken.ThrowIfCancellationRequested();
+            ExtractSubroutines(program);
+            ExtractSubprocedures(program);
+            ResolveBlocks(program.MainStatements);
+            foreach (var subroutine in program.Subroutines)
+            {
+                ResolveBlocks(subroutine.Statements);
+            }
 
-        foreach (var subprocedure in program.Subprocedures)
-        {
-            ResolveBlocks(subprocedure.Statements);
-        }
+            foreach (var subprocedure in program.Subprocedures)
+            {
+                ResolveBlocks(subprocedure.Statements);
+            }
 
-        AssignDsOffsets(program);
-        return program;
+            AssignDsOffsets(program);
+            return program;
+        }
+        catch (RpgCompileException error) when (error.Location is null && error.LineNumber > 0 && error.LineNumber <= source.Locations.Count)
+        { throw new RpgCompileException(source.Locations[error.LineNumber - 1], error.Message); }
     }
 
     private static List<string> ReadSpecs(string source)
@@ -42,12 +64,14 @@ public static class RpgCompiler
             var line = raw.TrimEnd('\r');
             if (string.IsNullOrWhiteSpace(line))
             {
+                lines.Add(string.Empty);
                 continue;
             }
 
             if (line.StartsWith("*", StringComparison.Ordinal) &&
                 !line.StartsWith("**free", StringComparison.OrdinalIgnoreCase))
             {
+                lines.Add(string.Empty);
                 continue;
             }
 
@@ -57,7 +81,7 @@ public static class RpgCompiler
         return lines;
     }
 
-    private static void ParseDeclarations(List<string> lines, RpgProgram program)
+    private static void ParseDeclarations(List<string> lines, RpgProgram program, CancellationToken cancellationToken)
     {
         RpgDataStructure? currentDs = null;
         RpgSubprocedure? currentProc = null;
@@ -65,6 +89,7 @@ public static class RpgCompiler
         var prototypeParamIndex = 0;
         foreach (var line in lines)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var spec = line.Length >= 7 ? line[6] : ' ';
             if (spec != 'D' && spec != 'P' && !line.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase))
             {
@@ -348,11 +373,15 @@ public static class RpgCompiler
         return value;
     }
 
-    private static void ParseStatements(List<string> lines, RpgProgram program, bool globalFree)
+    private static void ParseStatements(List<string> lines, RpgProgram program, bool globalFree, CancellationToken cancellationToken)
     {
         var inFreeBlock = false;
-        foreach (var line in lines)
+        for (var index = 0; index < lines.Count; index++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = lines[index];
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var lineNumber = index + 1;
             var spec = line.Length >= 7 ? line[6] : ' ';
             var trimmed = line.TrimStart();
             if (trimmed.StartsWith("**free", StringComparison.OrdinalIgnoreCase))
@@ -382,7 +411,7 @@ public static class RpgCompiler
                     {
                         Opcode = marker == 'B' ? RpgOpcode.BegProc : RpgOpcode.EndProc,
                         Factor1 = Col(line, 8, 21).Trim(),
-                        LineNumber = 0,
+                        LineNumber = lineNumber,
                     });
                 }
 
@@ -393,17 +422,17 @@ public static class RpgCompiler
             {
                 if (spec != 'D')
                 {
-                    program.MainStatements.Add(ParseFreeStatement(line, program));
+                    program.MainStatements.Add(ParseFreeStatement(line, program, lineNumber));
                 }
             }
             else if (spec == 'C')
             {
-                program.MainStatements.Add(ParseFixedStatement(line));
+                program.MainStatements.Add(ParseFixedStatement(line, lineNumber));
             }
         }
     }
 
-    private static RpgStatement ParseFixedStatement(string line)
+    private static RpgStatement ParseFixedStatement(string line, int lineNumber)
     {
         var conditions = ParseConditions(Col(line, 8, 17));
         var factor1 = Col(line, 18, 35).Trim();
@@ -422,7 +451,7 @@ public static class RpgCompiler
             Factor2 = factor2,
             Result = result,
             Length = length,
-            LineNumber = 0,
+            LineNumber = lineNumber,
             Indicator1 = indicator1,
             Indicator2 = indicator2,
             Indicator3 = indicator3,
@@ -437,7 +466,7 @@ public static class RpgCompiler
         return statement;
     }
 
-    private static RpgStatement ParseFreeStatement(string line, RpgProgram program)
+    private static RpgStatement ParseFreeStatement(string line, RpgProgram program, int lineNumber)
     {
         var text = line.Trim().TrimStart('*').Trim();
         if (text.EndsWith(';'))
@@ -456,7 +485,7 @@ public static class RpgCompiler
             Factor2 = null,
             Result = null,
             Value = operands.Length > 0 ? operands : null,
-            LineNumber = 0,
+            LineNumber = lineNumber,
         };
 
         switch (statement.Opcode)
@@ -891,7 +920,7 @@ public static class RpgCompiler
                 case RpgOpcode.EndIf:
                     if (stack.Count == 0)
                     {
-                        throw new RpgCompileException(0, "ENDIF without a matching IF.");
+                        throw new RpgCompileException(statements[index].LineNumber, "ENDIF without a matching IF.");
                     }
 
                     var ifIndex = stack.Pop();
@@ -909,7 +938,7 @@ public static class RpgCompiler
 
         if (stack.Count > 0)
         {
-            throw new RpgCompileException(0, "IF without a matching ENDIF.");
+            throw new RpgCompileException(statements[stack.Peek()].LineNumber, "IF without a matching ENDIF.");
         }
     }
 
@@ -927,7 +956,7 @@ public static class RpgCompiler
             {
                 if (stack.Count == 0)
                 {
-                    throw new RpgCompileException(0, "ENDDO without a matching DO/FOR.");
+                    throw new RpgCompileException(statements[index].LineNumber, "ENDDO without a matching DO/FOR.");
                 }
 
                 var start = stack.Pop();
@@ -937,25 +966,27 @@ public static class RpgCompiler
 
         if (stack.Count > 0)
         {
-            throw new RpgCompileException(0, "DO/FOR without a matching ENDDO.");
+            throw new RpgCompileException(statements[stack.Peek()].LineNumber, "DO/FOR without a matching ENDDO.");
         }
     }
 
     private static void ResolveSelectBlocks(List<RpgStatement> statements)
     {
         var stack = new Stack<List<int>>();
+        var openings = new Stack<int>();
         for (var index = 0; index < statements.Count; index++)
         {
             switch (statements[index].Opcode)
             {
                 case RpgOpcode.Select:
                     stack.Push(new List<int>());
+                    openings.Push(index);
                     break;
                 case RpgOpcode.When:
                 case RpgOpcode.Other:
                     if (stack.Count == 0)
                     {
-                        throw new RpgCompileException(0, "WHEN/OTHER outside of a SELECT.");
+                        throw new RpgCompileException(statements[index].LineNumber, "WHEN/OTHER outside of a SELECT.");
                     }
 
                     stack.Peek().Add(index);
@@ -963,10 +994,11 @@ public static class RpgCompiler
                 case RpgOpcode.EndSl:
                     if (stack.Count == 0)
                     {
-                        throw new RpgCompileException(0, "ENDSL without a matching SELECT.");
+                        throw new RpgCompileException(statements[index].LineNumber, "ENDSL without a matching SELECT.");
                     }
 
                     var members = stack.Pop();
+                    openings.Pop();
                     var end = index;
                     statements[end].Jump = -1;
                     for (var member = 0; member < members.Count; member++)
@@ -982,7 +1014,7 @@ public static class RpgCompiler
 
         if (stack.Count > 0)
         {
-            throw new RpgCompileException(0, "SELECT without a matching ENDSL.");
+            throw new RpgCompileException(statements[openings.Peek()].LineNumber, "SELECT without a matching ENDSL.");
         }
     }
 

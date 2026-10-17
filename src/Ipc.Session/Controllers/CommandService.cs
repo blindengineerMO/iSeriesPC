@@ -392,30 +392,18 @@ public sealed partial class CommandService
             library = "QSYS";
         }
 
+        if (name.Contains('/')) (library, name) = SplitQualified(name, library);
         var sourceFile = CommandParser.Unquote(call.GetOption("SRCSTMF"));
-        string source;
-        if (sourceFile.Length > 0)
+        var resolver = new Ipc.Session.Sources.ProgramSourceResolver(_system, _job, _cancellationToken);
+        Ipc.Core.Compilation.SourceDocument source;
+        try
         {
-            try
-            {
-                new Ipc.Services.Security.ServiceAuthorization(_system.Connections).RequireSpecial(Ipc.Core.Security.SpecialAuthority.Service, allowAdopted: false);
-                source = File.ReadAllText(sourceFile);
-            }
-            catch (Exception ex)
-            {
-                return CommandResult.Error($"Cannot open source file {sourceFile}: {ex.Message}");
-            }
+            var member = CommandParser.Unquote(call.GetOption("SRCMBR") ?? "*PGM");
+            if (member == "*PGM") member = name;
+            source = sourceFile.Length > 0 ? resolver.Stream(sourceFile) : resolver.Member(CommandParser.Unquote(call.GetOption("SRCFILE") ?? "QRPGLESRC"), member);
         }
-        else
-        {
-            var sourceRead = LoadSourceMember(call);
-            if (sourceRead is null)
-            {
-                return CommandResult.Error("CRTBNDRPG requires SRCSTMF(path) or SRCFILE(file/member).");
-            }
-
-            source = sourceRead;
-        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.DecoderFallbackException)
+        { return CommandResult.Error("IPC0006: Cannot load RPG source: " + error.Message); }
 
         if (_system.Objects.Exists(library, name, ProgramType))
         {
@@ -425,23 +413,24 @@ public sealed partial class CommandService
         RpgProgram program;
         try
         {
-            program = RpgCompiler.Compile(library: library, name: name, source: source);
+            program = RpgCompiler.Compile(library, name, source, resolver.ResolveRpg, _cancellationToken);
         }
         catch (RpgCompileException ex)
         {
             return CommandResult.Error(ex.Message);
         }
 
-        var sourceDescription = sourceFile.Length > 0 ? sourceFile : "from source member";
+        var attributes = new Dictionary<string, string>(ActivationAttributes(call));
+        attributes[Ipc.Core.Compilation.CompiledSourceMap.AttributeName] = Ipc.Core.Compilation.CompiledSourceMap.Serialize(program.Source!);
         _system.Objects.Create(new ObjectDescriptor
         {
             Key = new QualifiedName(library, name),
             ObjectType = ProgramType,
             Owner = _job?.UserProfile ?? "QSECOFR",
             Attribute = RpgAttribute,
-            ExtendedAttributes = ActivationAttributes(call),
-            Source = source,
-            Description = $"RPG source {sourceDescription}",
+            ExtendedAttributes = attributes,
+            Source = program.Source!.Text,
+            Description = $"RPG source {source.Identity}",
         });
 
         return CommandResult.Ok($"Program {library}/{name} created.");
@@ -947,7 +936,7 @@ public sealed partial class CommandService
         foreach (var lib in SearchLibraries(library.ToUpperInvariant()))
         {
             var descriptor = _system.Objects.Get(lib, name, ProgramType);
-            if (descriptor?.Source is { Length: > 0 } source)
+            if (descriptor?.Source is { } source && (source.Length > 0 || string.Equals(descriptor.Attribute, RpgAttribute, StringComparison.OrdinalIgnoreCase)))
             {
                 _system.ObjectSigning.RequireExecutable(descriptor);
                 if (descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute)
@@ -963,7 +952,12 @@ public sealed partial class CommandService
                 }
                 if (string.Equals(descriptor.Attribute, RpgAttribute, StringComparison.OrdinalIgnoreCase))
                 {
-                    var rpg = RpgCompiler.Compile(library: lib, name: name, source: source);
+                    RpgProgram rpg;
+                    try { rpg = descriptor.ExtendedAttributes?.TryGetValue(Ipc.Core.Compilation.CompiledSourceMap.AttributeName, out var rpgMap) == true
+                        ? RpgCompiler.Compile(lib, name, Ipc.Core.Compilation.CompiledSourceMap.Restore(source, rpgMap), _cancellationToken)
+                        : RpgCompiler.Compile(lib, name, source, _cancellationToken); }
+                    catch (Exception error) when (error is InvalidDataException or RpgCompileException)
+                    { throw new CpfException("IPC0006", error.Message); }
                     _loadedDescriptors.Add(rpg, descriptor);
                     return (null, rpg, null, null);
                 }

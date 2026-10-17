@@ -1296,21 +1296,29 @@
         "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
         "src/Ipc.Rpg/Parsing/RpgExpression.cs",
         "src/Ipc.Rpg/Runtime/RpgArgumentScope.cs",
-        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs"
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Core/Compilation/RpgSourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/SourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/CompiledSourceMap.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs",
+        "src/Ipc.Session/Sources/ProgramSourceResolver.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/RpgTests.cs",
         "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs",
         "tests/Ipc.Core.Tests/RpgApiArgumentTests.cs",
         "tests/Ipc.TerminalFixture/Program.cs",
-        "tools/pty-display-smoke.py"
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/RpgPreprocessingTests.cs",
+        "tests/Ipc.Core.Tests/ClPreprocessingTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
         "docs/api.md",
-        "docs/rpg-spec.md"
+        "docs/rpg-spec.md",
+        "docs/source-preprocessing.md"
       ],
-      "evidence": "Owning code/test files only; full requirement acceptance is still open. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
+      "evidence": "Owning code/test files only; full requirement acceptance is still open. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass. RPG preprocessing checkpoint (2026-10-17): CRTBNDRPG expands COPY/INCLUDE, DEFINE/UNDEFINE, IF/ELSEIF/ELSE/ENDIF and listing directives through a separate bounded RPG grammar. Shared live-authority member/UTF-8 resolution supports QRPGLESRC defaults, job library/current-library lookup and relative streams. Expanded snapshots and hash-bound original locations survive copy/source deletion/revocation; compiler/runtime errors retain include chains and CPF metadata. 54 new regression cases and terminal CRTBNDRPG-to-CALL acceptance pass. Broader RPG/ILE/SQL/debugger contracts remain open. Final preprocessing verification: all 1487 tests pass with zero failures/skips, including 54 new cases; locked restore, zero-warning/error Release build, full display PTY and generated inventory checks pass."
     },
     {
       "id": "WP10-02",
@@ -1358,7 +1366,11 @@
         "src/Ipc.Session/Controllers/CommandService.cs",
         "src/Ipc.Rpg/Model/RpgProgram.cs",
         "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
-        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs",
+        "src/Ipc.Core/Compilation/RpgSourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/SourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/CompiledSourceMap.cs",
+        "src/Ipc.Session/Sources/ProgramSourceResolver.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/RpgTests.cs",
@@ -1367,15 +1379,18 @@
         "tests/Ipc.TerminalFixture/Program.cs",
         "tools/pty-display-smoke.py",
         "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
-        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs",
+        "tests/Ipc.Core.Tests/RpgPreprocessingTests.cs",
+        "tests/Ipc.Core.Tests/ClPreprocessingTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
         "docs/api.md",
         "docs/rpg-spec.md",
-        "docs/data-queues.md"
+        "docs/data-queues.md",
+        "docs/source-preprocessing.md"
       ],
-      "evidence": "Owning code/test files only; full requirement acceptance is still open. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
+      "evidence": "Owning code/test files only; full requirement acceptance is still open. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass. RPG preprocessing checkpoint (2026-10-17): CRTBNDRPG expands COPY/INCLUDE, DEFINE/UNDEFINE, IF/ELSEIF/ELSE/ENDIF and listing directives through a separate bounded RPG grammar. Shared live-authority member/UTF-8 resolution supports QRPGLESRC defaults, job library/current-library lookup and relative streams. Expanded snapshots and hash-bound original locations survive copy/source deletion/revocation; compiler/runtime errors retain include chains and CPF metadata. 54 new regression cases and terminal CRTBNDRPG-to-CALL acceptance pass. Broader RPG/ILE/SQL/debugger contracts remain open. Final preprocessing verification: all 1487 tests pass with zero failures/skips, including 54 new cases; locked restore, zero-warning/error Release build, full display PTY and generated inventory checks pass."
     },
     {
       "id": "WP10-05",
@@ -1407,7 +1422,11 @@
         "src/Ipc.Session/Controllers/CommandService.cs",
         "src/Ipc.Rpg/Model/RpgProgram.cs",
         "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
-        "src/Ipc.Rpg/Parsing/RpgExpression.cs"
+        "src/Ipc.Rpg/Parsing/RpgExpression.cs",
+        "src/Ipc.Core/Compilation/RpgSourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/SourcePreprocessor.cs",
+        "src/Ipc.Core/Compilation/CompiledSourceMap.cs",
+        "src/Ipc.Session/Sources/ProgramSourceResolver.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/RpgTests.cs",
@@ -1416,15 +1435,18 @@
         "tests/Ipc.TerminalFixture/Program.cs",
         "tools/pty-display-smoke.py",
         "tests/Ipc.Core.Tests/InterpreterCancellationTests.cs",
-        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs"
+        "tests/Ipc.Core.Tests/RpgPrototypeApiTests.cs",
+        "tests/Ipc.Core.Tests/RpgPreprocessingTests.cs",
+        "tests/Ipc.Core.Tests/ClPreprocessingTests.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
         "docs/api.md",
         "docs/rpg-spec.md",
-        "docs/data-queues.md"
+        "docs/data-queues.md",
+        "docs/source-preprocessing.md"
       ],
-      "evidence": "Owning code/test files only; full requirement acceptance is still open. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass."
+      "evidence": "Owning code/test files only; full requirement acceptance is still open. RPG scalar API checkpoint (2026-10-17): direct PLIST and unprototyped inline calls borrow fixed CHAR/packed fields with live alias identity, expired call-scoped cells/factories, per-call job CCSID, count/byte bounds and receiver normalization before dequeue. Ordinary targets retain semantic writeback. Raw API *BLANK bytes remain literal and outer character buffers detach safely into retained RPG text. Prototype receivers and native arrays/DS/binary UTF-8 storage remain open. RPG checkpoint verification: 42 new cases and all 1384 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with direct RPG queue calls and generated inventory checks pass. The existing interpreter cancellation fixtures now use dedicated workers/start signals and unconditional cancellation/await; RPG cancellation is verified against an actual ON-ERROR handler. Scalar prototype API checkpoint (2026-10-17): IPCAPI prototypes now borrow actual CHAR/packed fields with exact formal/actual counts, lengths/scales and live aliases. Typed immutable constants use independent checked buffers; duplicate/missing metadata and unsupported options reject before service mutation. Private named formal storage avoids caller collisions; ordinary targets retain lazy copied argument/writeback semantics. Nested expression separators, literal colons and doubled apostrophes are supported. Full prototype modes, native storage and general ILE binding remain open. Prototype checkpoint verification: 49 new cases and all 1433 tests pass, zero failures/skips; locked restore, zero-warning/error Release build, full terminal PTY with prototyped keyed queue calls and generated inventory validation pass. RPG preprocessing checkpoint (2026-10-17): CRTBNDRPG expands COPY/INCLUDE, DEFINE/UNDEFINE, IF/ELSEIF/ELSE/ENDIF and listing directives through a separate bounded RPG grammar. Shared live-authority member/UTF-8 resolution supports QRPGLESRC defaults, job library/current-library lookup and relative streams. Expanded snapshots and hash-bound original locations survive copy/source deletion/revocation; compiler/runtime errors retain include chains and CPF metadata. 54 new regression cases and terminal CRTBNDRPG-to-CALL acceptance pass. Broader RPG/ILE/SQL/debugger contracts remain open. Final preprocessing verification: all 1487 tests pass with zero failures/skips, including 54 new cases; locked restore, zero-warning/error Release build, full display PTY and generated inventory checks pass."
     },
     {
       "id": "WP10-07",
@@ -2528,21 +2550,28 @@
       "id": "G04",
       "source": "PLAN2.md G4",
       "requirement": "RPG/CL compiler directives",
-      "status": "partial",
+      "status": "supported",
       "implementation": [
         "src/Ipc.Core/Compilation/SourcePreprocessor.cs",
         "src/Ipc.Core/Compilation/CompiledSourceMap.cs",
-        "src/Ipc.Session/Sources/ProgramSourceResolver.cs"
+        "src/Ipc.Session/Sources/ProgramSourceResolver.cs",
+        "src/Ipc.Core/Compilation/RpgSourcePreprocessor.cs",
+        "src/Ipc.Rpg/Parsing/RpgCompiler.cs",
+        "src/Ipc.Rpg/Runtime/RpgInterpreter.cs",
+        "src/Ipc.Session/Controllers/CommandService.cs"
       ],
       "tests": [
         "tests/Ipc.Core.Tests/ClPreprocessingTests.cs",
-        "tools/pty-display-smoke.py"
+        "tools/pty-display-smoke.py",
+        "tests/Ipc.Core.Tests/RpgPreprocessingTests.cs",
+        "tests/Ipc.TerminalFixture/Program.cs"
       ],
       "documentation": [
         "docs/release-scope.md",
-        "docs/source-preprocessing.md"
+        "docs/source-preprocessing.md",
+        "docs/rpg-spec.md"
       ],
-      "evidence": "756 tests and real terminal CL include/conditional compilation and execution pass. CL extension, immutable source snapshots, location maps and shared resolver are implemented; RPG directives remain open in C09."
+      "evidence": "CL directives remain an explicitly documented extension with separate grammar; RPG directive and listing-control execution is now implemented. RPG preprocessing checkpoint (2026-10-17): CRTBNDRPG expands COPY/INCLUDE, DEFINE/UNDEFINE, IF/ELSEIF/ELSE/ENDIF and listing directives through a separate bounded RPG grammar. Shared live-authority member/UTF-8 resolution supports QRPGLESRC defaults, job library/current-library lookup and relative streams. Expanded snapshots and hash-bound original locations survive copy/source deletion/revocation; compiler/runtime errors retain include chains and CPF metadata. 54 new regression cases and terminal CRTBNDRPG-to-CALL acceptance pass. Broader RPG/ILE/SQL/debugger contracts remain open. Final preprocessing verification: all 1487 tests pass with zero failures/skips, including 54 new cases; locked restore, zero-warning/error Release build, full display PTY and generated inventory checks pass."
     },
     {
       "id": "G05",

@@ -75,7 +75,9 @@ and error operations are those enumerated in WP10 and the matrix. Required built
 until its operands, result indicators, errors and effects pass acceptance.
 
 Required preprocessing: `/COPY`, `/INCLUDE`, `/DEFINE`, `/UNDEFINE`, `/IF`, `/ELSE`, `/ENDIF`,
-`/TITLE`, `/EJECT`, `/SPACE`, with include/source maps and nested conditional tests. Required ILE:
+`/TITLE`, `/EJECT`, `/SPACE`, with include/source maps and nested conditional tests.
+The bounded implemented grammar and resolution contract are in
+[source preprocessing](source-preprocessing.md#rpg-directives). Required ILE:
 modules, binding directories, service programs, activation groups, by-reference/value/const
 parameters, return values and writeback, CL/RPG/C#/Node calls through the shared execution context.
 `MONITOR/ON-ERROR/ENDMON` must handle the enclosing scope; today's tail-trap behavior is a gap.

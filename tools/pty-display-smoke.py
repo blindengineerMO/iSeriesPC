@@ -397,6 +397,10 @@ def run_work(dotnet, assembly):
                 wait_for(lambda: 'Program QGPL/CLPREP created' in screen.line(24), 'CL include and conditional compilation')
                 send(b'CALL PGM(QGPL/CLPREP)\r')
                 wait_for(lambda: 'PREPROCESS ACCEPTED' in screen.line(24), 'compiled CL include execution')
+                send(b'CRTBNDRPG PGM(QGPL/RPGPREP) SRCFILE(QGPL/SOURCE)\r')
+                wait_for(lambda: 'Program QGPL/RPGPREP created' in screen.line(24), 'RPG nested include and conditional compilation')
+                send(b'CALL PGM(QGPL/RPGPREP)\r')
+                wait_for(lambda: 'RPG PREPROCESS ACCEPTED' in screen.line(24), 'compiled RPG source snapshot execution')
                 send(b'CRTCLPGM PGM(QGPL/CLFLOW) SRCFILE(QGPL/SOURCE)\r')
                 wait_for(lambda: 'Program QGPL/CLFLOW created' in screen.line(24), 'CL structured control compilation')
                 send(b'CALL PGM(QGPL/CLFLOW)\r')
@@ -631,7 +635,7 @@ def main():
     run_designer(args.dotnet, str(Path(args.assembly).resolve()))
     run_groups(args.dotnet, str(Path(args.assembly).resolve()))
     run_work(args.dotnet, str(Path(args.assembly).resolve()))
-    print('Display PTY passed: 24x80/27x132, cursor, Insert/Replace/Delete, paste, F1–F24, attention, resize, typed fields, hidden data, shared menu/command/DDS help, links/index/back, SDA save/compile/reopen/edit/run, SysReq/group transfer, CRTCMD/F4/defaults/CPP/DSPCMD, CRTCLPGM/include/conditional/typed-loop/select/parameter-writeback/MONMSG/DCLF/RCVF/CLOSE/RPG-writeback/RTVJOBA/RTVDTAARA/CRTDTAARA/DSPDTAARA/DLTDTAARA/CRTMSGQ/SNDMSG/RCVMSG/SNDRPY/DSPMSG/DLTMSGQ/CALL, CRTPF/CHGPF/ADDPFM/CPYF and CRTLF/DSPPFM/ADDLFM/RMVM/DLTF, work-list confirmation/refresh/paging, custom JSON menu import/replace/reload/delete, invalid inquiry reply/retry/special mapping/RTNTYPE 22, CRTDTAQ/SNDDTAQ/RCVDTAQ/CLRDTAQ/DLTDTAQ raw keyed lifecycle, native QSNDDTAQ/QRCVDTAQ/QCLRDTAQ packed/sender/error/truncation/peek contracts, direct and prototyped typed RPG queue calls and terminal cleanup.')
+    print('Display PTY passed: 24x80/27x132, cursor, Insert/Replace/Delete, paste, F1–F24, attention, resize, typed fields, hidden data, shared menu/command/DDS help, links/index/back, SDA save/compile/reopen/edit/run, SysReq/group transfer, CRTCMD/F4/defaults/CPP/DSPCMD, CRTCLPGM/CRTBNDRPG/include/conditional/typed-loop/select/parameter-writeback/MONMSG/DCLF/RCVF/CLOSE/RPG-writeback/RTVJOBA/RTVDTAARA/CRTDTAARA/DSPDTAARA/DLTDTAARA/CRTMSGQ/SNDMSG/RCVMSG/SNDRPY/DSPMSG/DLTMSGQ/CALL, CRTPF/CHGPF/ADDPFM/CPYF and CRTLF/DSPPFM/ADDLFM/RMVM/DLTF, work-list confirmation/refresh/paging, custom JSON menu import/replace/reload/delete, invalid inquiry reply/retry/special mapping/RTNTYPE 22, CRTDTAQ/SNDDTAQ/RCVDTAQ/CLRDTAQ/DLTDTAQ raw keyed lifecycle, native QSNDDTAQ/QRCVDTAQ/QCLRDTAQ packed/sender/error/truncation/peek contracts, direct and prototyped typed RPG queue calls and terminal cleanup.')
 
 
 if __name__ == '__main__':

@@ -187,10 +187,11 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
 
 ## 9. Program object model
 
-`RpgProgram` — name/library, `IsFreeForm`, `Fields`, `DataStructures`, `EntryPlist`,
+`RpgProgram` — name/library, expanded `Source` and original snapshots/locations,
+`IsFreeForm`, `Fields`, `DataStructures`, `EntryPlist`,
 `MainStatements`, `Subroutines`, `Subprocedures`, `Prototypes`. `RpgStatement` — `Opcode`,
 `Factor1`/`Factor2`/`Result`, `Length`, `Value` (free operand text), `Conditions`, `Label`,
-`Indicator1`/`Indicator2`, `Jump` (else/branch target index), `End` (block end index). `RpgField` —
+`Indicator1`/`Indicator2`, `LineNumber`/original `Location`, `Jump` (else/branch target index), `End` (block end index). `RpgField` —
 name, kind (Zoned/Packed/Character/ProcPtr), length, decimals, `InitialValue`, `IsArray`/`Dimension`,
 `IsDataStructure`, `Varying`, `Source`. Subroutines are `BEGSR…ENDSR` blocks re-parented out of the
 main stream, and subprocedures are P-spec blocks re-parented into `Subprocedures`
@@ -199,6 +200,10 @@ main stream, and subprocedures are P-spec blocks re-parented into `Subprocedures
 
 ## 10. Limits and divergence notes
 
+- Source preprocessing supports `/COPY`, `/INCLUDE`, `/DEFINE`, `/UNDEFINE`,
+  `/IF`/`/ELSEIF`/`/ELSE`/`/ENDIF`, and listing-only `/TITLE`/`/EJECT`/`/SPACE`.
+  Member/stream resolution, bounds, unsupported syntax, compiled snapshots and
+  original diagnostics are specified in [source preprocessing](source-preprocessing.md#rpg-directives).
 - Column arithmetic/reference limitations mirror classic RPG (result field width 11 in the 48–58
   band; the length column 53–58 overlaps the result band and is only meaningful when the result is
   blank).

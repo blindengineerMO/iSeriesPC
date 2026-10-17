@@ -16,11 +16,12 @@ Under construction. See [PLAN.md](PLAN.md) for the master task list and the trac
 The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
-Latest [completion checkpoint](docs/completion-progress.md): 33/106 checklist items
-complete, 1433 tests passing, and real sign-on/display PTY acceptance passing.
-The latest C09/C14 work adds [RPG scalar prototype API calls](docs/api.md#scalar-prototype-calls)
-with checked formal/actual layouts, immutable constants and live caller receivers.
-QCMDEXC and native queue prototypes share scoped arguments and pre-dispatch validation.
+Latest [completion checkpoint](docs/completion-progress.md): 34/106 checklist items
+complete, 1487 tests passing, and real sign-on/display PTY acceptance passing.
+The latest C09 work completes bounded [RPG source preprocessing](docs/source-preprocessing.md#rpg-directives):
+includes, conditionals, listing directives and original source diagnostics survive compilation
+into stored program snapshots. [Scalar prototype API calls](docs/api.md#scalar-prototype-calls)
+also support checked formal/actual layouts, immutable constants and live caller receivers.
 
 | WP | Component | Status |
 |----|-----------|--------|

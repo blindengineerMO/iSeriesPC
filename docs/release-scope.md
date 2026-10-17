@@ -60,7 +60,8 @@ decision changes it. No unfinished feature is excluded merely to close a checkbo
 - CL: documented interpreter and command subset with typed arguments and explicit
   errors; no claim of universal command or compiler compatibility.
 - RPG/ILE: interpreted fixed/free source subset, not compiled MI/RPG machine code.
-  Source preprocessing and embedded SQL remain required. RPG slash directives in
+  Bounded [source preprocessing](source-preprocessing.md#rpg-directives) is implemented;
+  embedded SQL remains required. RPG slash directives in
   CL, if supported, must be labeled an iSeriesPC extension.
 - SQL: SQLite-backed PF/LF/member model and a documented SQL translation subset;
   full Db2 optimizer/stored-procedure parity remains excluded.

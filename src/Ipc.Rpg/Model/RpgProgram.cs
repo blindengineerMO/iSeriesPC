@@ -185,6 +185,7 @@ public sealed class RpgCondition
 
 public sealed class RpgStatement
 {
+    public Ipc.Core.Compilation.SourceLocation? Location { get; set; }
     public required RpgOpcode Opcode { get; init; }
 
     public string? Factor1 { get; set; }
@@ -225,6 +226,7 @@ public sealed class RpgCallSpec
 
 public sealed class RpgProgram
 {
+    public Ipc.Core.Compilation.PreprocessedSource? Source { get; init; }
     public required string Name { get; init; }
 
     public required string Library { get; init; }
