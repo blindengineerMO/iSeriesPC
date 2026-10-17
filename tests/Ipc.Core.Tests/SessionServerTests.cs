@@ -17,6 +17,162 @@ public sealed class SessionServerTests : IDisposable
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ipc-server-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task Native_crypto_contexts_survive_calls_but_cannot_be_shared_between_socket_jobs_and_are_released_at_signoff()
+    {
+        SeedUser();
+        using (var setup = IpcSystem.Create(_directory))
+        {
+            setup.Start(); ClExternalCallTests.Create(setup, "SOCKKEY", "CLP", """
+                PGM
+                DCL &TOKEN *CHAR LEN(8)
+                CALL QSYS/QC3CRTKX PARM(X'0000000000000000000000000000000000000000000000000000000000000000' (32 (*INT 4)) '0' (3 (*INT 4)) '0' '' '' &TOKEN X'00000000')
+                CHGVAR %SST(*LDA 1 8) &TOKEN
+                ENDPGM
+                """);
+            ClExternalCallTests.Create(setup, "SOCKHMAC", "CLP", """
+                PGM
+                DCL &TOKEN *CHAR LEN(8)
+                DCL &HASH *CHAR LEN(32)
+                CHGVAR &TOKEN %SST(*LDA 1 8)
+                CALL QSYS/QC3CALHM PARM('' (0 (*INT 4)) 'DATA0100' (3 (*INT 4)) 'ALGD0500' &TOKEN 'KEYD0100' '1' '' &HASH X'00000000')
+                SNDPGMMSG MSG('SOCKET CRYPTO ACCEPTED')
+                ENDPGM
+                """);
+        }
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        var server = new SessionServer(_directory); var running = server.RunAsync(stop.Token); await server.Ready.WaitAsync(stop.Token);
+        try
+        {
+            await using var first = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            await using var second = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            var created = await Task.WhenAll(first.ExecuteAsync("CALL QGPL/SOCKKEY", stop.Token), second.ExecuteAsync("CALL QGPL/SOCKKEY", stop.Token));
+            Assert.All(created, result => Assert.True(result.Success, result.Result?.Message));
+            var used = await Task.WhenAll(first.ExecuteAsync("CALL QGPL/SOCKHMAC", stop.Token), second.ExecuteAsync("CALL QGPL/SOCKHMAC", stop.Token));
+            Assert.All(used, result => { Assert.True(result.Success, result.Result?.Message); Assert.Contains("SOCKET CRYPTO ACCEPTED", result.Result!.Message); });
+            using var factory = new SqliteConnectionFactory(_directory); var areas = new JobDataAreaStore(factory);
+            var firstToken = areas.Read(first.Job, JobDataArea.Local)[..8]; var secondToken = areas.Read(second.Job, JobDataArea.Local)[..8]; Assert.NotEqual(firstToken, secondToken);
+            areas.Write(second.Job, JobDataArea.Local, 0, firstToken);
+            var denied = await second.ExecuteAsync("CALL QGPL/SOCKHMAC", stop.Token); Assert.False(denied.Success); Assert.Equal("CPF9DF5", denied.Result!.MessageId);
+            Assert.True((await first.ExecuteAsync("CALL QGPL/SOCKHMAC", stop.Token)).Success);
+            await first.SignoffAsync(stop.Token); await second.SignoffAsync(stop.Token);
+            using var connection = factory.Open(); using var query = connection.CreateCommand(); query.CommandText = "SELECT count(*) FROM sys_crypto_keys"; Assert.Equal(0L, query.ExecuteScalar());
+        }
+        finally { stop.Cancel(); await running.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    [Fact]
+    public async Task Native_job_lists_and_ID_retrieval_stay_bound_to_independent_socket_jobs()
+    {
+        SeedUser();
+        using (var setup = IpcSystem.Create(_directory))
+        {
+            setup.Start(); ClExternalCallTests.Create(setup, "SOCKJOBS", "CLP", """
+                PGM
+                DCL &LIST *CHAR LEN(512)
+                DCL &INFO *CHAR LEN(86)
+                DCL &ID *CHAR LEN(16)
+                CALL QSYS/QUSCRTUS PARM('JOBS      QTEMP     ' '' (512 (*INT 4)) X'FE' '*CHANGE' ('Socket job list' (*CHAR 50)))
+                CALL QSYS/QUSLJOB PARM('JOBS      QTEMP     ' 'JOBL0100' '*' '*ACTIVE' X'00000000')
+                CALL QSYS/QUSRTVUS PARM('JOBS      QTEMP     ' (1 (*INT 4)) (512 (*INT 4)) &LIST X'00000000')
+                CHGVAR &ID %SST(&LIST 415 16)
+                CALL QSYS/QUSRJOBI PARM(&INFO (86 (*INT 4)) 'JOBI0100' '*INT' &ID X'00000000')
+                IF (%BIN(&LIST 133 4) *EQ 1 *AND %SST(&INFO 61 2) *EQ 'BD') THEN(SNDPGMMSG MSG(%SST(&INFO 29 6)))
+                ENDPGM
+                """);
+        }
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var server = new SessionServer(_directory); var running = server.RunAsync(stop.Token); await server.Ready.WaitAsync(stop.Token);
+        try
+        {
+            await using var first = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            await using var second = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            var calls = await Task.WhenAll(first.ExecuteAsync("CALL QGPL/SOCKJOBS", stop.Token), second.ExecuteAsync("CALL QGPL/SOCKJOBS", stop.Token));
+            Assert.True(calls[0].Success, calls[0].Result?.Message); Assert.True(calls[1].Success, calls[1].Result?.Message);
+            Assert.Equal(first.Job.Number.ToString("D6"), calls[0].Result!.Message!.Trim()); Assert.Equal(second.Job.Number.ToString("D6"), calls[1].Result!.Message!.Trim());
+            Assert.NotEqual(first.Job, second.Job); await first.SignoffAsync(stop.Token); await second.SignoffAsync(stop.Token);
+        }
+        finally { stop.Cancel(); await running.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    [Fact]
+    public async Task Native_system_value_readers_observe_authorized_changes_from_an_independent_socket_job()
+    {
+        SeedUser();
+        using (var setup = IpcSystem.Create(_directory))
+        {
+            setup.Start(); setup.Security.Profiles.SetPassword(setup.Security.Profiles.Get("QSECOFR"), "NativeSysval27");
+            ClExternalCallTests.Create(setup, "READSVAL", "CLP", """
+                PGM
+                DCL &INFO *CHAR LEN(28)
+                CALL QSYS/QWCRSVAL PARM(&INFO (28 (*INT 4)) (1 (*INT 4)) 'QCCSID' X'00000000')
+                IF (%BIN(&INFO 25 4) *EQ 37) THEN(SNDPGMMSG MSG('ORIGINAL VALUE ACCEPTED'))
+                IF (%BIN(&INFO 25 4) *EQ 1208) THEN(SNDPGMMSG MSG('CHANGED VALUE ACCEPTED'))
+                ENDPGM
+                """);
+        }
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var server = new SessionServer(_directory); var run = server.RunAsync(stop.Token); await server.Ready.WaitAsync(stop.Token);
+        try
+        {
+            await using var reader = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            await using var admin = await CommandConnection.ConnectAsync(server.SocketPath, "QSECOFR", "NativeSysval27", stop.Token);
+            var original = await reader.ExecuteAsync("CALL QGPL/READSVAL", stop.Token);
+            Assert.True(original.Success, original.Result?.Message); Assert.Contains("ORIGINAL VALUE ACCEPTED", original.Result!.Message);
+            var changed = await admin.ExecuteAsync("CHGSYSVAL SYSVAL(QCCSID) VALUE(1208)", stop.Token); Assert.True(changed.Success, changed.Result?.Message);
+            var denied = await reader.ExecuteAsync("CHGSYSVAL SYSVAL(QCCSID) VALUE(37)", stop.Token); Assert.False(denied.Success);
+            var current = await reader.ExecuteAsync("CALL QGPL/READSVAL", stop.Token);
+            Assert.True(current.Success, current.Result?.Message); Assert.Contains("CHANGED VALUE ACCEPTED", current.Result!.Message);
+            var list = await reader.ExecuteAsync("WRKSYSVAL SYSVAL(QCCSID)", stop.Token); Assert.True(list.Success, list.Result?.Message);
+            Assert.Contains(list.Result!.WorkList!.Rows, row => row.Text.Contains("1208", StringComparison.Ordinal));
+            await reader.SignoffAsync(stop.Token); await admin.SignoffAsync(stop.Token);
+        }
+        finally { stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    [Fact]
+    public async Task Independent_socket_jobs_deliver_to_a_native_allocated_message_receive()
+    {
+        SeedUser();
+        using (var setup = IpcSystem.Create(_directory))
+        {
+            setup.Start(); new Ipc.Services.Messages.MessageQueueStore(setup.Connections).Create(new("QGPL", "INBOX"));
+            ClExternalCallTests.Create(setup, "WAITMSG", "CLP", """
+                PGM
+                DCL &INFO *CHAR LEN(128)
+                CALL QSYS/QMHRCVM PARM(&INFO (128 (*INT 4)) 'RCVM0100' 'INBOX     QGPL      ' '*ANY' '' (-1 (*INT 4)) '*REMOVE' X'00000000')
+                IF (%SST(&INFO 49 5) *EQ 'READY') THEN(SNDPGMMSG MSG('NATIVE SOCKET RECEIVE ACCEPTED'))
+                ENDPGM
+                """);
+        }
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        var server = new SessionServer(_directory); var run = server.RunAsync(stop.Token);
+        await server.Ready.WaitAsync(stop.Token);
+        try
+        {
+            await using var receiver = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            await using var sender = await CommandConnection.ConnectAsync(server.SocketPath, "TESTER", "PASS1234", stop.Token);
+            using var factory = new SqliteConnectionFactory(_directory);
+            long ReceiverCount()
+            {
+                using var connection = factory.Open(); using var query = connection.CreateCommand();
+                query.CommandText = "SELECT count(*) FROM sys_message_receivers"; return (long)query.ExecuteScalar()!;
+            }
+            var waiting = receiver.ExecuteAsync("CALL QGPL/WAITMSG", stop.Token);
+            while (ReceiverCount() == 0) await Task.Delay(10, stop.Token);
+            var conflict = await sender.ExecuteAsync("CALL QGPL/WAITMSG", stop.Token);
+            Assert.False(conflict.Success); Assert.Equal("CPF2451", conflict.Result!.MessageId);
+            var sent = await sender.ExecuteAsync("CALL QSYS/QMHSNDM PARM('' '' 'READY' (5 (*INT 4)) '*INFO' 'INBOX     QGPL      ' (1 (*INT 4)) '' '' X'00000000')", stop.Token);
+            Assert.True(sent.Success, sent.Result?.Message);
+            var received = await waiting; Assert.True(received.Success, received.Result?.Message);
+            Assert.Contains("NATIVE SOCKET RECEIVE ACCEPTED", received.Result!.Message); Assert.Equal(0, ReceiverCount());
+            Assert.Empty(new Ipc.Services.Messages.MessageQueueStore(factory).List(new("QGPL", "INBOX")));
+            Assert.DoesNotContain(new JobLockStore(factory).Inspect(new("QGPL", "INBOX", ObjectType.MessageQueue)), l => l.Lifetime == "MessageReceive");
+            await receiver.SignoffAsync(stop.Token); await sender.SignoffAsync(stop.Token);
+        }
+        finally { stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    [Fact]
     public async Task Submitted_CL_program_runs_in_the_server_with_durable_effects_and_its_own_job_log()
     {
         SeedUser();
@@ -335,6 +491,80 @@ public sealed class SessionServerTests : IDisposable
             await Assert.ThrowsAnyAsync<Exception>(() => api.ExecuteAsync("DSPJOB", stop.Token));
         }
         finally { stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Compiled_display_exchange_over_the_terminal_socket_is_isolated_between_jobs(bool rpg)
+    {
+        SeedDisplayProgram(rpg: rpg); using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var server = new SessionServer(_directory); var run = server.RunAsync(stop.Token); await server.Ready.WaitAsync(stop.Token);
+        try
+        {
+            using var first = await Connect(server.SocketPath); await Read(first); await SignOn(first);
+            using var second = await Connect(server.SocketPath); await Read(second); await SignOn(second);
+            var firstFrame = await Command(first, "CALL QGPL/DISPLAY"); var secondFrame = await Command(second, "CALL QGPL/DISPLAY");
+            Assert.Equal("ProgramDisplay", firstFrame.State); Assert.Equal("ProgramDisplay", secondFrame.State);
+            Assert.Contains("START", firstFrame.Text); Assert.Contains("START", secondFrame.Text);
+            await Send(first, new(AidKey.None, CursorEdit.FieldEraseToEnd)); await Type(first, "ALPHA");
+            var returned = await Send(first, new(AidKey.Enter)); Assert.Equal("Menu", returned.State);
+            await Send(second, new(AidKey.None, CursorEdit.FieldEraseToEnd)); await Type(second, "BETA");
+            returned = await Send(second, new(AidKey.Enter)); Assert.Equal("Menu", returned.State);
+            using var factory = new SqliteConnectionFactory(_directory); var jobs = new JobService(factory).List().Where(j => j.Type == JobType.Interactive).OrderBy(j => j.Key.Number).ToArray();
+            Assert.Equal(2, jobs.Length);
+            foreach (var (job, expected) in jobs.Zip(new[] { "ALPHA", "BETA" }))
+            {
+                using var identity = Ipc.Services.Events.OperationIdentity.Enter("TESTER", job.Key);
+                Assert.Equal(expected, Assert.IsType<ProgramBuffer>(new DataAreaStore(factory).Read("QTEMP", "RESULT").Value).ToText().TrimEnd());
+            }
+            Assert.True((await Send(first, new(AidKey.Pf3))).Ended); Assert.True((await Send(second, new(AidKey.Pf3))).Ended);
+        }
+        finally { stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task Disconnect_or_ENDJOB_cancels_a_display_wait_before_job_cleanup(bool endJob, bool rpg)
+    {
+        SeedDisplayProgram(marker: true, rpg: rpg); using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var server = new SessionServer(_directory); var run = server.RunAsync(stop.Token); await server.Ready.WaitAsync(stop.Token);
+        try
+        {
+            using var terminal = await Connect(server.SocketPath); await Read(terminal); await SignOn(terminal);
+            Assert.Equal("ProgramDisplay", (await Command(terminal, "CALL QGPL/DISPLAY")).State);
+            using var factory = new SqliteConnectionFactory(_directory); var jobs = new JobService(factory); var job = Assert.Single(jobs.List());
+            if (endJob) jobs.RequestEnd(job.Key); else terminal.Dispose();
+            while ((job = jobs.GetRequired(job.Key)).Status != JobStatus.Completed) await Task.Delay(20, stop.Token);
+            Assert.Equal(JobCompletion.Abnormal, job.CompletionCode);
+            if (endJob) Assert.Equal(JobExecutionState.Cancelled, job.ExecutionState);
+            using var connection = factory.Open(); using var query = connection.CreateCommand();
+            query.CommandText = "SELECT count(*) FROM sys_job_temp_libraries WHERE job_number=$job"; query.Parameters.AddWithValue("$job", job.Key.Number);
+            Assert.Equal(0L, query.ExecuteScalar());
+            Assert.False(new SqliteObjectStore(factory).Exists("QGPL", "UNREACHED", ObjectType.DataArea));
+        }
+        finally { stop.Cancel(); await run.WaitAsync(TimeSpan.FromSeconds(10)); }
+    }
+
+    private void SeedDisplayProgram(bool marker = false, bool rpg = false)
+    {
+        SeedUser(); using var setup = IpcSystem.Create(_directory); setup.Start();
+        new Ipc.Dsp.DisplayFileStore(setup.Connections).Create("QGPL", "SCREEN", DisplayPanelTests.Dds(keywords: "CA03(03)") +
+            DisplayPanelTests.Dds("ENTRY", record: true) + DisplayPanelTests.Dds("NAME", 10, row: 4, column: 2, usage: 'B'));
+        var source = new Ipc.Db.Store.SqliteFileStore(setup.Connections, setup.Objects); source.CreateSourceFile("QGPL", "SOURCE");
+        var resultSource = "PGM PARM(&NAME)\nDCL &NAME *CHAR LEN(10)\nCRTDTAARA DTAARA(QTEMP/RESULT) TYPE(*CHAR) LEN(10) VALUE(&NAME)" +
+            (marker ? "\nCRTDTAARA DTAARA(QGPL/UNREACHED) TYPE(*CHAR) LEN(10) VALUE(&NAME)" : "") + "\nENDPGM";
+        source.SaveSourceMember("QGPL", "SOURCE", "SAVE", resultSource, null);
+        var commands = new Ipc.Console.Session.CommandService(setup);
+        var save = commands.Execute("CRTCLPGM PGM(QGPL/SAVE) SRCFILE(QGPL/SOURCE)"); Assert.False(save.IsError, save.Message);
+        source.SaveSourceMember("QGPL", "SOURCE", "DISPLAY", rpg ?
+            "**free\ndcl-f SCREEN workstn extdesc('QGPL/SCREEN') extfile(*extdesc);\neval NAME = 'START';\nexfmt ENTRY;\ncallp SAVE(NAME);\nseton LR;" :
+            "DCLF QGPL/SCREEN\nCHGVAR &NAME 'START'\nSNDRCVF\nCRTDTAARA DTAARA(QTEMP/RESULT) TYPE(*CHAR) LEN(10) VALUE(&NAME)" +
+            (marker ? "\nCRTDTAARA DTAARA(QGPL/UNREACHED) TYPE(*CHAR) LEN(10) VALUE(&NAME)" : ""), null);
+        var result = commands.Execute((rpg ? "CRTBNDRPG" : "CRTCLPGM") + " PGM(QGPL/DISPLAY) SRCFILE(QGPL/SOURCE)"); Assert.False(result.IsError, result.Message);
     }
 
     private Process StartProcess()

@@ -9,6 +9,7 @@ public sealed partial class SqliteFileStore
 {
     public int ChangePhysicalMemberLimit(string library, string name, int? maximumMembers)
     {
+        library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant();
         if (maximumMembers is < 1 or > 32767) throw LogicalError("MAXMBRS requires 1–32767.");
         Authorize(library, name, AuthorityBit.ObjectManagement | AuthorityBit.ObjectAlter);

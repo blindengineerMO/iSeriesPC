@@ -17,6 +17,12 @@ public sealed class RpgLiteral : RpgExpr
     public override object? Eval(RpgRuntimeContext ctx) => Value;
 }
 
+public sealed class RpgHexLiteral(byte[] bytes) : RpgExpr
+{
+    private readonly byte[] _bytes = bytes.ToArray();
+    public override object? Eval(RpgRuntimeContext ctx) => new Ipc.Core.Work.ProgramBuffer(_bytes, ctx.Ccsid);
+}
+
 public sealed class RpgFieldRef : RpgExpr
 {
     public RpgFieldRef(string name) => Name = name;
@@ -338,6 +344,13 @@ public sealed class RpgExpressionParser
         }
 
         var first = Peek();
+        if (first is 'X' or 'x' && PeekNext() == '\'')
+        {
+            _position++; var hex = ReadQuoted();
+            if (hex.Length is < 2 or > 2097152 || hex.Length % 2 != 0 || hex.Any(c => !char.IsAsciiHexDigit(c)))
+                throw new RpgCompileException(0, "Invalid hexadecimal literal.");
+            return new RpgHexLiteral(Convert.FromHexString(hex));
+        }
         if (char.IsDigit(first) || first == '.')
         {
             return ParseLiteral();
@@ -428,6 +441,10 @@ public sealed class RpgExpressionParser
 
         switch (upper)
         {
+            case "%EOF":
+            case "%FOUND":
+            case "%ERROR":
+                return new RpgBuiltin(upper[1..], Array.Empty<RpgExpr>());
             case "*BLANK":
             case "*BLANKS":
                 return new RpgLiteral(string.Empty);
@@ -565,25 +582,6 @@ public static class RpgNumbers
 {
     public static object ParseLiteral(string token)
     {
-        var negative = token.StartsWith('-');
-        var body = token.TrimStart('+', '-');
-        var dot = body.IndexOf('.');
-        if (dot > 0 && dot == body.Length - 2 && body.Length > 2)
-        {
-            var decimals = body[^1] - '0';
-            var digits = body[..^2];
-            if (decimal.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var scaled))
-            {
-                var value = scaled;
-                if (decimals > 0)
-                {
-                    value /= Pow10(decimals);
-                }
-
-                return negative ? -value : value;
-            }
-        }
-
         return decimal.TryParse(token, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDouble)

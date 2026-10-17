@@ -30,7 +30,7 @@ public sealed partial class MessageQueueStore
         command.Parameters.AddWithValue("$job", job.Number); command.Parameters.AddWithValue("$name", job.Name); command.Parameters.AddWithValue("$user", job.User);
         command.Parameters.AddWithValue("$after", (long)after); command.Parameters.AddWithValue("$limit", limit);
         using var reader = command.ExecuteReader(); var result = new List<QueuedMessage>();
-        while (reader.Read()) result.Add(Read(reader).Message); return result;
+        while (reader.Read()) result.Add(Visible(Read(reader).Message, connection)); return result;
     }
 
     public MessageQueueAddress OpenProgramQueue(JobKey job, string program, MessageQueueAddress? parent = null)

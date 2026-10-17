@@ -220,13 +220,104 @@ Their size is integer(digits/2)+1. Independent reference bytes cover EBCDIC/UTF-
 negative/even-digit numerics and null defaults. Binary values must still fit their
 declared decimal digit count. CPI0306 listing warnings are not emitted yet.
 
-Display DCLF/RCVF, backward/update cursors, RPG/CL shared positions and OPNQRYF
+Backward/update cursors, RPG/CL shared positions and OPNQRYF
 remain open. Floating-point database fields are rejected by CL DCLF.
 
 References: [DCLF](https://www.ibm.com/docs/en/i/7.5.0?topic=d-declare-file),
 [RCVF](https://www.ibm.com/docs/en/i/7.5.0?topic=r-receive-file),
 [CLOSE](https://www.ibm.com/docs/en/i/7.5.0?topic=c-close-database-file), and
 [Microsoft SqliteCommand.Cancel](https://learn.microsoft.com/en-us/dotnet/api/microsoft.data.sqlite.sqlitecommand.cancel?view=msdata-sqlite-9.0.0).
+
+## Display files and terminal exchange
+
+Compiled CL uses DCLF with persisted DSPF objects. SNDF sends output; RCVF reads
+the previously written record; SNDRCVF sends output and waits for input. A
+terminal-backed interactive job keeps its CL call stack, variables, allocations
+and message queues alive while the user edits the display. This runs locally and
+through the Unix terminal socket. Headless, batch and communication executions
+report monitorable CPF0861 for display I/O.
+
+DCLF supports up to five database/display declarations with distinct OPNIDs.
+For displays, RCDFMT selects constant record names or defaults to *ALL (the first
+99 formats). Compatible shared fields become one CL variable; incompatible
+definitions fail compilation. Fields and used indicators generate &FIELD/&INnn
+or &OPNID_FIELD/&OPNID_INnn. Numeric fields through 15 digits/nine decimal positions
+use DEC; larger numerics use character variables containing packed bytes.
+Character lengths count job-CCSID bytes. Date/time/timestamp values use the
+display engine's external text layouts; ISO/microsecond acceptance is tested,
+while independent native layout fixtures remain part of wider compatibility
+acceptance. CPI0306 listing notices are not emitted.
+
+SNDF/RCVF/SNDRCVF accept DEV(*FILE), a constant RCDFMT and OPNID; receiving
+operations support synchronous WAIT(*YES). A display with multiple formats
+requires explicit RCDFMT even when DCLF selected just one. Ordinary subfile
+record I/O is rejected for CL. Message subfiles use their control format and
+SFLINZ. CLOSE applies to database files; display handles close on call return or
+error unwinding. Explicit device names, WAIT(*NO), WAIT/ENDRCV, display overrides,
+shared display ODPs and RCVF of a record other than the most recently written
+record remain open. A receive without matching prior output returns IPC0139.
+
+For example, with a compiled DSPF containing ENTRY, ten-byte NAME, DEC(5,2)
+AMOUNT and CA03(03)/CF06(06):
+
+```cl
+PGM
+DCLF FILE(QGPL/SCREEN)
+CHGVAR &NAME 'START'
+CHGVAR &AMOUNT 1.25
+LOOP: SNDRCVF RCDFMT(ENTRY)
+IF &IN03 THEN(RETURN)
+IF &IN06 THEN(SNDPGMMSG MSG(&NAME *TCAT ':' *CAT &AMOUNT))
+GOTO LOOP
+ENDPGM
+```
+
+Enter and CF keys validate and return input-capable fields. CA/attention keys
+return response indicators without transferring edits or replacing variables
+changed after SNDF. Receives update response indicators; output selectors changed
+by the program before RCVF retain their values. Output-only and hidden values
+remain program-owned. All returned fields normalize before any CL variable is
+updated. Validation failures keep input in the editor. File identity, authority,
+cancellation and saved layouts are checked at open, on terminal interaction and
+before assignment. Replacement/layout changes produce CPF4131. MONMSG can recover
+these failures, including CPF9802 after live authority revocation.
+
+The terminal runs a command on a dedicated worker and hands control back at each
+input wait. Input resumes that invocation; nested CALL and the original program
+continue normally. Captured program authority applies to display/help checks
+while suspended and expires when the exchange ends. Disconnect, job end and host
+shutdown cancel the wait and join the worker before releasing frames, allocations
+or QTEMP. Initial programs can wait before the initial menu or *SIGNOFF action.
+
+System Request retains the editor. Verified built-in group controls can transfer
+to another job and return with unsent text/cursor intact; DSPJOB opens a read-only
+details viewer over the program. Other commands cannot re-enter its interpreter.
+Intentional completion of the original group does not cancel surviving groups.
+Terminal controls pass command authority/signature and parameter checks under the
+session user, with a terminal.control audit record.
+
+For a [message subfile](display-files.md#message-subfiles), set the control PGMQ
+field to the CL program name or *EXT, select SFLINZ and issue SNDF/SNDRCVF with
+the control RCDFMT. SFLPGMQ '*' is rejected for CL. A paired SNDF/RCVF lets the
+program clear entries and delete its private MSGF after output; copied rows,
+paging and F1 second-level help remain available. F1 uses the shared help viewer
+and restores the editor without resuming the program.
+
+ClDisplayFileTests covers typed input, CA/CF/selectors, OPNIDs/multiple formats,
+nested CALL, two CCSIDs, independent packed bytes, dates/times, MONMSG, authority
+expiry/adoption/revocation, initial programs, groups, disconnection and source/
+layout errors. SessionServerTests adds two real socket jobs with independent
+QTEMP results and disconnect/ENDJOB cleanup. The PTY suite compiles and calls CL
+forms and a message subfile, verifies field/indicator effects, transfers a waiting
+job, and reads saved help after queue/MSGF removal. RPG now uses the shared
+[WORKSTN/EXFMT binding](rpg-spec.md#12-workstn-display-files-and-subfiles). Wider
+C07/C09/C11 bindings remain unfinished.
+
+References: IBM [display data manipulation](https://www.ibm.com/docs/en/i/7.6.0?topic=procedures-data-manipulation-commands),
+[DCLF](https://www.ibm.com/docs/en/i/7.5.0?topic=d-declare-file),
+[SNDF](https://www.ibm.com/docs/en/i/7.6.0?topic=s-send-file),
+[RCVF](https://www.ibm.com/docs/en/i/7.4.0?topic=ssw_ibm_i_74%2Fcl%2Frcvf.html)
+and [SFLPGMQ](https://www.ibm.com/docs/en/i/7.6.0?topic=s-sflpgmq).
 
 
 ## Cross-language call checkpoint

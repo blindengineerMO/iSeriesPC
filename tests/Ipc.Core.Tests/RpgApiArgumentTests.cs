@@ -171,7 +171,6 @@ public sealed class RpgApiArgumentTests : IDisposable
 
     [Theory]
     [InlineData(RpgFieldKind.Zoned)]
-    [InlineData(RpgFieldKind.Integer)]
     [InlineData(RpgFieldKind.VaryingChar)]
     [InlineData(RpgFieldKind.Date)]
     public void Unsupported_scalar_kinds_reject_before_the_API_runs(RpgFieldKind kind)

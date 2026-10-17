@@ -8,7 +8,18 @@
     "data-queues": "https://www.ibm.com/docs/ssw_ibm_i_75/rzarl/sc415302.pdf?view=kc",
     "work": "https://www.ibm.com/docs/en/i/7.4.0?topic=category-work-management",
     "apis": "https://www.ibm.com/docs/en/i/7.6.0?topic=interfaces-alphabetic-list-apis",
-    "journals": "https://www.ibm.com/docs/en/i/7.4.0?topic=q-retrieve-journal-entries-qjoretrievejournalentries"
+    "journals": "https://www.ibm.com/docs/en/i/7.4.0?topic=q-retrieve-journal-entries-qjoretrievejournalentries",
+    "data-area-api": "https://www.ibm.com/docs/en/i/7.4.0?topic=ssw_ibm_i_74%2Fapis%2Fqwcrdtaa.html",
+    "system-value-api": "https://www.ibm.com/docs/en/i/7.5.0?topic=ssw_ibm_i_75%2Fapis%2Fqwcrsval.html",
+    "job-retrieval": "https://www.ibm.com/docs/en/i/7.5.0?topic=ssw_ibm_i_75%2Fapis%2Fqusrjobi.html",
+    "job-list": "https://www.ibm.com/docs/en/i/7.4.0?topic=ssw_ibm_i_74/apis/qusljob.html",
+    "date-time": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qwccvtdt.htm",
+    "crypto-hash": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qc3calha.htm",
+    "crypto-hmac": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qc3calhm.htm",
+    "crypto-encrypt": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qc3encdt.htm",
+    "crypto-decrypt": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qc3decdt.htm",
+    "crypto-create-key": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qc3crtkx.htm",
+    "crypto-destroy-key": "https://www.ibm.com/docs/ssw_ibm_i_74/apis/qc3deskx.htm"
   },
   "entries": [
     {
@@ -2647,44 +2658,48 @@
       "kind": "command",
       "category": "cl",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "reference": "docs/cl-runtime.md#display-files-and-terminal-exchange"
     },
     {
       "name": "RCVF",
       "kind": "command",
       "category": "cl",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "reference": "docs/cl-runtime.md#display-files-and-terminal-exchange"
     },
     {
       "name": "SNDF",
       "kind": "command",
       "category": "cl",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "reference": "docs/cl-runtime.md#display-files-and-terminal-exchange"
     },
     {
       "name": "SNDRCVF",
       "kind": "command",
       "category": "cl",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "reference": "docs/cl-runtime.md#display-files-and-terminal-exchange"
     },
     {
       "name": "RETURN",
@@ -2760,22 +2775,42 @@
       "kind": "command",
       "category": "data",
       "origin": "iSeriesPC extension",
-      "status": "planned",
+      "status": "partial",
       "source": null,
       "requirements": [
-        "WP08-03"
-      ]
+        "WP08-03",
+        "WP12-04"
+      ],
+      "keywords": [
+        "USRSPC",
+        "SIZE",
+        "ATTR",
+        "VALUE",
+        "AUT",
+        "TEXT",
+        "REPLACE",
+        "DOMAIN",
+        "TRFSIZ",
+        "ALIGN",
+        "AUTOEXT"
+      ],
+      "maxPositional": 2
     },
     {
       "name": "WRKAPILS",
       "kind": "command",
       "category": "system",
       "origin": "iSeriesPC extension",
-      "status": "planned",
-      "source": null,
+      "status": "partial",
+      "source": "commands",
       "requirements": [
-        "WP08-03"
-      ]
+        "WP08-03",
+        "WP15-03"
+      ],
+      "keywords": [
+        "API"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "WRKNETSVR",
@@ -2863,7 +2898,7 @@
       "kind": "api",
       "category": "messages",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "messages",
       "requirements": [
         "WP15-02"
@@ -2874,7 +2909,7 @@
       "kind": "api",
       "category": "messages",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "messages",
       "requirements": [
         "WP15-02"
@@ -2885,7 +2920,7 @@
       "kind": "api",
       "category": "messages",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "messages",
       "requirements": [
         "WP15-02"
@@ -2896,7 +2931,7 @@
       "kind": "api",
       "category": "messages",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "messages",
       "requirements": [
         "WP15-02"
@@ -2907,7 +2942,7 @@
       "kind": "api",
       "category": "messages",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "messages",
       "requirements": [
         "WP15-02"
@@ -2918,7 +2953,7 @@
       "kind": "api",
       "category": "messages",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "messages",
       "requirements": [
         "WP15-02"
@@ -2929,7 +2964,7 @@
       "kind": "api",
       "category": "user-spaces",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "user-spaces",
       "requirements": [
         "WP15-02"
@@ -2940,7 +2975,7 @@
       "kind": "api",
       "category": "user-spaces",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "user-spaces",
       "requirements": [
         "WP15-02"
@@ -2951,7 +2986,7 @@
       "kind": "api",
       "category": "user-spaces",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "user-spaces",
       "requirements": [
         "WP15-02"
@@ -2962,7 +2997,7 @@
       "kind": "api",
       "category": "user-spaces",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "user-spaces",
       "requirements": [
         "WP15-02"
@@ -2973,7 +3008,7 @@
       "kind": "api",
       "category": "user-spaces",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "user-spaces",
       "requirements": [
         "WP15-02"
@@ -2984,7 +3019,7 @@
       "kind": "api",
       "category": "user-spaces",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "user-spaces",
       "requirements": [
         "WP15-02"
@@ -3050,8 +3085,8 @@
       "kind": "api",
       "category": "work",
       "origin": "IBM",
-      "status": "planned",
-      "source": "work",
+      "status": "partial",
+      "source": "system-value-api",
       "requirements": [
         "WP15-02"
       ]
@@ -3061,8 +3096,8 @@
       "kind": "api",
       "category": "work",
       "origin": "IBM",
-      "status": "planned",
-      "source": "work",
+      "status": "partial",
+      "source": "job-retrieval",
       "requirements": [
         "WP15-02"
       ]
@@ -3072,8 +3107,8 @@
       "kind": "api",
       "category": "work",
       "origin": "IBM",
-      "status": "planned",
-      "source": "work",
+      "status": "partial",
+      "source": "job-list",
       "requirements": [
         "WP15-02"
       ]
@@ -3094,8 +3129,8 @@
       "kind": "api",
       "category": "apis",
       "origin": "IBM",
-      "status": "planned",
-      "source": "apis",
+      "status": "partial",
+      "source": "date-time",
       "requirements": [
         "WP15-02"
       ]
@@ -4128,6 +4163,101 @@
         "KEYORDER"
       ],
       "maxPositional": 1
+    },
+    {
+      "name": "DLTUSRSPC",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "user-spaces",
+      "requirements": [
+        "WP08-03",
+        "WP12-04"
+      ],
+      "keywords": [
+        "USRSPC"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "QWCRDTAA",
+      "kind": "api",
+      "category": "data-areas",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "data-area-api",
+      "requirements": [
+        "WP12-03",
+        "WP15-02",
+        "WP15-04"
+      ]
+    },
+    {
+      "name": "QC3CALHA",
+      "kind": "api",
+      "category": "cryptography",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "crypto-hash",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QC3CALHM",
+      "kind": "api",
+      "category": "cryptography",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "crypto-hmac",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QC3ENCDT",
+      "kind": "api",
+      "category": "cryptography",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "crypto-encrypt",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QC3DECDT",
+      "kind": "api",
+      "category": "cryptography",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "crypto-decrypt",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QC3CRTKX",
+      "kind": "api",
+      "category": "cryptography",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "crypto-create-key",
+      "requirements": [
+        "WP15-02"
+      ]
+    },
+    {
+      "name": "QC3DESKX",
+      "kind": "api",
+      "category": "cryptography",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "crypto-destroy-key",
+      "requirements": [
+        "WP15-02"
+      ]
     }
   ],
   "aliases": {

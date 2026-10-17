@@ -1,7 +1,7 @@
 # Completion progress — 2026-10-17
 
-The user requested completion of all 106 PLAN.md checklist items. **34 items are
-complete and 72 remain open.** The app is under construction. PLAN.md is intentionally
+The user requested completion of all 106 PLAN.md checklist items. **36 items are
+complete and 70 remain open.** The app is under construction. PLAN.md is intentionally
 Git-ignored; this tracked note preserves the implementation checkpoint and evidence.
 
 ## Completed checklist items
@@ -56,7 +56,7 @@ Git-ignored; this tracked note preserves the implementation checkpoint and evide
 ## Implemented supporting work
 
 - A tracked 163-requirement compatibility inventory and generated source-surface
-  report, now extended by 288 normalized command/API entries and release contracts.
+  report, now extended by 304 normalized command/API entries and release contracts.
 - `Ipc.Session` now owns the former console controllers and command orchestration;
   `Ipc.Server` supplies `as400server`. `as400menu` connects to it by default, with
   explicit `--standalone` development and `--migrate-only` maintenance modes.
@@ -275,6 +275,17 @@ No additional broad command-category or database-semantics item is checked off.
     54 new regression cases and terminal CRTBNDRPG → CALL acceptance pass. Broader
     RPG/ILE syntax, embedded SQL and debugger controls remain open. See
     [source preprocessing](source-preprocessing.md#rpg-directives).
+
+35. C11: job data-area storage lifecycle is complete, reusing the audited C04
+    implementation and its documented routing-PIP extension. New tests cover
+    encoded blank CHAR storage (1024/512/2000 bytes), atomic submission/restart,
+    initialization payload bounds and claim rollback, shared GDA with separate
+    LDAs/groups, cross-job denial, process concurrency, cancellation and cleanup.
+    Missing GDA/PDA now report CPF1046/CPF1072 through CL MONMSG. Expanded terminal
+    acceptance verifies data across named groups and secondary partitions while
+    preserving an edited panel. See the requirement-by-requirement evidence in
+    [job environments](job-environment.md#c11-storage-completion-evidence).
+    Native prestart protocols and wider WP12/API work remain separate and open.
 
 
 C07 interpreter checkpoint: 806 tests pass and the Release build has no warnings.
@@ -612,3 +623,209 @@ for the documented CL extension and bounded RPG grammar; wider WP10 requirements
 remain partial. Listing-only programs compile and call successfully with empty
 executable text, and source-location reporting preserves CPF type/severity as well
 as message IDs. The checklist is now **34 complete / 72 open**.
+
+
+C09 syntax diagnostics checkpoint (2026-10-17): unsupported RPG operations,
+specifications and D-spec type codes now fail with original source locations,
+including include chains, before any program body executes. Fixed layout recognition
+no longer mistakes DSPLY DATA/CALLP PRIVATE free text for specifications. Fixed
+BEGSR/EXSR/GOTO/TAG names are normalized from their single supplied operand,
+so separate subroutines retain separate names.
+
+A structural validation pass rejects crossed/unclosed blocks and routine boundaries,
+duplicate branches/routines/procedures/scoped labels, invalid mode markers, control
+operands that were previously ignored and loop control outside loops. Control nesting
+is bounded to 256 blocks. The generated opcode inventory now shows fixed and free
+recognition separately and checks that fixed spellings fit the seven-column field.
+85 new cases cover rejection and valid mixed source, locations, nesting limits,
+scoped labels, distinct fixed routines and compile/create/call effects. Terminal
+acceptance verifies the corrected free calls/display and that rejected RPGBAD source
+creates no program. The wider declaration/keyword/expression/type/indicator/runtime
+audit remains open; checklist progress stays **34 complete / 72 open**.
+
+Final syntax checkpoint verification: **1572 tests pass**, zero failures or skips,
+including **85 new diagnostics cases**. Locked restore, the zero-warning/error
+Release solution build, full display PTY including the corrected free calls/display
+and invalid compilation rejection, generated inventory and whitespace checks pass.
+The broad checklist remains **34 complete / 72 open**.
+
+
+C11 job data-area closure verification (2026-10-17): **1599 tests pass**, zero
+failures or skips, including **27 new lifecycle/CL/process cases**. The initial
+audit revalidated existing automatic LDA, GDA and routing storage, then corrected
+unavailable-area error identities and completed missing acceptance evidence.
+Locked restore, zero-warning/error Release build, full display PTY with shared
+GDA/private LDA/secondary-group/editor checks, generated inventory and whitespace
+checks pass. C11's job-area storage item is closed under its recorded C04 routing
+extension; native prestart protocols and broader WP12/API work are not claimed.
+The checklist is now **35 complete / 71 open**; the overall goal remains active.
+
+
+C11/C14 user-space checkpoint (2026-10-17): schema-25 binary storage, explicit
+byte ranges, native maximum sizes, resizing and object lifecycle now have a durable
+implementation. Six QSYS user-space API adapters use signed big-endian integers,
+SPCA0100, aligned attribute records and checked mutable/error receivers. The
+CRTUSRSPC extension and exact-name DLTUSRSPC are executable. Replacement preserves
+owner/public/private/AUTL authority and archives the old payload in QRPLOBJ, with
+domain-policy deletion and exclusive-server startup cleanup. Storage/ABI acceptance
+covers raw bytes, concurrency, locks, cancellation, migration, rollback and restart.
+See [user spaces](user-spaces.md) for contracts and IBM references.
+
+QTEMP job-private objects, generic deletion names, native pointer/list behavior,
+full CPF/lock distinctions and domain enforcement on generic relocation remain
+open. The broad C11/C14 items remain unchecked: **35 complete / 71 open**.
+
+Final user-space verification (2026-10-17): all 1656 tests pass with zero failures/skips, including 57 new storage/ABI/restart cases. Locked restore, zero-warning/error Release solution build, full display PTY including the native binary user-space lifecycle, generated inventory and whitespace checks pass. Checklist remains 35 complete / 71 open.
+
+
+QTEMP namespace checkpoint (2026-10-17): schema-26 runtime-owned private libraries initialize atomically with jobs and for existing live jobs after upgrade. Catalog, user spaces, typed data areas, STD queues, inline CL program objects, authority and allocations resolve the executing job; even privileged foreign-job backing-name access is denied. Native return names stay QTEMP. Submission/groups receive separate namespaces. Completion/cancellation and exclusive-owner crash recovery clean payloads and bindings atomically, preserving unclaimed queued jobs. Private files and other specialized stores, generic user-space deletion, MI/list behavior and full lock/error/domain relocation fidelity remain open; broad C11/C14 items remain unchecked.
+
+See [temporary libraries](temporary-libraries.md) for the accepted stores, IBM
+references and remaining integration. Checklist stays **35 complete / 71 open**.
+
+Final QTEMP verification (2026-10-17): all 1689 tests pass, zero failures/skips, including 25 new namespace/storage/ABI/security/process/server cases and eight additional migration-version cases. Locked restore, zero-warning/error Release build, full display PTY with QTEMP user-space lifecycle, generated inventory and whitespace checks pass. Job-history deletion acceptance now completes jobs before purging their rows, preserving namespace cleanup and non-reused job numbers. Checklist remains 35 complete / 71 open.
+
+
+QTEMP file checkpoint (2026-10-17): the file store resolves the owning namespace before definitions, members, source revisions, record CRUD/keyed/sequential cursors, copy and logical paths. Private source/PF/simple LF members now compile through CRTCLPGM/CRTBNDRPG/CRTPF, with CL RCVF and RPG shared ODP consumption. Permanent LFs cannot capture private PF storage; private LF unique paths on global PFs are released or retained according to other owners. Process writers, exact decimals, two CCSIDs, source revision conflicts, privileged cross-job denial, DDL/cleanup rollback, parsed dependencies, reopen/recovery and real terminal source/data lifecycle are covered. Other private domain stores and broader C08/C11/C14 contracts remain open; checklist remains 35 complete / 71 open.
+
+The process fixture now references Ipc.Db to exercise the actual private file
+service; lock-file changes record project references only, with no package version
+changes. See [temporary files](temporary-libraries.md#private-source-and-database-files).
+
+Final QTEMP file verification (2026-10-17): all 1710 tests pass, zero failures/skips, including 21 new private file/source/member/ABI/process/recovery cases. Locked restore, zero-warning/error Release solution build, full display PTY with private source copy/DDS+CL compile/read/display/delete, generated inventory and whitespace checks pass. The process fixture lock updates add project references only; package versions are unchanged. Checklist stays 35 complete / 71 open.
+
+
+User-space lifecycle checkpoint (2026-10-17): DLTUSRSPC and QUSDLTUS share generic
+prefix deletion, *LIBL first-match semantics, *USRLIBL current/user search and
+*ALL/*ALLUSR selectors. Broad searches never enter other jobs' QTEMP. Authorized
+matches commit despite denied/allocated/dependent matches, then report CPF2117;
+none eligible returns CPF2125. Native receivers, CL MONMSG and two CCSIDs are
+covered. Unexpected database faults and cancellation roll back the entire batch;
+committed partial results survive reopen. Exact missing objects now return CPF2105.
+
+User-space writes acquire *EXCLRD while structural changes retain *EXCL. The
+coordinator covers all 25 native compatibility combinations and record intent in
+both orders; commands expose allocation/inspection/deallocation. Appending the
+persisted enum value preserves the sidecar schema. Live QALWUSRDMN validates mixed
+*DIR/library lists and requires both *ALLOBJ and *SECADM. Explicit *SYSTEM remains
+system-domain in QTEMP. Generic copies/moves and library renames enforce domain
+policy atomically; same-library rename preserves an existing space. Replacement
+archival retains its documented authority-preserving cleanup. Broader C11/C14
+checklist items remain open; other QTEMP stores, MI/list APIs and richer native
+error data still need implementation. See user-spaces.md and locks.md.
+
+
+Final lifecycle verification (2026-10-17): all 1763 tests pass, zero failures/skips, including 53 additional user-space/deletion/lock/domain cases. Locked restore, zero-warning/error Release solution build, full display PTY with generic QTEMP deletion and EXCLRD allocations, generated inventory and whitespace checks pass. WP12-04 byte-store acceptance is complete under its documented CRTUSRSPC/QUSCRTUS/QUSRUSAT subset; wider C11/C14 checklist items remain open (35 complete / 71 open).
+
+
+Data-area API checkpoint (2026-10-17): QSYS/QWCRDTAA is a versioned IPCAPI program over the existing typed named/job-area stores. Checked big-endian headers, packed DEC values through 24 digits, logical encoding, truncated receivers, error buffers, strict CCSID conversion, first-match library lookup, QTEMP isolation and special-area ownership are implemented. Forty-five new cases cover independent byte vectors, CL and direct borrowed RPG calls, live authority/signing revocation, allocations, ranges, cancellation and the documented routing-PIP extension. Native DDM retrieval, independent padding/CCSID-position fixtures and richer exception data remain open; the broad C11/C14 checklist stays unchecked.
+
+
+Final QWCRDTAA verification (2026-10-17): all 1808 tests pass, zero failures/skips, including 45 new data-area API cases. Locked restore, zero-warning/error Release solution build, full display PTY including native decimal/header/LDA layouts and direct borrowed RPG retrieval, generated inventory and whitespace checks pass. Checklist remains 35 complete / 71 open; native DDM retrieval, padding/CCSID-position acceptance and wider C11/C14 work remain unfinished.
+
+
+Private messaging checkpoint (2026-10-17): MSGQ and MSGF operations resolve QTEMP before SQL access. Private inquiry reply routes grant exact system delivery to a live originating job without granting foreign read/send/library access; reply locks and sender metadata belong to the replier. Atomic batch sends, quota/default/rule failures, copies/exports, queue replacement waits, job cleanup and exclusive-server recovery retain their invariants. Version-3 predefined snapshots preserve private source identity internally while exposing logical metadata; legacy snapshots are sanitized in the read snapshot and retired atomically at cleanup. Separate producer/consumer/reply processes, legacy compatibility, two CCSIDs, private CL/DSPMSG and rollback tests cover these changes. The broad C07/C11/C14 checklist remains open for delivery attributes, break/notify, subfiles and wider APIs.
+
+Final private messaging verification (2026-10-17): all 1839 tests pass, zero failures/skips, including 31 new private message cases. Locked restore, zero-warning/error Release solution build, full display PTY with private MSGQ/MSGF/predefined/CL/display/remove lifecycle, generated inventory and whitespace checks pass. Checklist remains 35 complete / 71 open; delivery attributes, break/notify, message-subfile bindings and wider APIs remain unfinished.
+
+Message-subfile binding checkpoint (2026-10-17): live job/frame queue sources resolve output callers, external queues and nearest recursive programs without foreign-job access. Row writes capture text/help; SFLINZ reads a single bounded queue snapshot and grows the subfile beyond SFLSIZ. Display reads leave seen, exception, inquiry and reply state unchanged. Paging/help survive queue entry and private MSGF removal; failed initialization/output restores rows, capacity, page and editor. Twenty-four new tests and a live terminal fixture cover opaque keys, two CCSIDs, 80/132-column output, more than 1000 messages, authority and DDS diagnostics. CL SNDRCVF, RPG WORKSTN/EXFMT, record/RRN bindings, terminal suspension and ILE 276-byte queue names remain open; broad C07/C09/C11 checklist items stay unchecked.
+
+Final message-subfile verification (2026-10-17): all 1863 tests pass, zero failures/skips, including 24 new message-subfile cases. Locked restore, zero-warning/error Release solution build, full display PTY including live SFLINZ/paging/saved second-level help after source removal, generated inventory and whitespace checks pass. Checklist remains 35 complete / 71 open; CL/RPG terminal exchange and broader C07/C09/C11 work remain unfinished.
+
+CL display exchange checkpoint (2026-10-17): DCLF persists selected DSPF records and typed field/indicator layouts; SNDF/RCVF/SNDRCVF drive live local/socket terminals with nested-call resumption, CA/CF semantics, two CCSIDs, packed character buffers and atomic normalized input. Display identity/layout/authority and captured adopted authority remain checked while suspended; exchange capabilities expire on return. Initial programs can wait before menu/signoff. Disconnect/ENDJOB joins the worker before frame/QTEMP cleanup. Verified built-in System Request group controls and job details preserve paused editors; intentional original-group completion leaves survivors active. Compiled message subfiles retain paging and F1 help after message/private MSGF removal. Thirty new cases cover these contracts, including two socket jobs, cancellation and startup failures. RPG WORKSTN/EXFMT/RRN, asynchronous/multiple-device receives, display overrides/shared ODPs, richer native layout/error fixtures and wider C07/C09/C11 work remain open; checklist stays 35 complete / 71 open.
+
+Final CL display verification (2026-10-17): all 1893 tests pass, zero failures/skips, including 30 new CL display/socket cases. Locked restore, zero-warning/error Release solution build, full display PTY with compiled SNDF/RCVF/SNDRCVF fields/indicators/CA/message-subfile help and suspended-job transfers, generated inventory and whitespace checks pass. Checklist remains 35 complete / 71 open; RPG WORKSTN/EXFMT and the documented wider CL/device contracts remain unfinished.
+
+Verification history: the first full run passed 1892 cases and timed out once in the existing two-session sign-on test. That case passed an isolated run and five additional repetitions while the full rerun was active; the complete rerun passed all 1893. No timeout or transport behavior was changed for this unreproduced failure.
+
+RPG WORKSTN checkpoint (2026-10-17): declarations now import saved, source-bound display layouts. EXFMT and separate READ/WRITE use live local/socket terminals. SFILE RRNs, ordinary subfile WRITE/READC/CHAIN/UPDATE, hidden fields, SFLNXTCHG retries, response indicators, job-CCSID widths and opaque message keys are integrated with C05. Message subfiles support live frame queues, SFLINZ, paging and saved F1 help through nested CL producers. RETURN retains rows/open file and parent-library leases; later CALLs rebind the terminal. CLOSE/LR/*NEW/reclaim/job end release them. Receiver validation precedes READC acknowledgment; failed conversion preserves fields/RRN/changed rows. Compiled metadata/source/layout/authority checks and disconnect/ENDJOB cleanup are covered. See docs/rpg-spec.md#12-workstn-display-files-and-subfiles. Printer output, complete RPG messaging callbacks, commitment/ODP coordination, full native D/C/ILE ABI/status semantics and asynchronous/multiple-device I/O keep the broader C09/C11 items open; checklist remains 35 complete / 71 open.
+
+Final RPG WORKSTN verification (2026-10-17): all 1949 tests pass, zero failures/skips, including 54 workstation cases and three additional socket variants. The obsolete DCL-S rejection case is removed because the supported scalar declaration now compiles. Locked restore, zero-warning/error Release solution build, expanded display PTY with compiled RPG forms/subfiles/message help and suspended-job transfers, generated inventory and whitespace checks pass. Tests cover private QTEMP layouts, live authority, saved metadata, retained allocations and failed READC retry. Decimal literals, blank-padded comparisons and literal *BLANK input are corrected. Checklist remains 35 complete / 71 open; the broader C09/C11 contracts remain unfinished.
+
+
+Native message APIs and discovery checkpoint (2026-10-17): QMHSNDPM/QMHRCVPM,
+QMHSNDM/QMHRCVM, QMHSNDRM and QMHRTVM now share the durable job/named queues,
+reply rules and saved descriptions. RCVM0100/0200 and RTVM0100 use checked
+big-endian layouts, opaque keys, conversion/truncation and output preparation
+before state/removal/reply commits. SAME preserves state; explicit keys, sender
+copies and default replies retain atomic behavior. Named waiting receivers hold
+job-owned tokens and shared-read queue/library leases, allow sends, reject other
+receivers/removers/repliers and release on cancellation/ENDJOB. Schema 27 expands
+immediate messages to 6000 bytes while preserving old metadata/routes/key high-water
+marks and rollback. RPG adds raw CHAR CCSID(*HEX)/65535, hexadecimal inputs,
+byte %SUBST and signed INT API references with bounds/alias/lifetime checks.
+
+WRKAPILS discovers the actual 17 adapters, supports name/prefix filters and
+option-5 counts/formats/limits, and reports current manifest/authority/trust failures
+without invocation or reseeding. WP15-03 is supported. Direct compiled CL/RPG
+calls run all six adapters at CCSIDs 37/1208; the real terminal exercises native
+RPG production/receipt/retrieval, message-subfile F1 help and registry details.
+All 199 focused cases and expanded display PTY pass. Wider exception/UI dispatch,
+break/notify/status/request delivery, rich formats, larger substitution data,
+rejection exits, messaging callbacks, ILE/ABI and remaining API/crypto families
+keep broad C09/C11/C14 checklist items open. Checklist remains 35 complete / 71 open.
+
+Final native message/registry verification (2026-10-17): all 2036 tests pass, zero failures/skips. Locked restore, zero-warning/error Release solution build, expanded display PTY with native RPG send/receive/retrieve and saved message help, WRKAPILS list/details/back, generated inventory and whitespace checks pass. Independent vectors cover CYYMMDD century boundaries, native sender/profile offsets, incomplete groups, invalid receivers, FIRST/NEXT retrieval and empty-table deleted-key preservation. Independent socket jobs verify allocated native receive, conflicting receiver, delivery and lease cleanup. WP15-03 is supported; the broad checklist remains 35 complete / 71 open.
+
+
+System-value API checkpoint (2026-10-17): QSYS/QWCRSVAL reads 27 backed native values from one committed catalog snapshot and one local clock capture. It checks five parameters, binary sizes/counts, fixed-name arrays, offset-directory/table layouts, four-byte alignment and complete-entry truncation without modifying tails. Native character/binary types, policy aliases and fixed library/domain arrays are explicit. CL/RPG callers, shared/reopened hosts, separate-process atomic snapshots, authority/signing/manifests and socket-job changes have acceptance coverage. WRKAPILS now discovers 18 adapters. System-value library defaults are bounded to native 15/25 names, separate from running-job 250. Legacy oversized values fail without truncation. A false RPG IF now enters its ELSE body, with fixed/free/nested regression cases. Protected/lockable values, wider native catalog/formats and broader C09/C14/C18 contracts remain open.
+
+Final system-value API verification (2026-10-17): all 2108 tests pass, zero failures/skips, including 72 new native-layout, policy, clock, process/socket, CL/RPG and branch cases. All 109 focused cases, locked restore, zero-warning/error Release solution build, expanded display PTY with compiled CL/direct RPG QWCRSVAL and registry details, generated inventory and whitespace checks pass. QWCRSVAL provides 27 backed native values; WRKAPILS discovers 18 adapters. Shared snapshots observe committed updates, dates/times use one live capture, and native 15/25-name defaults preserve oversized legacy data with actionable retrieval errors. False RPG IF/ELSE and nested/fixed/free paths are corrected. Protected/lockable system values, wider API families and broader C09/C14/C18 work remain open; checklist stays 35 complete / 71 open.
+
+
+Native job API checkpoint (2026-10-17): QSYS/QUSRJOBI supports JOBI0100 basic
+metadata and protected active-job JOBI0700 libraries; QUSLJOB produces JOBL0100
+and JOBL0200 with 17 backed keys. Shared schema-28 opaque IDs and authenticated
+48-byte cursors persist across ordinary catalog opens and refresh atomically at
+exclusive host startup. List publication preserves caller/tail bytes, implicitly
+grows existing spaces regardless of auto-extension, checks live authority and
+EXCLRD allocations, and rolls back bytes/size/change state on failure/cancellation.
+Real maximum-space continuation covers 3000 jobs and 64 repeated keys, tampered,
+foreign, mismatched and stale handles. Terminal history is not mislabeled OUTQ.
+CL/direct RPG at CCSIDs 37/1208 and independent socket QTEMP jobs pass. Raw RPG
+EVAL now avoids numeric indicator comparison when no result indicators exist.
+WRKAPILS discovers 20 adapters. See docs/job-apis.md for layouts, bounds and
+finite semantics. Wider job formats, unbacked counters, spool integration and
+remaining API/cryptography families keep C09/C14 open: 35 complete / 71 open.
+
+Final native job API verification (2026-10-17): all 2174 tests pass, zero failures/skips, including 66 additional job-layout, opaque-ID, migration, cursor, CL/RPG, socket and raw-EVAL cases. All 154 focused cases, locked restore, zero-warning/error Release solution build, expanded display PTY with native CL/direct RPG job list/retrieval and registry formats, generated inventory and whitespace checks pass. Schema-28 backfill and exclusive-host epoch refresh preserve job data; list generation preserves caller/tail bytes, grows implicitly and continues at the real maximum with authenticated handles. QUSRJOBI supports JOBI0100/0700 and QUSLJOB supports JOBL0100/0200 with 17 backed keys; WRKAPILS discovers 20 adapters. Wider API families/formats, performance statistics, spool integration and broader C09/C14 work remain open. Checklist stays 35 complete / 71 open.
+
+Native date API checkpoint (2026-10-17): QSYS/QWCCVTDT now accepts complete
+5/10/11-argument groups and native short/long calendar/Julian date-time layouts,
+CURRENT/SYSVAL/DTS and DOS formats. The shared timestamp codec preserves standard
+52-bit microsecond/12-bit uniqueness semantics; the API applies its eight-microsecond
+conversion quantum and native millisecond rounding/ranges/wrap rules. Character
+conversion preserves unvalidated time bytes and short century copy behavior.
+UTC/actual host-zone conversion validates DST gaps, supports both repeated-time
+segments and rounds on the UTC instant across transitions. UTC/out-of-range
+information receivers use zero binary/blank character fields and preserve tails.
+Compiled CL/direct RPG at CCSIDs 37/1208, live program authority/signing/manifests,
+output preparation/cancellation and real terminal flows have acceptance coverage.
+WRKAPILS discovers 21 adapters. Job DATFMT/time-zone attributes, named TIMZON
+objects and in-range host-zone metadata are explicitly unsupported pending shared
+services. Wider C14 API/crypto requirements remain open: 35 complete / 71 open.
+See docs/date-time-apis.md for exact layouts, selectors and errors.
+
+Final native date API verification (2026-10-17): all 2240 tests pass, zero failures/skips, including 66 new timestamp/layout/range/copy/DST/DOS/control/error/cancellation and CL/RPG integration cases. All 74 focused cases, locked restore, zero-warning/error Release solution build, expanded display PTY with compiled CL/direct RPG microsecond timestamp round-trips and WRKAPILS details, generated inventory and whitespace checks pass. Published MI vectors verify the shared full-precision codec; QWCCVTDT conversion applies an eight-microsecond quantum inferred from IBM precision notes/endpoints. Native copy rules preserve raw time/century bytes where validation is not required. Rounding across DST and New Year, invalid local times, both repeated-time segments and atomic output preparation are verified. WRKAPILS discovers 21 adapters. Job DATFMT/time-zone attributes, named TIMZON objects, in-range host-zone metadata and wider API/crypto families remain open. Checklist stays 35 complete / 71 open.
+
+Native cryptography checkpoint (2026-10-17): six QSYS QC3 adapters now provide
+hash/HMAC, AES encrypt/decrypt and opaque job-owned key contexts through shared
+.NET services. Five hashes, three AES key sizes, ECB/CBC/CTR, native padding,
+checked DATA0100/ALGD0500/ALGD0200/KEYD0100/0200 descriptors and atomic output/
+length/error preparation have published known-answer acceptance. Schema 29 stores
+keys under authenticated AES-GCM envelopes, preserves existing catalog data/IDs,
+checks current job/profile ownership, limits contexts per job, supports wrapping
+inventory/rotation and deletes contexts with completion/crash recovery. CL/direct
+RPG at CCSIDs 37/1208 and real PTY run all six programs; independent socket jobs
+verify cross-call use, foreign-token denial and signoff cleanup. Writable scalar
+RPG %SUBST now constructs raw descriptors with checked bounds, exact byte tails
+and literal-text preservation. WRKAPILS discovers 27 adapters. Streaming algorithm
+contexts, persistent native keystores, additional cipher/format families and ILE
+binding retain their broader open requirements. See docs/cryptography-apis.md.
+
+36. C14: .NET-backed hash/HMAC/AES and encrypted job-owned key-management services,
+    six native QC3 adapters, published known-answer vectors, invalid/denied-key
+    handling, transactional lifetime/rotation and actual CL/RPG/socket/PTY callers.
+    See [crypto contracts and acceptance](cryptography-apis.md).
+
+Final C14 cryptography verification (2026-10-17): all 2309 tests pass, zero failures/skips, including 69 new crypto, key-context, migration, native CL/RPG/socket and writable-substring cases. All 176 focused cases, locked restore, zero-warning/error Release solution build, expanded display PTY with all six QC3 adapters and registry details, generated inventory and whitespace checks pass. Published NIST/RFC vectors cover five hashes/HMACs and AES 128/192/256 in ECB/CBC/CTR; native padding, key types/lengths, maximum key size, per-job limits, atomic receivers and cancellation are verified. Schema-29 encrypted context storage supports same-job reopen, denies foreign/JOBCTL access, authenticates ciphertext, participates in wrapping inventory/rotation and releases with completion/recovery. Failed create/cleanup/rewrap/migration preserve prior state. Independent socket jobs verify cross-call use, foreign-token denial and signoff cleanup; the actual server recovers contexts before readiness. Writable scalar RPG %SUBST preserves bytes/tails, checks ranges and retains literal text. WRKAPILS discovers 27 adapters; the normalized compatibility catalog has 304 entries. C14 software cryptography/key-management acceptance is complete under docs/cryptography-apis.md and the release contract. The three broader C14 API/ABI/reference-suite items and general C09/ILE work remain open. Checklist is now 36 complete / 70 open.

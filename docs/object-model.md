@@ -72,8 +72,12 @@ order; the standalone menu store searches only QSYS/QGPL/QUSRSYS by default.
 
 Program loads re-read the descriptor; deletion or source replacement cannot leave an
 old cached program callable. Profile initial current library and CCSID initialize new
-sessions. Job-scoped QTEMP, overrides/ODPs and complete profile initial-program/menu
-behavior remain C04/C06/C08 work.
+sessions. [Job-private QTEMP](temporary-libraries.md) now supports user spaces,
+data areas, standard data queues, inline CL program objects and catalog operations.
+It also supports source/PF/simple LF members, source compilation, CL/RPG database
+input and shared open paths; see the temporary-library file acceptance checkpoint.
+Other private domain stores, wider overrides/ODPs and complete profile initial-program/menu
+behavior remain open.
 
 ## Filesystem implementation and signatures
 

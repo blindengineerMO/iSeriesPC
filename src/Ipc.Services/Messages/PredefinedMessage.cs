@@ -9,15 +9,15 @@ namespace Ipc.Services.Messages;
 
 /// <summary>The definition and replacement bytes at send time, independent of later file changes.</summary>
 public sealed record PredefinedMessage(string Library, string File, string RequestedLibrary, DateTimeOffset FileCreated,
-    MessageDescription Description, ProgramBuffer Replacement)
+    MessageDescription Description, ProgramBuffer Replacement, bool JobTemporary = false)
 {
     private sealed record Payload(int Version, string Library, string File, string RequestedLibrary, DateTimeOffset FileCreated,
-        MessageDescription Description, string Data, int Ccsid);
+        MessageDescription Description, string Data, int Ccsid, bool JobTemporary = false);
     private static readonly JsonSerializerOptions Json = new() { MaxDepth = 16, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
     public string Serialize()
     {
         Validate();
-        var text = JsonSerializer.Serialize(new Payload(2, Library, File, RequestedLibrary, FileCreated, Description, Replacement.ToBase64(), Replacement.Ccsid), Json);
+        var text = JsonSerializer.Serialize(new Payload(3, Library, File, RequestedLibrary, FileCreated, Description, Replacement.ToBase64(), Replacement.Ccsid, JobTemporary), Json);
         if (Encoding.UTF8.GetByteCount(text) > 32767) throw Invalid();
         return text;
     }
@@ -36,10 +36,11 @@ public sealed record PredefinedMessage(string Library, string File, string Reque
                 else if (reader.TokenType == JsonTokenType.PropertyName && !properties.Peek().Add(reader.GetString()!)) throw Invalid();
             }
             var stored = JsonSerializer.Deserialize<Payload>(text, Json);
-            if (stored is null || stored.Version is not (1 or 2) || stored.Description is null || stored.Data is null || stored.Data.Length > 684 ||
+            if (stored is null || stored.Version is not (1 or 2 or 3) || stored.Description is null || stored.Data is null || stored.Data.Length > 684 ||
+                stored.Version < 3 && stored.JobTemporary ||
                 stored.Version == 1 && stored.Description.ReplyRules is not null) throw Invalid();
             var result = new PredefinedMessage(stored.Library, stored.File, stored.RequestedLibrary, stored.FileCreated,
-                stored.Description, new(Convert.FromBase64String(stored.Data), stored.Ccsid));
+                stored.Description, new(Convert.FromBase64String(stored.Data), stored.Ccsid), stored.JobTemporary);
             result.Validate(); return result with { Description = MessageDescriptionStore.Freeze(result.Description) };
         }
         catch (Exception error) when (error is JsonException or FormatException or ArgumentException) { throw Invalid(); }
@@ -47,6 +48,7 @@ public sealed record PredefinedMessage(string Library, string File, string Reque
     private void Validate()
     {
         if (!ObjectName.IsValid(Library) || !ObjectName.IsValid(File) || Library != Library.ToUpperInvariant() || File != File.ToUpperInvariant() ||
+            JobTemporary && Library != LibraryNames.QTemp && (Library.Length != 10 || !Library.StartsWith("@T", StringComparison.Ordinal) || Library.Skip(2).Any(c => !char.IsAsciiHexDigit(c))) ||
             RequestedLibrary is null || RequestedLibrary is not ("*LIBL" or "*CURLIB") && !ObjectName.IsValid(RequestedLibrary) ||
             Description is null || Replacement is null || Replacement.Length > 512) throw Invalid();
         MessageDescriptionFormat.Validate(Description, legacyText: true);

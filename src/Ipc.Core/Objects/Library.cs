@@ -19,6 +19,7 @@ public static class LibraryNames
     public const string QTcp = "QTCP";
     public const string QUsrTool = "QUSRTOOL";
     public const string QShell = "QSHELL";
+    public const string QRplObj = "QRPLOBJ";
 
     public static readonly IReadOnlyList<SystemLibraryDefinition> SystemDefaults = new[]
     {
@@ -35,6 +36,7 @@ public static class LibraryNames
         L(QCl, "*PROD", "CL command source"),
         L(QUsrTool, "*PROD", "User tools"),
         L(QShell, "*PROD", "PASE shell"),
+        L(QRplObj, "*SYS", "Replaced objects"),
     };
 
     private static SystemLibraryDefinition L(string name, string type, string description) =>

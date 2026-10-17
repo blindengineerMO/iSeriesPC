@@ -22,7 +22,22 @@ public sealed partial class CommandService
         {
             if (program.Name != "QCMDEXC")
             {
-                new Ipc.Api.DataQueueApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid, _cancellationToken).Invoke(program.Name, parameters);
+                if (program.Name.StartsWith("QC3", StringComparison.Ordinal))
+                    new Ipc.Api.CryptoApi(_system.Connections, _job?.Ccsid ?? _system.Config.Ccsid, _job?.Key, _cancellationToken).Invoke(program.Name, parameters);
+                else if (program.Name == "QWCCVTDT")
+                    new Ipc.Api.DateTimeApi(_system.Connections, _job?.Ccsid ?? _system.Config.Ccsid, _cancellationToken).Convert(parameters);
+                else if (program.Name is "QUSRJOBI" or "QUSLJOB")
+                    new Ipc.Api.JobApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid, _job?.Key, _cancellationToken).Invoke(program.Name, parameters);
+                else if (program.Name == "QWCRSVAL")
+                    new Ipc.Api.SystemValueApi(_system.Connections, _job?.Ccsid ?? _system.Config.Ccsid, _cancellationToken).Retrieve(parameters);
+                else if (program.Name == "QWCRDTAA")
+                    new Ipc.Api.DataAreaApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid, _job?.Key, _cancellationToken).Retrieve(parameters);
+                else if (program.Name.StartsWith("QMH", StringComparison.Ordinal))
+                    new Ipc.Api.MessageApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid,
+                        _job is null ? null : _system.JobRuntime.Environment(_job.Key), _job?.Key, _cancellationToken).Invoke(program.Name, parameters);
+                else if (program.Name.StartsWith("QUS", StringComparison.Ordinal))
+                    new Ipc.Api.UserSpaceApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid, _cancellationToken).Invoke(program.Name, parameters);
+                else new Ipc.Api.DataQueueApi(_system.Connections, SearchLibraries, _job?.Ccsid ?? _system.Config.Ccsid, _cancellationToken).Invoke(program.Name, parameters);
                 return CommandResult.Ok();
             }
             if (parameters.Count is < 2 or > 3) throw InvalidApi("QCMDEXC requires two or three parameters.");

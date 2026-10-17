@@ -9,6 +9,12 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
 {
     public void AddDependency(QualifiedName source, string sourceType, QualifiedName target, string targetType)
     {
+        var temporary = new Ipc.Services.Work.JobTemporaryLibrary(factory);
+        source = temporary.Resolve(source, sourceType); target = temporary.Resolve(target, targetType);
+        var targetContainer = targetType == ObjectType.Library ? target.Name.Value : target.Library;
+        var sourceContainer = sourceType == ObjectType.Library ? source.Name.Value : source.Library;
+        if (temporary.IsTemporary(targetContainer) && sourceContainer != targetContainer)
+            throw new CpfException("IPC0201", "A permanent object cannot depend on a job-private QTEMP object.");
         var authorization = new Ipc.Services.Security.ServiceAuthorization(factory);
         authorization.RequireObject(source.Library, source.Name.Value, sourceType, AuthorityBit.ObjectManagement);
         authorization.RequireObject(target.Library, target.Name.Value, targetType, AuthorityBit.ObjectReference);
@@ -26,6 +32,9 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
 
     public void Delete(QualifiedName source, string type)
     {
+        var temporary = new Ipc.Services.Work.JobTemporaryLibrary(factory);
+        source = temporary.Resolve(source, type);
+        if (type == ObjectType.Library) temporary.RequirePermanentLibrary(source.Name.Value);
         new ObjectDescriptor { Key = source, ObjectType = type }.ValidateIdentity();
         new Ipc.Services.Security.ServiceAuthorization(factory).RequireObject(source.Library, source.Name.Value, type, AuthorityBit.ObjectExist);
         new Ipc.Services.Work.JobLockStore(factory).RequireNoPersistentAllocation(new(source.Library, source.Name.Value, type));
@@ -36,7 +45,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         transaction.Commit();
     }
 
-    private static void DeleteCore(QualifiedName source, string type, SqliteConnection connection, SqliteTransaction transaction)
+    internal static void DeleteCore(QualifiedName source, string type, SqliteConnection connection, SqliteTransaction transaction)
     {
         var operation = new Operation(connection, transaction, source, source, type);
         if (operation.Number("SELECT count(*) FROM sys_objects WHERE lib=$lib AND name=$name AND type=$type") == 0) return;
@@ -90,6 +99,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
 
     public void RemoveFileMember(QualifiedName file, string member)
     {
+        file = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(file, ObjectType.File);
         new Ipc.Services.Security.ServiceAuthorization(factory).RequireObject(file.Library, file.Name.Value, ObjectType.File, AuthorityBit.ObjectManagement);
         if (!ObjectName.IsValid(member)) throw new ArgumentException("Invalid member name.", nameof(member));
         using var connection = factory.Open();
@@ -124,6 +134,9 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
 
     public void Relocate(QualifiedName source, string type, QualifiedName target, bool copy = false, string? newOwner = null)
     {
+        var temporary = new Ipc.Services.Work.JobTemporaryLibrary(factory);
+        source = temporary.Resolve(source, type); target = temporary.Resolve(target, type);
+        if (type == ObjectType.Library) { temporary.RequirePermanentLibrary(source.Name.Value); temporary.RequirePermanentLibrary(target.Name.Value); }
         new ObjectDescriptor { Key = source, ObjectType = type }.ValidateIdentity();
         new ObjectDescriptor { Key = target, ObjectType = type }.ValidateIdentity();
         var authorization = new Ipc.Services.Security.ServiceAuthorization(factory);
@@ -173,8 +186,8 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         transaction.Commit();
     }
 
-    private static void RelocateOne(SqliteConnection connection, SqliteTransaction transaction,
-        QualifiedName source, string type, QualifiedName target, bool copy, string? newOwner = null)
+    internal static void RelocateOne(SqliteConnection connection, SqliteTransaction transaction,
+        QualifiedName source, string type, QualifiedName target, bool copy, string? newOwner = null, bool allowRestrictedUserSpaceArchive = false)
     {
         var op = new Operation(connection, transaction, source, target, type, newOwner);
         if (op.Number("SELECT count(*) FROM sys_objects WHERE lib=$lib AND name=$name AND type=$type") != 1)
@@ -183,6 +196,21 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
             throw new CpfException("CPF9810", "Target library not found.");
         if (op.Number("SELECT count(*) FROM sys_objects WHERE lib=$targetLib AND name=$targetName AND type=$type") != 0)
             throw new CpfException("IPC0202", "Target object already exists.");
+        if (type == ObjectType.UserSpace)
+        {
+            var attributes = Ipc.Services.Work.UserSpaceStore.ReadAttributes(connection, transaction, source);
+            // QUSCRTUS temporarily archives a replacement before preserving its authorities
+            // and deleting the archive when QRPLOBJ disallows user-domain objects.
+            var replacementArchive = allowRestrictedUserSpaceArchive && !copy && target.Library == "QRPLOBJ";
+            if (attributes.Domain == "*USER" && (copy || source.Library != target.Library) && !replacementArchive &&
+                !Ipc.Services.Work.UserSpaceStore.UserDomainAllowed(connection, transaction, target.Library))
+                throw new CpfException("CPF3C49", "The target library does not allow user-domain objects.");
+        }
+        var targetTemporary = Ipc.Services.Work.JobTemporaryLibrary.LogicalLibrary(connection, transaction, target.Library) == LibraryNames.QTemp;
+        if (targetTemporary && !copy && op.Number("SELECT count(*) FROM sys_object_dependencies WHERE target_lib=$lib AND target_name=$name AND target_type=$type AND source_lib<>$targetLib AND NOT(source_lib=$lib AND source_name=$name AND source_type=$type)") != 0)
+            throw new CpfException("IPC0201", "Relocation would leave a permanent dependent on QTEMP.");
+        if (!targetTemporary && op.Number("SELECT count(*) FROM sys_object_dependencies d JOIN sys_job_temp_libraries t ON t.library=d.target_lib WHERE d.source_lib=$lib AND d.source_name=$name AND d.source_type=$type AND NOT(d.target_lib=$lib AND d.target_name=$name AND d.target_type=$type)") != 0)
+            throw new CpfException("IPC0201", "Relocation would leave a permanent dependency on QTEMP.");
 
         if (copy && type == ObjectType.Command && op.Number("SELECT count(*) FROM sys_objects WHERE lib=$lib AND name=$name AND type='*CMD' AND attribute='BUILTIN'") != 0)
             throw new CpfException("IPC0136", "Built-in adapters cannot be duplicated; create a user command with CRTCMD.");
@@ -203,6 +231,11 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 """);
             if (type == ObjectType.DataQueue)
                 op.Run("UPDATE sys_objects SET source=json_set(source,'$.Definition.Identity',lower(hex(randomblob(16)))) WHERE lib=$targetLib AND name=$targetName AND type='*DTAQ'");
+            if (type == ObjectType.UserSpace)
+            {
+                op.Run("UPDATE sys_objects SET source=lower(hex(randomblob(16))) WHERE lib=$targetLib AND name=$targetName AND type='*USRSPC'");
+                op.Run("INSERT INTO sys_user_spaces SELECT $targetLib,$targetName,space_type,(SELECT source FROM sys_objects WHERE lib=$targetLib AND name=$targetName AND type='*USRSPC'),initial_byte,auto_extend,transfer_size,aligned,domain,data FROM sys_user_spaces WHERE space_lib=$lib AND space_name=$name");
+            }
             op.Run("INSERT INTO sys_file_defs SELECT $targetLib,$targetName,type,json_set(def,'$.name',$targetName) FROM sys_file_defs WHERE lib=$lib AND name=$name AND type=$type");
             op.Run("INSERT INTO sys_file_members SELECT $targetLib,$targetName,type,mbr,$now FROM sys_file_members WHERE lib=$lib AND name=$name AND type=$type");
             op.Run("INSERT INTO sys_authorities SELECT $targetLib,$targetName,type,holder,is_authl,bits FROM sys_authorities WHERE lib=$lib AND name=$name AND type=$type");

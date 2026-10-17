@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ipc.Core.Messages;
 using Ipc.Core.Objects;
+using Ipc.Services.Work;
 using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Sqlite;
@@ -41,6 +42,7 @@ public sealed class SqliteObjectStore : IObjectStore
 
     public void Create(ObjectDescriptor descriptor, SqliteConnection connection, SqliteTransaction? transaction)
     {
+        descriptor = Resolved(descriptor);
         if (descriptor.ObjectType == ObjectType.Command && transaction is null)
         {
             using var commandTransaction = connection.BeginTransaction(deferred: false);
@@ -57,7 +59,7 @@ public sealed class SqliteObjectStore : IObjectStore
     }
 
     // Caller must authorize the complete batch before its first mutation, in this transaction.
-    internal void CreateAuthorized(ObjectDescriptor descriptor, SqliteConnection connection, SqliteTransaction transaction) => Insert(descriptor, connection, transaction);
+    internal void CreateAuthorized(ObjectDescriptor descriptor, SqliteConnection connection, SqliteTransaction transaction) => Insert(Resolved(descriptor), connection, transaction);
     private static void Insert(ObjectDescriptor descriptor, SqliteConnection connection, SqliteTransaction? transaction)
     {
         descriptor.ValidateIdentity();
@@ -79,6 +81,7 @@ public sealed class SqliteObjectStore : IObjectStore
 
     public void Update(ObjectDescriptor descriptor)
     {
+        descriptor = Resolved(descriptor);
         descriptor.ValidateIdentity();
         if (descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute) Ipc.Services.Work.BuiltinProgramService.Validate(descriptor);
         var authorization = new Ipc.Services.Security.ServiceAuthorization(_factory);
@@ -141,11 +144,13 @@ public sealed class SqliteObjectStore : IObjectStore
     {
         var descriptor = GetForAuthorization(library, name, type);
         if (descriptor is not null) new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject(library, name, type, Authorities.UseBits);
-        return descriptor;
+        return descriptor is null ? null : Visible(descriptor);
     }
 
     internal ObjectDescriptor? GetForAuthorization(string library, string name, string type)
     {
+        var key = new JobTemporaryLibrary(_factory).Resolve(new(library, name), type);
+        library = key.Library; name = key.Name.Value;
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText =
@@ -173,6 +178,10 @@ public sealed class SqliteObjectStore : IObjectStore
 
     private IReadOnlyList<ObjectDescriptor> FindCore(string library, string? namePattern, string? type, string? owner, int maximum, bool payload)
     {
+        var temporary = new JobTemporaryLibrary(_factory);
+        library = temporary.ResolveLibrary(library);
+        if (library == "QSYS" && type == ObjectType.Library && namePattern == LibraryNames.QTemp)
+            namePattern = temporary.ResolveLibrary(LibraryNames.QTemp);
         new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject("QSYS", library, ObjectType.Library, AuthorityBit.ObjectOperate, checkLibrary: false);
         var sql = new System.Text.StringBuilder("SELECT " + (payload ? "*" : "lib,name,type,owner,created,changed,description,ccsid,attribute,NULL,public_authority,NULL,NULL") + " FROM sys_objects WHERE lib = $lib");
         var parameters = new Dictionary<string, object?> { ["$lib"] = library };
@@ -221,7 +230,7 @@ public sealed class SqliteObjectStore : IObjectStore
             try
             {
                 new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject(descriptor.Library, descriptor.Name, descriptor.ObjectType, Authorities.UseBits, checkLibrary: false);
-                list.Add(descriptor);
+                list.Add(Visible(descriptor));
                 if (list.Count == maximum) break;
             }
             catch (CpfException ex) when (ex.MessageId == "CPF9802") { }
@@ -244,12 +253,23 @@ public sealed class SqliteObjectStore : IObjectStore
             try
             {
                 new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject("QSYS", library, ObjectType.Library, AuthorityBit.ObjectOperate, checkLibrary: false);
-                list.Add(library);
+                list.Add(new JobTemporaryLibrary(_factory).Visible(new("QSYS", library), ObjectType.Library).Name.Value);
             }
             catch (CpfException ex) when (ex.MessageId == "CPF9802") { }
         }
 
         return list;
+    }
+
+    private ObjectDescriptor Resolved(ObjectDescriptor descriptor)
+    {
+        var key = new JobTemporaryLibrary(_factory).Resolve(descriptor.Key, descriptor.ObjectType);
+        return key == descriptor.Key ? descriptor : descriptor.Snapshot(key);
+    }
+    private ObjectDescriptor Visible(ObjectDescriptor descriptor)
+    {
+        var key = new JobTemporaryLibrary(_factory).Visible(descriptor.Key, descriptor.ObjectType);
+        return key == descriptor.Key ? descriptor : descriptor.Snapshot(key);
     }
 
     private static void BindDescriptor(SqliteCommand cmd, ObjectDescriptor d)

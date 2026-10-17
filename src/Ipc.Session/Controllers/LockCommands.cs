@@ -34,7 +34,7 @@ public sealed partial class CommandService
             var parts = CommandParser.Tokenize(tuple[1..^1]);
             if (parts.Count != 3) throw new CpfException("IPC0125", "Each OBJ tuple requires object, type and lock state.");
             var mode = parts[2].ToUpperInvariant() switch {
-                "*EXCL" => JobLockMode.Exclusive, "*SHRUPD" => JobLockMode.SharedUpdate,
+                "*EXCL" => JobLockMode.Exclusive, "*EXCLRD" => JobLockMode.ExclusiveRead, "*SHRUPD" => JobLockMode.SharedUpdate,
                 "*SHRRD" => JobLockMode.SharedRead, "*SHRNUP" => JobLockMode.SharedNoUpdate,
                 _ => throw new CpfException("IPC0125", "Unsupported lock state.") };
             return (Resource: ResolveLockResource(CommandParser.Unquote(parts[0]), parts[1]), Mode: mode);
@@ -71,5 +71,5 @@ public sealed partial class CommandService
         return new(library, name, type);
     }
     private static string LockModeName(JobLockMode mode) => mode switch {
-        JobLockMode.Exclusive => "*EXCL", JobLockMode.SharedUpdate => "*SHRUPD", JobLockMode.SharedRead => "*SHRRD", _ => "*SHRNUP" };
+        JobLockMode.Exclusive => "*EXCL", JobLockMode.ExclusiveRead => "*EXCLRD", JobLockMode.SharedUpdate => "*SHRUPD", JobLockMode.SharedRead => "*SHRRD", _ => "*SHRNUP" };
 }

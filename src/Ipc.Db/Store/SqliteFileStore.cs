@@ -4,6 +4,7 @@ using Ipc.Core.Objects;
 using Ipc.Db.Definitions;
 using Ipc.Db.Records;
 using Ipc.Services.Sqlite;
+using Ipc.Services.Work;
 using Microsoft.Data.Sqlite;
 
 namespace Ipc.Db.Store;
@@ -29,10 +30,11 @@ public sealed partial class SqliteFileStore
         (library + "." + name + "." + member).ToUpperInvariant();
 
     public bool FileExists(string library, string name) =>
-        _objects.Exists(library, name, FileType);
+        _objects.Exists(ResolveLibrary(library), name.ToUpperInvariant(), FileType);
 
     public FileDefinition? GetDefinition(string library, string name)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.ObjectOperate);
         using var connection = _factory.Open();
         return ReadDefinition(connection, null, library, name);
@@ -67,6 +69,7 @@ public sealed partial class SqliteFileStore
 
     public bool MemberExists(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.ObjectOperate);
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
@@ -79,6 +82,7 @@ public sealed partial class SqliteFileStore
 
     public string FirstMember(string library, string name)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.ObjectOperate);
         using var connection = _factory.Open(); using var command = connection.CreateCommand();
         command.CommandText = "SELECT mbr FROM sys_file_members WHERE lib=$lib AND name=$name AND type='*FILE' ORDER BY created,mbr LIMIT 1";
@@ -88,6 +92,7 @@ public sealed partial class SqliteFileStore
 
     public IReadOnlyList<string> ListMembers(string library, string name)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.ObjectOperate);
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
@@ -106,6 +111,7 @@ public sealed partial class SqliteFileStore
 
     public void AddMember(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.ObjectManagement | AuthorityBit.ObjectOperate);
         var libraryName = library.ToUpperInvariant();
         var fileName = name.ToUpperInvariant();
@@ -152,6 +158,7 @@ public sealed partial class SqliteFileStore
 
     public void ClearMember(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Delete);
         new Ipc.Services.Work.JobLockStore(_factory).RequireObjectMutation(library.ToUpperInvariant(), name.ToUpperInvariant(), FileType);
         EnsureMember(library, name, member);
@@ -169,6 +176,7 @@ public sealed partial class SqliteFileStore
 
     public void Insert(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Add);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
@@ -207,6 +215,7 @@ public sealed partial class SqliteFileStore
 
     private IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadAllCore(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
@@ -232,6 +241,7 @@ public sealed partial class SqliteFileStore
 
     private IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadKeyedCore(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
@@ -262,6 +272,7 @@ public sealed partial class SqliteFileStore
     private IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadKeyPrefixCore(
         string library, string name, string member, IReadOnlyDictionary<string, object?> prefix)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
@@ -314,6 +325,7 @@ public sealed partial class SqliteFileStore
 
     public void Update(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Update);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
@@ -375,6 +387,7 @@ public sealed partial class SqliteFileStore
 
     public void Delete(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> keyValues)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Delete);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
@@ -426,6 +439,7 @@ public sealed partial class SqliteFileStore
 
     public long RowCount(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         if (GetDefinition(library, name) is { Logical: not null } logical) return ReadLogical(library, name, member, logical, keyed: false).Count;
@@ -437,13 +451,14 @@ public sealed partial class SqliteFileStore
 
     private void Authorize(string library, string name, AuthorityBit permission)
     {
+        library = ResolveLibrary(library);
         new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject(library.ToUpperInvariant(), name.ToUpperInvariant(), FileType, permission | AuthorityBit.ObjectOperate);
         AuthorizeLogicalSource(library, name, permission);
     }
 
     private void CreateFileCore(string library, string name, string attribute, FileDefinition definition, string? source, string? description, string member = "*FILE")
     {
-        var libraryName = library.ToUpperInvariant();
+        var libraryName = ResolveLibrary(library);
         var fileName = name.ToUpperInvariant();
         member = member.ToUpperInvariant(); if (member == "*FILE") member = fileName;
         if (member != "*NONE" && !ObjectName.IsValid(member)) throw LogicalError("Invalid physical member name.");
@@ -483,6 +498,8 @@ public sealed partial class SqliteFileStore
         }
         transaction.Commit();
     }
+
+    private string ResolveLibrary(string library) => new JobTemporaryLibrary(_factory).ResolveLibrary(library.ToUpperInvariant());
 
     private static FileDefinition SourceFormat(string name, int sourceWidth)
     {

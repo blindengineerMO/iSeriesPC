@@ -49,6 +49,7 @@ public sealed partial class MessageQueueStore
     public int RemoveFrom(MessageQueueAddress queue, MessageClear clear = MessageClear.ByKey, uint key = 0,
         CancellationToken cancellationToken = default)
     {
+        queue = Resolve(queue);
         if (!Enum.IsDefined(clear) || (clear == MessageClear.ByKey ? key == 0 : key != 0))
             throw Invalid("Specify a nonzero message key only with CLEAR(*BYKEY).");
         if (clear == MessageClear.KeepUnanswered && queue.Named is null)
@@ -57,6 +58,7 @@ public sealed partial class MessageQueueStore
         cancellationToken.ThrowIfCancellationRequested(); Authorize(queue, required);
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         cancellationToken.ThrowIfCancellationRequested(); Authorize(queue, required);
+        RequireReceiverAvailable(connection, transaction, queue);
         var predicate = clear switch
         {
             MessageClear.ByKey => "AND key=$key", MessageClear.Old => "AND seen=1",

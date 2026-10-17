@@ -28,10 +28,47 @@ public sealed class JobLockTests : IDisposable
     public void Compatibility_is_enforced_for_other_jobs(JobLockMode left, JobLockMode right)
     {
         using var held = _locks.Acquire(_a.Key, _resource, left, TimeSpan.Zero);
-        var expected = left != JobLockMode.Exclusive && right != JobLockMode.Exclusive &&
-            (left == JobLockMode.SharedRead || right == JobLockMode.SharedRead || left == right);
+        // Independent IBM object-lock matrix, columns in persisted enum order:
+        // EXCL, SHRUPD, SHRRD, SHRNUP, EXCLRD.
+        bool[][] compatible = [
+            [false, false, false, false, false],
+            [false, true, true, false, false],
+            [false, true, true, true, true],
+            [false, false, true, true, false],
+            [false, false, true, false, false]
+        ];
+        var expected = compatible[(int)left][(int)right];
+        Assert.Equal(expected, JobLockStore.Compatible(left, right));
         if (expected) { using var second = _locks.Acquire(_b.Key, _resource, right, TimeSpan.Zero); }
         else Assert.Contains("CPF1002", Assert.Throws<CpfException>(() => _locks.Acquire(_b.Key, _resource, right, TimeSpan.Zero)).Message);
+    }
+    [Fact]
+    public void Exclusive_read_can_be_allocated_inspected_and_released_from_commands()
+    {
+        using var execution = new ExecutionSession(_system, _a, CancellationToken.None);
+        var result = execution.Execute("ALCOBJ OBJ((QGPL/DATA *FILE *EXCLRD)) WAIT(0)");
+        Assert.False(result.IsError, result.Message);
+        result = execution.Execute("WRKOBJLCK OBJ(QGPL/DATA) OBJTYPE(*FILE)");
+        Assert.False(result.IsError, result.Message); Assert.Contains(result.Listing!, row => row.Contains("HELD *EXCLRD"));
+        using (var read = _locks.Acquire(_b.Key, _resource, JobLockMode.SharedRead, TimeSpan.Zero)) { }
+        Assert.Throws<CpfException>(() => _locks.Acquire(_b.Key, _resource, JobLockMode.SharedUpdate, TimeSpan.Zero));
+        result = execution.Execute("DLCOBJ OBJ((QGPL/DATA *FILE *EXCLRD))");
+        Assert.False(result.IsError, result.Message); Assert.Empty(_locks.Inspect(_resource));
+    }
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void Exclusive_read_allows_record_readers_and_blocks_record_writers_in_both_orders(bool objectFirst, bool read)
+    {
+        new SqliteFileStore(_system.Connections, _system.Objects).Insert("QGPL", "DATA", "DATA", "DATA", new Dictionary<string, object?> { ["SRCDTA"] = "row" });
+        var record = _resource with { Member = "DATA", RowNumber = 1 };
+        var first = objectFirst ? _resource : record; var second = objectFirst ? record : _resource;
+        var recordMode = read ? JobLockMode.SharedRead : JobLockMode.Exclusive;
+        using var held = _locks.Acquire(_a.Key, first, objectFirst ? JobLockMode.ExclusiveRead : recordMode, TimeSpan.Zero);
+        if (read) { using var acquired = _locks.Acquire(_b.Key, second, objectFirst ? recordMode : JobLockMode.ExclusiveRead, TimeSpan.Zero); }
+        else Assert.Throws<CpfException>(() => _locks.Acquire(_b.Key, second, objectFirst ? recordMode : JobLockMode.ExclusiveRead, TimeSpan.Zero));
     }
     [Fact]
     public async Task Waiters_are_visible_and_cancelled_and_timed_out_requests_are_removed()

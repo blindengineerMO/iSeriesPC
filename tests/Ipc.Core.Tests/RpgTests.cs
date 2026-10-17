@@ -123,12 +123,14 @@ WriteAt(sb, 50, keywords, 30);
         Assert.False(ctx.Indicators[2]);
     }
 
-    [Fact]
-    public void Fixed_form_if_else_moves_value()
+    [Theory]
+    [InlineData(10, "YES")]
+    [InlineData(0, "NO")]
+    public void Fixed_form_if_else_moves_value(int initial, string expected)
     {
         var ctx = Run(new[]
         {
-            DLine("A", "S", "5 0", "INZ(10)"),
+            DLine("A", "S", "5 0", "INZ(" + initial + ")"),
             DLine("MSG", "S", "3"),
             CSpec("", "A", "IF", "GT 5", ""),
             CSpec("", "'YES'", "MOVE", "", "MSG"),
@@ -137,7 +139,7 @@ WriteAt(sb, 50, keywords, 30);
             CSpec("", "", "ENDIF", "", ""),
         });
 
-        Assert.Equal("YES", RpgValues.ToText(Read(ctx, "MSG")).Trim());
+        Assert.Equal(expected, RpgValues.ToText(Read(ctx, "MSG")).Trim());
     }
 
     [Fact]

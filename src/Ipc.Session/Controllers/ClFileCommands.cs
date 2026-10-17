@@ -19,7 +19,9 @@ public sealed partial class CommandService
     private ClDatabaseFile DescribeClDatabaseFile(ClFileRequest request)
     {
         var (library, name) = ResolveWorkObject(request.File, ObjectType.File);
-        var definition = _files.GetDefinition(library, name) ?? throw new CpfException("IPC0006", "DCLF currently requires a database file.");
+        if (_system.Objects.GetRequired(library, name, ObjectType.File).Attribute == Ipc.Dsp.DisplayFileStore.Attribute)
+            return DescribeClDisplayFile(request, library, name, new Ipc.Dsp.DisplayFileStore(_system.Connections).Load(library, name));
+        var definition = _files.GetDefinition(library, name) ?? throw new CpfException("IPC0006", "DCLF requires a database or display file.");
         return DescribeClDatabaseFile(request, library, name, definition);
     }
     private static ClDatabaseFile DescribeClDatabaseFile(ClFileRequest request, string library, string name, FileDefinition definition)

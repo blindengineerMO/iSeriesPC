@@ -4,6 +4,7 @@ using Ipc.Core.Objects;
 using Ipc.Core.Work;
 using Ipc.Services.Messages;
 using Ipc.Services.Sqlite;
+using Ipc.Services.Work;
 
 namespace Ipc.Api;
 
@@ -52,9 +53,10 @@ public sealed class DataQueueApi(SqliteConnectionFactory factory, Func<string, I
         {
             foreach (var candidate in library is "*LIBL" or "*CURLIB" ? searchLibraries(library) : [library])
             {
+                var resolved = new JobTemporaryLibrary(factory).ResolveLibrary(candidate);
                 using var command = connection.CreateCommand();
                 command.CommandText = "SELECT 1 FROM sys_objects WHERE lib=$lib AND name=$name AND type='*DTAQ'";
-                command.Parameters.AddWithValue("$lib", candidate); command.Parameters.AddWithValue("$name", name);
+                command.Parameters.AddWithValue("$lib", resolved); command.Parameters.AddWithValue("$name", name);
                 if (command.ExecuteScalar() is not null) return new(candidate, name);
             }
             throw new CpfException("CPF9801", "Data queue not found.");

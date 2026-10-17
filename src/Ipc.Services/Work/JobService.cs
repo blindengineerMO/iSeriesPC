@@ -84,6 +84,7 @@ public sealed class JobService
             admission.Parameters.AddWithValue("$subsystem", job.Subsystem);
             if (Convert.ToInt64(admission.ExecuteScalar()) != 1) throw new CpfException("IPC0123", "Subsystem is stopped or has no job capacity.");
             Insert(job, connection, transaction);
+            JobTemporaryLibrary.Initialize(connection, transaction, job);
             JobDataAreaStore.Initialize(connection, transaction, job.Key.Number, groupParent, null, groupChild: groupParent is not null);
             WriteLogCore(job.Key, "INFO", "IPCS0001", 0, type + " job started.", connection, transaction);
             transaction.Commit();
@@ -125,7 +126,7 @@ public sealed class JobService
         ValidateLibraries(currentLibrary, libraryList, ccsid);
         submittingJob ??= OperationIdentity.Current?.Job;
         if (submittingJob is { } parent) new JobDataAreaStore(_factory).RequireOwner(parent);
-        if (initializationParameters?.Length > 2000) throw new CpfException("IPC0126", "Initialization data exceeds 2000 bytes.");
+        if (initializationParameters?.Length > JobDataAreaStore.InitializationLength) throw new CpfException("IPC0126", "Initialization data exceeds 2000 bytes.");
         initializationParameters = initializationParameters?.ToArray();
         var actor = OperationIdentity.Current?.Principal;
         var submitter = actor ?? submitterUser ?? submitterName ?? Environment.UserName;
@@ -165,6 +166,7 @@ public sealed class JobService
         using (var transaction = connection.BeginTransaction(deferred: false))
         {
             Insert(job, connection, transaction);
+            JobTemporaryLibrary.Initialize(connection, transaction, job);
             JobDataAreaStore.Initialize(connection, transaction, job.Key.Number, submittingJob, initializationParameters, groupChild: false);
             if (command is not null)
             {
@@ -189,6 +191,8 @@ public sealed class JobService
             throw new CpfException("IPC0126", "Invalid library name.");
         foreach (var library in libraries.Concat(currentLibrary == "*CRTDFT" ? Array.Empty<string>() : new[] { currentLibrary }).Distinct(StringComparer.Ordinal))
         {
+            if (library == LibraryNames.QTemp) continue; // The new job receives its own library, independently of its submitter.
+            new JobTemporaryLibrary(_factory).RequirePermanentLibrary(library);
             _ = new SqliteObjectStore(_factory).GetRequired("QSYS", library, ObjectType.Library);
             new ServiceAuthorization(_factory).RequireObject("QSYS", library, ObjectType.Library, Authorities.UseBits);
         }
@@ -271,6 +275,7 @@ public sealed class JobService
         command.ExecuteNonQuery();
         if (state == "Queued")
         {
+            JobTemporaryLibrary.Cleanup(connection, transaction, key.Number);
             command.CommandText = """
                 UPDATE sys_jobs SET status='Completed',execution_state='Cancelled',completion='Abnormal',completion_msg=$reason,completed_at=$at WHERE number=$number;
                 UPDATE sys_job_execution SET finished_at=$at WHERE job_number=$number;
@@ -311,6 +316,7 @@ public sealed class JobService
             }
         }
         var text = message ?? (state == JobExecutionState.Succeeded ? "Completed normally." : $"Job {state.ToString().ToLowerInvariant()}.");
+        JobTemporaryLibrary.Cleanup(connection, transaction, key.Number);
         command.CommandText = """
             UPDATE sys_jobs SET status='Completed',completed_at=$at,completion=$completion,completion_msg=$text,execution_state=$state
               WHERE number=$number AND name=$name AND user=$user;

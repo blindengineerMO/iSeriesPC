@@ -11,12 +11,16 @@ public enum JobDataArea { Local, Group, Initialization }
 
 public sealed class JobDataAreaStore(SqliteConnectionFactory factory)
 {
+    public const int LocalLength = 1024;
+    public const int GroupLength = 512;
+    public const int InitializationLength = 2000;
+
     public byte[] Read(JobKey job, JobDataArea area)
     {
         RequireOwner(job);
         using var connection = factory.Open(); using var command = connection.CreateCommand();
         Bind(command, job); command.CommandText = ReadSql(area);
-        return command.ExecuteScalar() is byte[] data ? data : throw new CpfException("CPF1015", "Job data area is unavailable.");
+        return command.ExecuteScalar() is byte[] data ? data : throw Unavailable(area);
     }
     public void Write(JobKey job, JobDataArea area, int offset, ReadOnlySpan<byte> value)
     {
@@ -24,7 +28,7 @@ public sealed class JobDataAreaStore(SqliteConnectionFactory factory)
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         using var command = connection.CreateCommand(); command.Transaction = transaction; Bind(command, job);
         command.CommandText = ReadSql(area);
-        var data = command.ExecuteScalar() as byte[] ?? throw new CpfException("CPF1015", "Job data area is unavailable.");
+        var data = command.ExecuteScalar() as byte[] ?? throw Unavailable(area);
         if (offset < 0 || offset > data.Length || value.Length > data.Length - offset) throw new CpfException("IPC0126", "Data-area range is out of bounds.");
         value.CopyTo(data.AsSpan(offset)); command.Parameters.AddWithValue("$data", data);
         command.CommandText = area == JobDataArea.Group
@@ -67,7 +71,7 @@ public sealed class JobDataAreaStore(SqliteConnectionFactory factory)
                 {
                     group = Guid.NewGuid().ToString("N"); command.Parameters.AddWithValue("$group", group);
                     command.CommandText = "INSERT INTO sys_job_groups(id,owner,gda) VALUES($group,$user,$blank); UPDATE sys_job_environment SET group_id=$group WHERE job_number=$job";
-                    command.Parameters.AddWithValue("$blank", Enumerable.Repeat(Blank(connection, transaction, source.Number), 512).ToArray()); command.ExecuteNonQuery();
+                    command.Parameters.AddWithValue("$blank", Enumerable.Repeat(Blank(connection, transaction, source.Number), GroupLength).ToArray()); command.ExecuteNonQuery();
                 }
                 else command.Parameters.AddWithValue("$group", group);
                 command.CommandText = "UPDATE sys_job_environment SET group_id=$group WHERE job_number=$target"; command.ExecuteNonQuery();
@@ -85,7 +89,7 @@ public sealed class JobDataAreaStore(SqliteConnectionFactory factory)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT pip FROM sys_job_environment WHERE job_number=$job"; command.Parameters.AddWithValue("$job", job);
-        var pip = command.ExecuteScalar() as byte[]; var pda = Enumerable.Repeat(Blank(connection, transaction, job), 2000).ToArray();
+        var pip = command.ExecuteScalar() as byte[]; var pda = Enumerable.Repeat(Blank(connection, transaction, job), InitializationLength).ToArray();
         pip?.CopyTo(pda, 0); command.Parameters.AddWithValue("$data", pda);
         command.CommandText = "UPDATE sys_job_environment SET pda=$data,pip=NULL WHERE job_number=$job"; command.ExecuteNonQuery();
     }
@@ -100,6 +104,10 @@ public sealed class JobDataAreaStore(SqliteConnectionFactory factory)
         JobDataArea.Group => "SELECT gda FROM sys_job_groups WHERE id=(SELECT group_id FROM sys_job_environment WHERE job_number=$job)",
         JobDataArea.Initialization => "SELECT pda FROM sys_job_environment WHERE job_number=$job",
         _ => throw new CpfException("IPC0126", "Unknown job data area.") };
+    private static CpfException Unavailable(JobDataArea area) => area switch {
+        JobDataArea.Group => new("CPF1046", "DTAARA(*GDA) is not valid because this job is not a group job."),
+        JobDataArea.Initialization => new("CPF1072", "DTAARA(*PDA) is unavailable before a supported routing step."),
+        _ => new("CPF1015", "Job data area is unavailable.") };
     private static void Bind(SqliteCommand command, JobKey job)
     { command.Parameters.AddWithValue("$job", job.Number); command.Parameters.AddWithValue("$name", job.Name); command.Parameters.AddWithValue("$user", job.User); }
 }

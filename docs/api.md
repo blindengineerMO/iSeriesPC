@@ -1,14 +1,215 @@
 # System API checkpoint
 
-Executable catalog APIs are QSYS/QCMDEXC, QSNDDTAQ, QRCVDTAQ and QCLRDTAQ.
-The data-queue marshalling lives in `Ipc.Api`; QCMDEXC still shares the session
-command dispatcher. The broader C14 registry, message/user-space/work/security
-APIs and format contracts remain open.
+Executable catalog APIs are QSYS/QCMDEXC, QSNDDTAQ, QRCVDTAQ, QCLRDTAQ,
+QUSCRTUS, QUSRUSAT, QUSCHGUS, QUSRTVUS, QUSCUSAT, QUSDLTUS, QWCRDTAA,
+QMHSNDPM, QMHRCVPM, QMHSNDM, QMHRCVM, QMHSNDRM, QMHRTVM, QWCRSVAL, QUSRJOBI, QUSLJOB, QWCCVTDT,
+QC3CALHA, QC3CALHM, QC3ENCDT, QC3DECDT, QC3CRTKX and QC3DESKX.
+The data-object marshalling lives in `Ipc.Api`; QCMDEXC shares the session
+command dispatcher. See [data-area retrieval](data-areas.md#qwcrdtaa-retrieval-api)
+and [user spaces](user-spaces.md) for binary layouts, commands,
+restart behavior and remaining compatibility gaps. The six message adapters and
+runtime registry are described below. Broader work/security APIs and format contracts remain open.
 Each adapter is a versioned `*PGM` object with attribute IPCAPI. Normal library lookup,
 object use authority, signature validation and program scope apply. Startup seeds
 each only when absent; it never overwrites an existing or signed program. Relocated
 or changed adapter manifests fail validation. Programs with the same API names
 in other libraries follow ordinary program lookup.
+
+## Runtime API discovery
+
+`WRKAPILS` lists all 27 implemented runtime adapters. `API(QMH*)` filters by a
+trailing-star prefix; an exact name selects one adapter. Option 5 displays its
+parameter counts, supported formats and limits. The registry checks the current
+QSYS program's manifest, use authority and executable trust without invoking it.
+Missing programs show `Not installed`; denied, untrusted or replaced slots show
+`Blocked` with the failure ID. Listing never recreates a missing program. The
+release compatibility inventory also includes planned APIs, which are not listed
+as callable by this command. This is an iSeriesPC discovery command.
+
+## Native job retrieval and lists
+
+[QUSRJOBI and QUSLJOB](job-apis.md) retrieve JOBI0100/0700 and generate
+JOBL0100/0200 in existing user spaces. Lists preserve the caller area and unused
+tail, grow implicitly to the native maximum, and return authenticated continuation
+handles. Seventeen keyed fields use actual job admission, identity, dates and CPU
+accounting. Protected library lists and keyed foreign-job rows enforce current
+job authority. Raw 16-byte IDs are shared within a host epoch; exclusive server
+startup invalidates old IDs and cursors. See the linked layouts, CL/RPG examples,
+error contracts and remaining job-format gaps.
+
+## Date and time conversion
+
+[QWCCVTDT](date-time-apis.md) converts short/long calendar and Julian layouts,
+raw standard timestamps and DOS output. Five-, ten- and eleven-argument calls
+support millisecond/microsecond precision, live QDATFMT selection, a captured
+current instant and UTC/host-zone conversion, including DST gaps/repeated times.
+Same-format and character conversion preserve native byte-copy semantics.
+Job date/time-zone attributes and named time-zone description metadata remain
+open; the linked contract identifies supported information cases and limits.
+
+## Software cryptography
+
+[The six QC3 adapters](cryptography-apis.md) implement hash/HMAC, AES encryption
+and decryption, and opaque job-owned key contexts. Five hash algorithms and AES
+128/192/256 with ECB/CBC/CTR use checked binary descriptors, native padding
+controls and prepared output/length/error receivers. Encrypted contexts survive
+calls, cannot be used by foreign jobs, participate in wrapping-key rotation and
+release with job completion/recovery. See the linked byte layouts, key limits,
+CL/RPG examples, known-answer evidence and remaining crypto compatibility work.
+
+## System-value retrieval
+
+[QWCRSVAL](system-values.md) retrieves 27 backed native system values from a
+single committed catalog snapshot with one captured local clock instant. Its five
+parameters select writable storage, BIN(4) receiver length/count, CHAR(10) names
+and standard error storage. The receiver contains a returned count, offset
+directory and complete aligned name/type/status/length/data tables. QSECURITY is
+CHAR(2); QPWDLVL and QCCSID are BIN(4). Entries that do not fit are omitted whole,
+and untouched tails remain unchanged. Direct RPG uses raw CHAR and signed INT.
+WRKSYSVAL and native reads now observe other hosts' committed changes. See the
+linked contract for every name/layout, native library-list bounds, errors and
+remaining protected/lockable system values.
+
+## Native message program APIs
+
+These six adapters use the shared durable [message stores](message-queues.md),
+including real call-frame queues, sender copies, stored reply rules, saved message
+descriptions and private QTEMP objects. They do not implement separate queues.
+Names and controls use job-CCSID CHAR storage, qualified names are object CHAR(10)
+followed by library CHAR(10), integers are signed big-endian BIN(4), and message
+keys are opaque unsigned four-byte values. Longer fixed input storage is allowed;
+only the documented prefix is read. Parameter groups must be complete.
+
+| API | Required parameters, in order | Total counts |
+|---|---|---|
+| QMHSNDPM | message ID(7), message file(20), data, data length, type(10), entry(10), stack counter, writable key(4), error | 9, 12, 14 |
+| QMHRCVPM | writable information, length, format(8), entry(10), counter, type(10), key(4), wait seconds, action(10), error | 10, 12, 14, 15 |
+| QMHSNDM | message ID(7), message file(20), data, length, type(10), queue array(20 each), queue count, reply queue(20), writable copy key(4), error | 10, 11 |
+| QMHRCVM | writable information, length, format(8), queue(20), type(10), key(4), wait seconds, action(10), error | 9, 10, 11 |
+| QMHSNDRM | inquiry key(4), queue(20), reply, length, remove(10), error | 6, 7, 8 |
+| QMHRTVM | writable information, length, format(8), message ID(7), message file(20), replacement, length, substitute(10), formatting controls(10), error | 10, 13 |
+
+QMHSNDPM sends INFO, COMP and DIAG to OPM `*`, `*EXT` or a named call frame with
+a nonnegative counter. Runtime IPCAPI implementation frames are excluded from
+selection and sender metadata. Its optional groups are entry length, two CHAR(10)
+qualifiers (both `*NONE`), display wait (zero), then entry type (`*CHAR`) and input
+CCSID. QMHRCVPM has the same length/qualification and entry-type/CCSID groups,
+followed by default-reply rejection control (`*NO`). Native exception unwind,
+notify/status/request delivery and terminal inquiries through QMHSNDPM are
+explicitly unsupported before mutation. Existing CL exception messages can be
+received through QMHRCVPM.
+
+QMHSNDM sends INFO, COMP, DIAG or INQ to 1–50 distinct named queues atomically;
+an inquiry has one destination and returns its sender-copy key. Its reply queue
+may also be `*PGMQ` for the caller's program queue. Non-inquiry sends ignore the
+reply queue and key output. Blank message ID selects immediate text of 1–6000
+bytes; predefined sends require a real MSGF/description and at most 512 replacement
+bytes. No missing-message fallback is fabricated. Optional input CCSID is supported.
+QMHSNDRM applies stored validation/special mappings, accepts 1–132 bytes, uses a
+blank reply for the stored default, and supports remove `*YES`/`*NO`. Its optional
+groups are input CCSID and rejection-exit control (`*NO`). The queue may be `*EXT`.
+
+Both receive APIs support RCVM0100/0200 and `*SAME`, `*OLD`, `*REMOVE`. SAME leaves
+seen/exception state intact. OLD marks received; REMOVE deletes and applies an
+unanswered inquiry's default in the same transaction. Receiver and error writes
+are normalized before any send, removal, seen-state or reply mutation commits.
+Rejected output preserves queues and all receiver storage. Bytes after the
+returned prefix remain unchanged. Error structures use the bytes-provided,
+bytes-available and seven-character ID contract described under data queues below.
+Extended exception substitution data and full native error-ID parity remain open.
+
+Receive selectors include ANY, FIRST, LAST, NEXT, PRV, INFO, COMP, DIAG, RPY and
+COPY. Program queues also accept ESCAPE, NOTIFY and EXCP; named queues accept INQ.
+Blank key selects a new message except FIRST/LAST, which traverse old and new.
+FIRST/LAST require blank keys; NEXT/PRV require a key, including binary zero.
+`*TOP` is valid with NEXT. Explicit missing keys fail with CPF2410. A keyed reply
+can use its sender-copy key and can be reread after OLD. EXCP selects the newest
+unhandled exception; program return types distinguish unhandled notify/escape
+(16/17) from handled ones (14/15).
+
+Wait is seconds: zero polls, positive BIN(4) values wait, and -1 waits until
+cancellation or delivery. A waiting named receive allocates the queue to that job
+and retains shared-read object/library leases. Other jobs can send but cannot
+receive, remove or reply while allocated (CPF2451). Cancellation, ENDJOB and
+terminal outcomes release the allocation. Named keyed nonreply receives and
+unkeyed reply receives ignore the wait, following the native selection rules.
+QMHRCVM optionally selects output CCSID and rejection control (`*NO`). Supported
+text CCSIDs are those in the release contract; zero selects the job CCSID. Receive
+65535 preserves source bytes; input CCSID 65535 is currently unsupported.
+
+Offsets below are zero-based. All length/status fields are BIN(4).
+
+| RCVM0100 offset | Field |
+|---|---|
+| 0, 4 | bytes returned, available |
+| 8 | severity; unchanged receiver bytes for an immediate message |
+| 12, 19, 21 | ID(7), return type(2), key(4); key is spaces after REMOVE |
+| 25 | reserved(7) |
+| 32, 36, 40, 44 | data conversion status, CCSID, returned length, available length |
+| 48 | message data: immediate bytes or predefined replacement bytes |
+
+RCVM0200 has a 176-byte header. Offsets 0–24 match RCVM0100. Message file,
+requested library and actual library occupy CHAR(10) at 25/35/45. Sender job,
+job user, number, program, instruction, CYYMMDD and HHMMSS occupy 55/65/75/81/93/97/104
+(widths 10/10/6/12/4/7/6). Program receipt places recipient(10), instruction(4)
+and program types(1 each) at 110/120/124/125. Named receipt instead places send
+microseconds(6) and actual sender profile(10) at 110/116. Unknown instructions and
+reserved fields are blank. Text/data conversion status is at 127/131, alert(9)
+at 135, text/data CCSID at 144/148. Returned/available pairs for replacement data,
+text and help are at 152/156, 160/164 and 168/172. Variable bytes follow in that
+order at 176. Saved descriptions continue to work after the source MSGF is deleted;
+actual library is blank when its original object no longer exists.
+
+No matching message writes only returned=8, available=0. A receiver may be as
+short as eight bytes; available describes the complete result. Conversion status
+is 0 (unnecessary), 1 (not converted), 2 (space prevented conversion), 3 (converted)
+or -1 (conversion failed, original bytes retained). Only *CCHAR replacement fields
+are converted; other replacement data reports CCSID 65535. Valid UTF-8 text is
+truncated at a character boundary; opaque replacement bytes can end at any byte.
+
+QMHRTVM supports RTVM0100: returned/available at 0/4, text returned/available at
+8/12, help returned/available at 16/20, then text/help at 24. Substitute and format
+controls accept YES/NO. NO formatting strips the supported &N/&P/&B help markers.
+The optional group selects MSGID/FIRST/NEXT, output CCSID and replacement CCSID;
+FIRST/NEXT use message identifier ordering and return a blank receiver at end.
+65535 output and richer RTVM/RCVM formats are outside this checkpoint.
+
+```rpgle
+**free
+dcl-s KEY char(4) ccsid(*hex);
+dcl-s INFO char(256) ccsid(*hex);
+dcl-s SIZE int(10) inz(256);
+callp QMHSNDPM('':'':'READY':5:'*INFO':'*':0:KEY:X'00000000');
+callp QMHRCVPM(INFO:SIZE:'RCVM0200':'*':0:'*INFO':KEY:0:'*SAME':X'00000000');
+if %subst(INFO:177:5) = 'READY';
+  sndpgmmsg 'NATIVE MESSAGE RECEIVED';
+endif;
+seton LR;
+```
+
+MessageApiTests uses independent byte vectors, signed/high-bit keys, truncation,
+conversion results, failed receiver preparation, atomic multicast/default replies
+and allocated waits. MessageApiIntegrationTests compiles CL and direct RPG callers
+for all six APIs at CCSIDs 37/1208, checks QTEMP isolation, authority/manifests,
+real message-subfile output and ENDJOB cleanup. NativeMessageMigrationTests covers
+schema-27 upgrade/rollback and deleted-key high-water preservation, including an
+empty entry table. MessageSenderTests checks native CYYMMDD century boundaries.
+SessionServerTests runs independent socket jobs through an allocated native
+receive, conflicting receiver, native send and resource cleanup. The display
+PTY exercises native RPG message production/receipt/retrieval with F1 help and
+WRKAPILS option 5. Pointer/qualified ILE selectors, richer formats, 32767-byte
+replacement data, rejection exits, delivery attributes and complete native
+exception/UI semantics remain open.
+
+Primary layout references: IBM's [QMHSNDPM](https://www.ibm.com/docs/en/i/7.4.0?topic=ssw_ibm_i_74%2Fapis%2FQMHSNDPM.html),
+[QMHRCVPM](https://www.ibm.com/docs/en/ssw_ibm_i_74/apis/QMHRCVPM.htm),
+[QMHSNDM](https://www.ibm.com/docs/en/i/7.4.0?topic=ssw_ibm_i_74%2Fapis%2FQMHSNDM.htm),
+[QMHRCVM](https://www.ibm.com/docs/ja/ssw_ibm_i_74/apis/Qmhrcvm.htm),
+[QMHSNDRM](https://www.ibm.com/docs/en/i/7.5.0?topic=q-send-reply-message-qmhsndrm)
+and [QMHRTVM](https://www.ibm.com/docs/en/i/7.6.0?topic=q-retrieve-message-qmhrtvm).
+The older [IBM Message Handling PDF](https://public.dhe.ibm.com/systems/power/docs/systemi/v5r2/en_US/messg.pdf)
+provides stable base layouts; the current QMHRCVM definition supplies the actual
+sending profile at offset 116 where the older layout reserved bytes.
 
 ## QCMDEXC
 
@@ -148,7 +349,7 @@ journal replay, priority scheduling and address-cache behavior remain unimplemen
 ## RPG scalar API calls
 
 Fixed CALL/CALLB with PLIST, CALLP with a named PLIST, and unprototyped inline
-CALLP/CALLB calls can borrow fixed CHAR and packed/decimal fields. Procedure-pointer
+CALLP/CALLB calls can borrow fixed CHAR, signed INT and packed/decimal fields. Procedure-pointer
 targets use the same inline scalar path. Program lookup, authority and signing run
 before borrowing; only built-in IPCAPI targets request typed cells. Ordinary CL,
 RPG and external process targets keep their existing semantic argument/writeback
@@ -169,13 +370,18 @@ CHAR requires both its character count and strictly encoded byte count to equal
 the declared width. The job CCSID is read for each call. EBCDIC 37 permits binary
 bytes that round-trip through the interpreter's text storage; UTF-8 receives must
 also fit that storage without replacement or extra padding. Invalid UTF-8 and
-multibyte output that would change the declared width fail before removal. Use CL
-or typed byte-buffer callers for arbitrary binary UTF-8 entries. Raw API text such
+multibyte output that would change the declared width fail before removal. Declare
+CHAR CCSID(*HEX) or CCSID(65535) for arbitrary binary storage, including native
+message headers. These fields remain ProgramBuffers: no text conversion occurs,
+hexadecimal INZ must match the width, and %SUBST uses one-based byte positions.
+Hex literals such as X'00000000' are immutable byte inputs at every job CCSID.
+INT(3/5/10/20) borrows signed 1/2/4/8-byte big-endian storage with exact range and
+integral-value checks; INT(10) satisfies native BIN(4) parameters. Raw API text such
 as `*BLANK` is stored literally, without RPG assignment-keyword interpretation.
 
 Named constants and evaluated expressions are immutable inputs. Expression values
-are evaluated once. Arrays, DS/overlays, varying characters, zoned fields, binary
-integers, floats and date/time fields cannot be borrowed in this checkpoint.
+are evaluated once. Arrays, DS/overlays, varying characters, zoned fields, legacy
+RPG B-spec binary fields, floats and date/time fields cannot be borrowed in this checkpoint.
 Calls are bounded to 256 arguments and 1 MiB of aggregate storage. Scalar
 prototype calls can also borrow receivers under the contract below. Full native
 RPG storage, broader prototype modes and the C09/C14 contracts remain open.
@@ -191,10 +397,12 @@ The terminal fixture's RPGDQAPI sends, receives and clears a keyed queue directl
 
 CALLP/CALLB prototypes targeting built-in IPCAPI programs now pass the actual
 caller's scalar fields to the same scoped adapter. Both formal and actual fields
-must have identical CHAR byte widths or packed precision/scale, with exactly one
+must have identical CHAR byte widths/raw-storage mode, signed INT precision, or
+packed precision/scale, with exactly one
 actual argument per formal. Missing/ambiguous declarations and duplicate prototype
 bindings fail before dispatch. Repeated actual fields retain one identity, so
-native receiver overlap checks still apply. Prototype temporaries remain unchanged
+native receiver overlap checks still apply. Signed INT and hexadecimal constants
+retain their formal byte layouts. Prototype temporaries remain unchanged
 while the API updates actual fields; no extra writeback follows a borrowed call.
 
 In the documented emulator D-spec layout, PR selects EXTPGM/EXTPROC and explicit

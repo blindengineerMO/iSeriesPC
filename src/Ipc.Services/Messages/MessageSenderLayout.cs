@@ -26,7 +26,7 @@ public static class MessageSenderLayout
         Put(0, 10, origin?.JobName ?? ""); Put(10, 10, origin?.JobUser ?? "");
         Put(20, 6, message.SenderJob?.ToString("D6", CultureInfo.InvariantCulture) ?? "");
         var sent = (origin?.Sent ?? message.Sent).UtcDateTime;
-        var date = "0" + sent.ToString("yyMMdd", CultureInfo.InvariantCulture);
+        var date = (sent.Year / 100 - 19).ToString(CultureInfo.InvariantCulture) + sent.ToString("yyMMdd", CultureInfo.InvariantCulture);
         var time = sent.ToString("HHmmss", CultureInfo.InvariantCulture);
         var micros = ((sent.Ticks % TimeSpan.TicksPerSecond) / 10).ToString("D6", CultureInfo.InvariantCulture);
         var program = origin?.Program ?? ""; var recipient = origin?.Recipient ?? "";

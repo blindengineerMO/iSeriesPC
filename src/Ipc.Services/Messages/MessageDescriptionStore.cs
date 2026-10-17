@@ -8,6 +8,7 @@ using Ipc.Core.Text;
 using Ipc.Services.Events;
 using Ipc.Services.Security;
 using Ipc.Services.Sqlite;
+using Ipc.Services.Work;
 
 namespace Ipc.Services.Messages;
 
@@ -72,21 +73,27 @@ public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
     }
     public PredefinedMessage Snapshot(string library, string name, string id, string requestedLibrary, Ipc.Core.Work.ProgramBuffer data)
     {
-        var descriptor = new SqliteObjectStore(factory).GetRequired(library, name, ObjectType.MessageFile);
+        var temporary = new JobTemporaryLibrary(factory);
+        var resolved = temporary.Resolve(new(library, name), ObjectType.MessageFile);
+        var descriptor = new SqliteObjectStore(factory).GetRequired(resolved.Library, name, ObjectType.MessageFile);
+        var privateFile = temporary.IsTemporary(resolved.Library);
         var definition = Parse(descriptor.Source, descriptor.Ccsid).Messages.GetValueOrDefault(id) ?? throw Missing();
-        var result = new PredefinedMessage(library, name, requestedLibrary, descriptor.Created, Freeze(definition), data);
+        var result = new PredefinedMessage(privateFile ? LibraryNames.QTemp : resolved.Library, name,
+            privateFile && requestedLibrary == resolved.Library ? LibraryNames.QTemp : requestedLibrary,
+            descriptor.Created, Freeze(definition), data, privateFile);
         _ = result.Serialize(); return result;
     }
     public IReadOnlyList<KeyValuePair<string, MessageDescription>> List(string library, string name)
     {
         var descriptor = new SqliteObjectStore(factory).GetRequired(library, name, ObjectType.MessageFile);
         // IBM message ordering uses alphabetic suffixes before numeric suffixes.
-        var comparer = Comparer<string>.Create((left, right) => CompareIds(left, right));
+        var comparer = Comparer<string>.Create(CompareIdentifiers);
         return Parse(descriptor.Source, descriptor.Ccsid).Messages.OrderBy(pair => pair.Key, comparer)
             .Select(pair => new KeyValuePair<string, MessageDescription>(pair.Key, Freeze(pair.Value))).ToArray();
     }
     private void Mutate(string library, string name, AuthorityBit authority, Action<Payload, int> change)
     {
+        library = new JobTemporaryLibrary(factory).ResolveLibrary(library);
         var authorization = new ServiceAuthorization(factory);
         authorization.RequireObject(library, name, ObjectType.MessageFile, authority);
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
@@ -151,7 +158,7 @@ public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
     {
         if (id is null || !Regex.IsMatch(id, @"\A[A-Z][A-Z0-9]{2}[0-9A-F]{4}\z")) throw new CpfException("CPF2499", "Invalid message identifier.");
     }
-    private static int CompareIds(string left, string right)
+    public static int CompareIdentifiers(string left, string right)
     {
         for (var i = 0; i < Math.Min(left.Length, right.Length); i++)
         {

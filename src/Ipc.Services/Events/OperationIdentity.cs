@@ -22,7 +22,8 @@ public sealed record OperationIdentity(string Principal, JobKey? Job)
         if (previous?.CallStack.Count >= 64) throw new Ipc.Core.Messages.CpfException("IPC0124", "Program call stack exceeds 64 frames.");
         if (previous is not null)
             Slot.Value = previous with { CallStack = Array.AsReadOnly(previous.CallStack.Append(new ProgramAuthorityFrame(
-                program.Key, program.Owner, program.AdoptsOwnerAuthority, program.UsesAdoptedAuthority)).ToArray()) };
+                program.Key, program.Owner, program.AdoptsOwnerAuthority, program.UsesAdoptedAuthority)
+                { SystemApi = program.Attribute == "IPCAPI" }).ToArray()) };
         return new Scope(previous);
     }
 
@@ -47,4 +48,7 @@ public sealed record OperationIdentity(string Principal, JobKey? Job)
     }
 }
 
-public sealed record ProgramAuthorityFrame(QualifiedName Program, string Owner, bool AdoptsOwner, bool UsesAdopted);
+public sealed record ProgramAuthorityFrame(QualifiedName Program, string Owner, bool AdoptsOwner, bool UsesAdopted)
+{
+    public bool SystemApi { get; init; }
+}

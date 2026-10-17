@@ -34,7 +34,7 @@ public sealed partial class CommandService
         catch (DdsCompileException error) { return CommandResult.Error(error.Message); }
     }
 
-    private static IReadOnlyList<string>? LogicalPhysicalMembers(CommandCall call, LogicalFileDefinition logical)
+    private IReadOnlyList<string>? LogicalPhysicalMembers(CommandCall call, LogicalFileDefinition logical)
     {
         var raw = call.GetOption("DTAMBRS")?.Trim() ?? "*ALL";
         if (raw.Equals("*ALL", StringComparison.OrdinalIgnoreCase)) return null;
@@ -48,7 +48,8 @@ public sealed partial class CommandService
         if (binding.Count is < 1 or > 2 || binding[0].Contains('(')) throw new CpfException("IPC0138", "DTAMBRS requires one physical file and member list for this simple LF.");
         var file = CommandParser.Unquote(binding[0]).ToUpperInvariant().Split('/');
         var library = file.Length == 1 || file[0] == "*CURRENT" ? logical.SourceLibrary : file[0];
-        if (file.Length is < 1 or > 2 || library != logical.SourceLibrary || file[^1] != logical.SourceFile)
+        var temporary = new Ipc.Services.Work.JobTemporaryLibrary(_system.Connections);
+        if (file.Length is < 1 or > 2 || temporary.ResolveLibrary(library) != temporary.ResolveLibrary(logical.SourceLibrary) || file[^1] != logical.SourceFile)
             throw new CpfException("IPC0138", "DTAMBRS file must match the compiled PFILE identity.");
         var members = Parts(binding.Count == 1 ? "*NONE" : binding[1]).Select(m => CommandParser.Unquote(m).ToUpperInvariant()).ToArray();
         if (members.Length == 1 && members[0] == "*NONE") return Array.Empty<string>();

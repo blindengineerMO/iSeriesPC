@@ -12,15 +12,21 @@ public sealed partial class MenuController
     private HelpSession? _help;
     private SessionEvent HandleHelp(KeyPress key)
     {
+        if (_programTerminal.Display is { } active)
+        {
+            try { active.CheckAccess(); }
+            catch (CpfException error) { _help = null; return ResumeProgram(_programTerminal.Fail(error)); }
+        }
         try
         {
             using var locks = new JobLockStore(_system.Connections).EnterCommand(_job.Key, CancellationToken);
-            if (_help!.Handle(key)) { _help = null; return new(_commandPrompt is not null ? "CommandPrompt" : _designer is not null ? "ScreenDesigner" : _display is not null ? "DisplayPanel" : _work is not null ? "WorkWith" : "Menu"); }
+            var closed = _programTerminal.Display is { } display ? display.InContext(() => { display.CheckAccess(); return _help!.Handle(key); }) : _help!.Handle(key);
+            if (closed) { _help = null; return new(_programTerminal.Display is not null ? "ProgramDisplay" : _commandPrompt is not null ? "CommandPrompt" : _designer is not null ? "ScreenDesigner" : _display is not null ? "DisplayPanel" : _work is not null ? "WorkWith" : "Menu"); }
             return new("Help");
         }
         catch (Exception error) when (error is CpfException or ArgumentException or InvalidOperationException)
         {
-            _help = null; Screens.Status(Buffer, error.Message, error: true); return new(_commandPrompt is not null ? "CommandPrompt" : _designer is not null ? "ScreenDesigner" : _display is not null ? "DisplayPanel" : _work is not null ? "WorkWith" : "Menu", Message: error.Message);
+            _help = null; Screens.Status(Buffer, error.Message, error: true); return new(_programTerminal.Display is not null ? "ProgramDisplay" : _commandPrompt is not null ? "CommandPrompt" : _designer is not null ? "ScreenDesigner" : _display is not null ? "DisplayPanel" : _work is not null ? "WorkWith" : "Menu", Message: error.Message);
         }
     }
     private HelpDefinition LoadHelp(string group)

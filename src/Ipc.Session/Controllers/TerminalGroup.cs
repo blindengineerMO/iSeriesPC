@@ -28,11 +28,15 @@ public sealed partial class MenuController
         private bool _ended;
         public CancellationToken CancellationToken => _lifetime.Token;
         public DisplayBuffer Buffer => _mode is null ? Active.OwnBuffer : _request;
-        public TerminalGroup(MenuController root)
+        public TerminalGroup(MenuController root, CancellationToken connectionCancellation)
         {
             Root = Active = root; _store = new(root._system.Connections); _members.Add(root._job.Key.Number, root);
-            _lifetime = CancellationTokenSource.CreateLinkedTokenSource(root._execution.CancellationToken);
+            _lifetime = CancellationTokenSource.CreateLinkedTokenSource(connectionCancellation);
             _registrations.Add(_lifetime.Token.Register(Disconnect));
+            _registrations.Add(root._execution.CancellationToken.Register(() => {
+                if (root._disposed) return;
+                try { _lifetime.Cancel(); } catch (ObjectDisposedException) { }
+            }));
             _selection = new(_request, new[] { new InputField { Row = 23, Column = 12, Length = 30 } }); _editor = new(_selection);
         }
         private MenuController[] Snapshot() { lock (_gate) return _members.Values.ToArray(); }

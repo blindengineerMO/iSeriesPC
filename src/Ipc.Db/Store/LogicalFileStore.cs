@@ -15,6 +15,11 @@ public sealed partial class SqliteFileStore
     {
         if (definition.Attribute != FileAttribute.Logical || definition.Logical is not { } logical || definition.Formats.Count != 1 || definition.Name != name)
             throw LogicalError("Invalid logical file definition.");
+        library = ResolveLibrary(library);
+        logical = logical with { SourceLibrary = ResolveLibrary(logical.SourceLibrary) };
+        var temporary = new JobTemporaryLibrary(_factory);
+        if (temporary.IsTemporary(logical.SourceLibrary) && library != logical.SourceLibrary)
+            throw new CpfException("IPC0201", "A permanent logical file cannot depend on a job-private QTEMP file.");
         using var connection = _factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         ValidateLogical(logical);
         logical = logical with { UniquePaths = new Dictionary<string, string>() };

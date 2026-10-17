@@ -10,7 +10,8 @@ using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Work;
 
-public enum JobLockMode { Exclusive, SharedUpdate, SharedRead, SharedNoUpdate }
+// Numeric values are persisted in the lock catalog. Append new states without renumbering.
+public enum JobLockMode { Exclusive, SharedUpdate, SharedRead, SharedNoUpdate, ExclusiveRead }
 public sealed record JobLockResource(string Library, string Name, string Type, string Member = "", long RowNumber = 0)
 {
     public bool IsRecord => Member.Length != 0;
@@ -30,7 +31,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
 
     public static bool Compatible(JobLockMode left, JobLockMode right) =>
         Enum.IsDefined(left) && Enum.IsDefined(right) && left != JobLockMode.Exclusive && right != JobLockMode.Exclusive &&
-        (left == JobLockMode.SharedRead || right == JobLockMode.SharedRead || left == right);
+        (left == JobLockMode.SharedRead || right == JobLockMode.SharedRead || left == right && left != JobLockMode.ExclusiveRead);
 
     public IDisposable EnterCommand(JobKey job, CancellationToken cancellationToken = default)
     {
@@ -45,15 +46,24 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         if (scope is null || OperationIdentity.Current?.Job != scope.Job || scope.Store._factory.ConnectionString != _factory.ConnectionString) return;
         var mode = (permission & (AuthorityBit.ObjectExist | AuthorityBit.ObjectManagement | AuthorityBit.ObjectAlter)) != 0 ? JobLockMode.Exclusive :
             (permission & (AuthorityBit.Add | AuthorityBit.Update | AuthorityBit.Delete)) != 0 ? JobLockMode.SharedUpdate : JobLockMode.SharedRead;
-        RequireAutomatic(new(library, name, type), mode, scope);
+        RequireAutomatic(Resolve(new(library, name, type)), mode, scope);
     }
     public void RequireStableRead(string library, string name, string type)
     {
         var scope = ActiveCommand.Value;
         if (scope is null || OperationIdentity.Current?.Job != scope.Job || scope.Store._factory.ConnectionString != _factory.ConnectionString) return;
-        RequireAutomatic(new(library, name, type), JobLockMode.SharedNoUpdate, scope);
+        RequireAutomatic(Resolve(new(library, name, type)), JobLockMode.SharedNoUpdate, scope);
     }
     public void RequireObjectMutation(string library, string name, string type) => RequireAccess(library, name, type, AuthorityBit.ObjectExist);
+
+    public void RequireExclusiveRead(string library, string name, string type)
+    {
+        var scope = ActiveCommand.Value;
+        if (scope is null || OperationIdentity.Current?.Job != scope.Job || scope.Store._factory.ConnectionString != _factory.ConnectionString) return;
+        var resource = Resolve(new(library, name, type));
+        if (type != ObjectType.Library) RequireAutomatic(new("QSYS", resource.Library, ObjectType.Library), JobLockMode.SharedRead, scope);
+        RequireAutomatic(resource, JobLockMode.ExclusiveRead, scope);
+    }
 
     public void RequireRecordAccess(string library, string name, string member, long rowNumber, bool write)
     {
@@ -83,6 +93,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
 
     internal IDisposable AcquireWithLifetime(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken, string lifetime, string scope)
     {
+        resource = Resolve(resource);
         RequireOwner(job); resource.Validate();
         new ServiceAuthorization(_factory).RequireObject(resource.Library, resource.Name, resource.Type, Authorities.UseBits, acquireLocks: false);
         EnsureResourceExists(resource);
@@ -133,6 +144,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
     // locks are deliberately outside catalog transactions and cannot be renamed atomically.
     internal void RequireNoPersistentAllocation(JobLockResource resource)
     {
+        resource = Resolve(resource);
         using var connection = _factory.Locks.Open(); using var command = connection.CreateCommand();
         command.CommandText = "SELECT count(*) FROM holders WHERE library=$lib AND name=$name AND type=$type AND lifetime<>'Command'";
         command.Parameters.AddWithValue("$lib", resource.Library); command.Parameters.AddWithValue("$name", resource.Name); command.Parameters.AddWithValue("$type", resource.Type);
@@ -141,6 +153,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
 
     internal string AcquireCore(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, string lifetime, string scope, CancellationToken cancellationToken, string? requestToken = null)
     {
+        resource = Resolve(resource);
         resource.Validate();
         if (!Enum.IsDefined(mode) || wait < TimeSpan.Zero || wait > TimeSpan.FromMinutes(5)) throw new CpfException("IPC0125", "Lock wait must be 0–300 seconds.");
         var token = requestToken ?? Guid.NewGuid().ToString("N"); var started = Stopwatch.GetTimestamp();
@@ -227,7 +240,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         }
         return blockers;
     }
-    private static JobLockMode Intent(JobLockMode mode) => mode is JobLockMode.Exclusive or JobLockMode.SharedUpdate ? JobLockMode.SharedUpdate : JobLockMode.SharedRead;
+    private static JobLockMode Intent(JobLockMode mode) => mode is JobLockMode.Exclusive or JobLockMode.ExclusiveRead or JobLockMode.SharedUpdate ? JobLockMode.SharedUpdate : JobLockMode.SharedRead;
     private static bool Deadlock(SqliteConnection connection, SqliteTransaction transaction, int job)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction; command.CommandText = "SELECT job_number,blockers FROM waiters";
@@ -247,6 +260,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
     }
     public IReadOnlyList<JobLockInfo> Inspect(JobLockResource resource)
     {
+        resource = Resolve(resource);
         resource.Validate(); new ServiceAuthorization(_factory).RequireObject(resource.Library, resource.Name, resource.Type, Authorities.UseBits, acquireLocks: false);
         using var connection = _factory.Locks.Open(); using var command = connection.CreateCommand();
         command.CommandText = """
@@ -257,10 +271,12 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         using var reader = command.ExecuteReader(); var rows = new List<JobLockInfo>();
         while (reader.Read()) rows.Add(new(reader.GetString(0), new(reader.GetInt32(1), reader.GetString(2), reader.GetString(3)),
             resource with { Member = reader.GetString(4), RowNumber = reader.GetInt64(5) }, (JobLockMode)reader.GetInt32(6), reader.GetInt32(7) != 0, reader.GetString(8), reader.GetString(9)));
-        return rows;
+        return rows.Select(row => { var key = new JobTemporaryLibrary(_factory).Visible(new(row.Resource.Library, row.Resource.Name), row.Resource.Type);
+            return row with { Resource = row.Resource with { Library = key.Library, Name = key.Name.Value } }; }).ToArray();
     }
     public void Release(JobKey job, JobLockResource resource, JobLockMode mode)
     {
+        resource = Resolve(resource);
         RequireOwner(job); resource.Validate();
         using var connection = _factory.Locks.Open(); using var command = connection.CreateCommand();
         command.CommandText = """
@@ -274,6 +290,11 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         using var connection = _factory.Locks.Open(); using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM holders WHERE job_number=$job AND scope=$scope";
         command.Parameters.AddWithValue("$job", job.Number); command.Parameters.AddWithValue("$scope", scope); command.ExecuteNonQuery();
+    }
+    private JobLockResource Resolve(JobLockResource resource)
+    {
+        var key = new JobTemporaryLibrary(_factory).Resolve(new(resource.Library, resource.Name), resource.Type);
+        return resource with { Library = key.Library, Name = key.Name.Value };
     }
     internal void ReleaseJob(JobKey job)
     {

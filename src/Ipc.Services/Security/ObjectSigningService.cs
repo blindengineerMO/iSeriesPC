@@ -18,6 +18,8 @@ public sealed class ObjectSigningService(SqliteConnectionFactory factory, Conten
 
     public ObjectSignature Sign(string library, string name, string type, string certificateId)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(new(library, name), type);
+        library = key.Library; name = key.Name.Value;
         var authorization = new ServiceAuthorization(factory);
         authorization.RequireSpecial(SpecialAuthority.SecurityAdministrator, allowAdopted: false);
         authorization.RequireObject(library, name, type, AuthorityBit.ObjectManagement);
@@ -42,6 +44,8 @@ public sealed class ObjectSigningService(SqliteConnectionFactory factory, Conten
 
     public ObjectIntegrityResult Check(string library, string name, string type, bool requireSignature = true)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(new(library, name), type);
+        library = key.Library; name = key.Name.Value;
         new ServiceAuthorization(factory).RequireSpecial(SpecialAuthority.Audit);
         using var connection = factory.Open();
         using var transaction = connection.BeginTransaction(deferred: false);
@@ -68,6 +72,8 @@ public sealed class ObjectSigningService(SqliteConnectionFactory factory, Conten
 
     internal void RequireExecutable(ObjectDescriptor descriptor, SqliteConnection connection, SqliteTransaction transaction)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(descriptor.Key, descriptor.ObjectType);
+        if (key != descriptor.Key) descriptor = descriptor.Snapshot(key);
         using var policy = connection.CreateCommand(); policy.Transaction = transaction;
         policy.CommandText = "SELECT count(*) FROM sys_object_signature_policy WHERE lib=$lib AND name=$name AND type=$type";
         Bind(policy, descriptor.Library, descriptor.Name, descriptor.ObjectType);

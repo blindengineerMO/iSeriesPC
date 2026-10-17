@@ -7,6 +7,7 @@ using Ipc.Core.Work;
 using Ipc.Services.Events;
 using Ipc.Services.Security;
 using Ipc.Services.Sqlite;
+using Ipc.Services.Work;
 using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Messages;
@@ -35,7 +36,7 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
 
     public void Create(QualifiedName queue, string text = "", string authority = "*LIBCRTAUT")
     {
-        ValidateQueue(queue); authority = authority.ToUpperInvariant();
+        ValidateQueue(queue); queue = new JobTemporaryLibrary(factory).Resolve(queue, ObjectType.MessageQueue); authority = authority.ToUpperInvariant();
         if (text == "*BLANK") text = "";
         if (text.Length > 50 || text.Any(char.IsControl)) throw Invalid("Queue description allows 50 printable characters.");
         var objects = new SqliteObjectStore(factory); var authorization = new ServiceAuthorization(factory);
@@ -65,15 +66,23 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
     }
     public IReadOnlyList<uint> SendTo(IReadOnlyList<MessageQueueAddress> queues, ProgramBuffer data, string kind = "INFO",
         MessageQueueAddress? replyQueue = null, ProgramBuffer? defaultReply = null, string messageId = "", int severity = 0,
-        CancellationToken cancellationToken = default, bool senderCopy = false, PredefinedMessage? predefined = null)
+        CancellationToken cancellationToken = default, bool senderCopy = false, PredefinedMessage? predefined = null,
+        Action<IReadOnlyList<uint>>? prepare = null)
     {
+        queues = queues.Select(Resolve).ToArray(); replyQueue = replyQueue is null ? null : Resolve(replyQueue);
         if (queues.Count is < 1 or > 50 || queues.Distinct().Count() != queues.Count) throw Invalid("Specify one to fifty distinct queues.");
         if (kind is not ("INFO" or "INQ" or "COMP" or "DIAG" or "STATUS" or "ESCAPE" or "NOTIFY")) throw Invalid("Invalid message type.");
-        if (data.Length > 4096 || severity is < 0 or > 99 || messageId.Length != 0 && (messageId.Length != 7 || messageId.Any(c => !char.IsAsciiLetterOrDigit(c)))) throw Invalid("Invalid message payload, ID or severity.");
+        if (data.Length > 6000 || severity is < 0 or > 99 || messageId.Length != 0 && (messageId.Length != 7 || messageId.Any(c => !char.IsAsciiLetterOrDigit(c)))) throw Invalid("Invalid message payload, ID or severity.");
         if (kind == "INQ" && (queues.Count != 1 || replyQueue is null) || kind != "INQ" && (replyQueue is not null || defaultReply is not null)) throw Invalid("An inquiry requires exactly one destination and a reply queue.");
         if (senderCopy && kind != "INQ") throw Invalid("Sender copies require an inquiry.");
         if (predefined is not null)
         {
+            var temporary = new JobTemporaryLibrary(factory);
+            var file = temporary.Resolve(new(predefined.Library, predefined.File), ObjectType.MessageFile);
+            var privateFile = temporary.IsTemporary(file.Library);
+            if (predefined.JobTemporary && !privateFile) throw Invalid("A private message snapshot requires its job's message file.");
+            predefined = predefined with { Library = file.Library, JobTemporary = privateFile,
+                RequestedLibrary = privateFile && predefined.RequestedLibrary == file.Library ? LibraryNames.QTemp : predefined.RequestedLibrary };
             predefined = PredefinedMessage.Restore(predefined.Serialize())!;
             var formatted = MessageDescriptionFormat.Format(predefined.Description, predefined.Replacement, data.Ccsid);
             if (messageId.Length == 0 || formatted.Severity != severity || !formatted.Text.ToArray().AsSpan().SequenceEqual(data.ToArray()))
@@ -104,29 +113,43 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
             keys.Add(senderCopy ? Insert(connection, transaction, replyQueue!, data, "COPY", messageId, severity, null,
                 new ProgramBuffer(Array.Empty<byte>(), data.Ccsid), key, predefined: predefined) : key);
         }
+        prepare?.Invoke(keys); cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit(); return keys;
     }
     public QueuedMessage? ReceiveFrom(MessageQueueAddress queue, MessageSelection selection = MessageSelection.Next, uint key = 0,
         bool remove = true, TimeSpan wait = default, CancellationToken cancellationToken = default, string? kind = null, int? receiveCcsid = null,
-        bool requireReturnType = false, bool keepException = false, int senderLength = 0, bool longSender = false, int senderCcsid = 37)
+        bool requireReturnType = false, bool keepException = false, int senderLength = 0, bool longSender = false, int senderCcsid = 37,
+        bool preserveState = false, bool requireKeyExists = false, Action<QueuedMessage?>? prepare = null, bool formatPredefined = true)
     {
+        queue = Resolve(queue);
         if (!Enum.IsDefined(selection) || selection is MessageSelection.Key or MessageSelection.Reply && key == 0) throw Invalid("A nonzero message key is required.");
-        if (wait != Timeout.InfiniteTimeSpan && (wait < TimeSpan.Zero || wait > TimeSpan.FromDays(7))) throw Invalid("Invalid receive wait.");
-        if (kind is not (null or "INFO" or "INQ" or "RPY" or "COMP" or "DIAG" or "STATUS" or "ESCAPE" or "NOTIFY" or "COPY")) throw Invalid("Invalid receive message type.");
+        if (wait != Timeout.InfiniteTimeSpan && wait < TimeSpan.Zero) throw Invalid("Invalid receive wait.");
+        if (kind is not (null or "INFO" or "INQ" or "RPY" or "COMP" or "DIAG" or "STATUS" or "ESCAPE" or "NOTIFY" or "COPY" or "EXCP")) throw Invalid("Invalid receive message type.");
+        if (preserveState && remove) throw Invalid("Preserving receive state requires a non-removing receive.");
         if (remove && keepException) throw Invalid("Keeping exceptions requires a non-removing receive.");
         if (senderLength != 0 && (senderLength < (longSender ? 720 : 80) || senderLength > 32767 || !Ipc.Core.Text.CodePage.IsSupported(senderCcsid)))
             throw Invalid("Invalid sender return layout.");
         if (receiveCcsid is { } targetCcsid && !Ipc.Core.Text.CodePage.IsSupported(targetCcsid)) throw Invalid("Unsupported receive CCSID.");
-        var started = Stopwatch.GetTimestamp();
+        var started = Stopwatch.GetTimestamp(); DateTimeOffset? generation = null;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var required = Authorities.UseBits | (remove ? AuthorityBit.Delete : AuthorityBit.None);
-            Authorize(queue, required);
+            var current = Authorize(queue, required)?.Created;
+            if (generation is not null && generation != current) throw new CpfException("CPF9801", "The waiting message queue was replaced.");
+            generation ??= current;
             using (var connection = factory.Open())
             using (var transaction = connection.BeginTransaction(deferred: false))
             {
-                cancellationToken.ThrowIfCancellationRequested(); Authorize(queue, required);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (Authorize(queue, required)?.Created != generation) throw new CpfException("CPF9801", "The waiting message queue was replaced.");
+                RequireReceiverAvailable(connection, transaction, queue);
+                if (requireKeyExists && key != 0)
+                {
+                    using var exists = Command(connection, transaction, queue, "SELECT 1 FROM sys_message_entries WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program AND key=$key");
+                    exists.Parameters.AddWithValue("$key", (long)key);
+                    if (exists.ExecuteScalar() is null) throw new CpfException("CPF2410", "Message key was not found.");
+                }
                 var found = Find(connection, transaction, queue, selection, key, kind);
                 if (found is not null)
                 {
@@ -136,13 +159,14 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
                     if (received.Predefined is { } definition)
                     {
                         var outputCcsid = receiveCcsid ?? received.Data.Ccsid;
-                        var formatted = MessageDescriptionFormat.Format(definition.Description, definition.Replacement, outputCcsid);
-                        var replacement = receiveCcsid is null ? definition.Replacement : MessageDescriptionFormat.ConvertReplacementData(definition.Description, definition.Replacement, outputCcsid);
+                        var formatted = formatPredefined ? MessageDescriptionFormat.Format(definition.Description, definition.Replacement, outputCcsid) : null;
+                        var replacement = !formatPredefined || receiveCcsid is null ? definition.Replacement : MessageDescriptionFormat.ConvertReplacementData(definition.Description, definition.Replacement, outputCcsid);
                         using var file = connection.CreateCommand(); file.Transaction = transaction;
                         file.CommandText = "SELECT created FROM sys_objects WHERE lib=$filelib AND name=$filename AND type='*MSGF'";
                         file.Parameters.AddWithValue("$filelib", definition.Library); file.Parameters.AddWithValue("$filename", definition.File);
-                        var actualLibrary = file.ExecuteScalar() is string created && DateTimeOffset.Parse(created, CultureInfo.InvariantCulture) == definition.FileCreated ? definition.Library : "";
-                        received = received with { Data = formatted.Text, SecondLevel = formatted.SecondLevel, ReplacementData = replacement, ActualMessageFileLibrary = actualLibrary };
+                        var actualLibrary = file.ExecuteScalar() is string created && DateTimeOffset.Parse(created, CultureInfo.InvariantCulture) == definition.FileCreated
+                            ? definition.JobTemporary ? LibraryNames.QTemp : definition.Library : "";
+                        received = received with { Data = formatted?.Text ?? received.Data, SecondLevel = formatted?.SecondLevel, ReplacementData = replacement, ActualMessageFileLibrary = actualLibrary };
                     }
                     else if (receiveCcsid is { } ccsid && ccsid != received.Data.Ccsid)
                     {
@@ -151,33 +175,38 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
                         try { received = received with { Data = new ProgramBuffer(encoding.GetBytes(received.Data.ToText()), ccsid) }; }
                         catch (System.Text.EncoderFallbackException) { throw new CpfException("CPF2479", "Message cannot be converted to the receiving CCSID."); }
                     }
+                    received = Visible(received, connection, transaction);
+                    prepare?.Invoke(received); cancellationToken.ThrowIfCancellationRequested();
                     if (remove && found.Message.Kind == "INQ" && !found.Message.Replied)
                         ReplyCore(connection, transaction, queue, found, found.DefaultReply, found.DefaultReplyCode);
                     if (remove) DeleteMessage(connection, transaction, queue, found.Message);
-                    else if (!(keepException && received.Kind is "ESCAPE" or "NOTIFY" && !received.ExceptionHandled))
+                    else if (!preserveState && !(keepException && received.Kind is "ESCAPE" or "NOTIFY" && !received.ExceptionHandled))
                     {
                         using var change = Command(connection, transaction, queue,
                             "UPDATE sys_message_entries SET seen=1,exception_handled=CASE WHEN kind IN ('ESCAPE','NOTIFY') THEN 1 ELSE exception_handled END WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program AND key=$key");
                         change.Parameters.AddWithValue("$key", (long)found.Message.Key); change.ExecuteNonQuery();
                     }
+                    received = Visible(received, connection, transaction);
                     transaction.Commit(); return received;
                 }
                 transaction.Commit();
             }
             var remaining = wait == Timeout.InfiniteTimeSpan ? TimeSpan.FromMilliseconds(100) : wait - Stopwatch.GetElapsedTime(started);
-            if (remaining <= TimeSpan.Zero) return null;
+            if (remaining <= TimeSpan.Zero) { prepare?.Invoke(null); cancellationToken.ThrowIfCancellationRequested(); return null; }
             cancellationToken.WaitHandle.WaitOne(remaining < TimeSpan.FromMilliseconds(100) ? remaining : TimeSpan.FromMilliseconds(100));
         }
     }
     public uint ReplyTo(MessageQueueAddress queue, uint key, ProgramBuffer? data = null, bool remove = true,
         CancellationToken cancellationToken = default)
     {
+        queue = Resolve(queue);
         if (key == 0 || data?.Length > 132) throw Invalid("A reply requires a key and at most 132 bytes.");
         cancellationToken.ThrowIfCancellationRequested();
         var required = Authorities.UseBits | AuthorityBit.Add | (remove ? AuthorityBit.Delete : AuthorityBit.None);
         Authorize(queue, required);
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         Authorize(queue, required); cancellationToken.ThrowIfCancellationRequested();
+        RequireReceiverAvailable(connection, transaction, queue);
         var found = Find(connection, transaction, queue, MessageSelection.Key, key) ?? throw new CpfException("CPF2410", "Message key was not found.");
         var reply = ReplyCore(connection, transaction, queue, found, data ?? found.DefaultReply, data is null ? found.DefaultReplyCode : "21");
         if (remove)
@@ -189,19 +218,20 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
     }
     public IReadOnlyList<QueuedMessage> ListFrom(MessageQueueAddress queue, uint after = 0, int limit = 100)
     {
+        queue = Resolve(queue);
         if (limit is < 1 or > 1000) throw Invalid("Message page size must be 1–1000.");
         Authorize(queue, Authorities.UseBits);
         using var connection = factory.Open(); using var command = Command(connection, null, queue,
             "SELECT * FROM sys_message_entries WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program AND key>$after ORDER BY key LIMIT $limit");
         command.Parameters.AddWithValue("$after", (long)after); command.Parameters.AddWithValue("$limit", limit);
         using var reader = command.ExecuteReader(); var result = new List<QueuedMessage>();
-        while (reader.Read()) result.Add(Read(reader).Message); return result;
+        while (reader.Read()) result.Add(Visible(Read(reader).Message, connection)); return result;
     }
     private uint ReplyCore(SqliteConnection connection, SqliteTransaction transaction, MessageQueueAddress queue, Stored found, ProgramBuffer data, string replyTypeCode)
     {
         if (found.Message.Kind != "INQ" || found.Message.Replied) throw new CpfException("CPF2422", "Message is not an unanswered inquiry.");
         var destination = found.ReplyQueue ?? throw new CpfException("CPF2469", "Reply queue no longer exists.");
-        Authorize(destination, SendAuthority, replyDelivery: true);
+        AuthorizeReply(connection, transaction, destination, found.Message.SenderJob);
         // Defaults (including automatic removal replies) are already validated as
         // description metadata. Only explicit replies run VALUES/RANGE/REL/SPCVAL.
         if (replyTypeCode == "21" && found.Message.Predefined?.Description is { ReplyRules: { Type: not "*NONE" } rules } description)
@@ -252,7 +282,7 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
         command.Parameters.AddWithValue("$sent", sent.ToString("O"));
         command.Parameters.AddWithValue("$jobname", origin is null ? identity?.Job?.Name ?? "" : origin.Origin?.JobName ?? "");
         command.Parameters.AddWithValue("$jobuser", origin is null ? identity?.Job?.User ?? "" : origin.Origin?.JobUser ?? "");
-        command.Parameters.AddWithValue("$senderprogram", origin is null ? identity?.CallStack.LastOrDefault()?.Program.Name.Value ?? "" : origin.Origin?.Program ?? "");
+        command.Parameters.AddWithValue("$senderprogram", origin is null ? identity?.CallStack.LastOrDefault(frame => !frame.SystemApi)?.Program.Name.Value ?? "" : origin.Origin?.Program ?? "");
         command.Parameters.AddWithValue("$recipient", recipient);
         command.Parameters.AddWithValue("$originsent", (origin?.Origin?.Sent ?? origin?.Sent ?? sent).ToString("O"));
         command.Parameters.AddWithValue("$rlib", (object?)replyQueue?.Named?.Library ?? DBNull.Value);
@@ -273,9 +303,9 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
             copy.Parameters.AddWithValue("$key", (long)key);
             if (copy.ExecuteScalar() as string == "COPY") selection = MessageSelection.Reply;
         }
-        var condition = selection switch { MessageSelection.Next => "AND seen=0", MessageSelection.Key => "AND key=$key", MessageSelection.Reply => "AND kind='RPY' AND correlation_key=$key AND seen=0", MessageSelection.After => "AND key>$key", MessageSelection.Before => "AND key<$key", MessageSelection.ExceptionNewest => "AND kind IN ('ESCAPE','NOTIFY') AND seen=0", _ => "" };
+        var condition = selection switch { MessageSelection.Next => "AND seen=0", MessageSelection.Key => "AND key=$key", MessageSelection.Reply => "AND kind='RPY' AND correlation_key=$key", MessageSelection.After => "AND key>$key", MessageSelection.Before => "AND key<$key", MessageSelection.ExceptionNewest => "AND kind IN ('ESCAPE','NOTIFY') AND seen=0", _ => "" };
         if (selection == MessageSelection.Next && kind is null) condition += " AND kind<>'COPY'";
-        using var command = Command(connection, transaction, queue, "SELECT * FROM sys_message_entries WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program " + condition + (kind is null ? "" : " AND kind=$kind") + " ORDER BY key " + (selection is MessageSelection.Last or MessageSelection.Before or MessageSelection.ExceptionNewest ? "DESC" : "ASC") + " LIMIT 1");
+        using var command = Command(connection, transaction, queue, "SELECT * FROM sys_message_entries WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program " + condition + (kind is null ? "" : kind == "EXCP" ? " AND kind IN ('ESCAPE','NOTIFY')" : " AND kind=$kind") + " ORDER BY key " + (selection is MessageSelection.Last or MessageSelection.Before or MessageSelection.ExceptionNewest ? "DESC" : "ASC") + " LIMIT 1");
         if (kind is not null) command.Parameters.AddWithValue("$kind", kind);
         command.Parameters.AddWithValue("$key", (long)key); using var reader = command.ExecuteReader(); return reader.Read() ? Read(reader) : null;
     }
@@ -293,11 +323,56 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
             Predefined: PredefinedMessage.Restore(Text("predefined")));
         return new(message, reader.IsDBNull(reader.GetOrdinal("reply_program_queue")) ? reader.IsDBNull(reader.GetOrdinal("reply_lib")) ? null : new MessageQueueAddress(new QualifiedName(Text("reply_lib"), Text("reply_name"))) : new MessageQueueAddress(Text("reply_program_queue")), new((byte[])reader["default_reply"], ccsid), Text("default_reply_code"));
     }
-    private void Authorize(MessageQueueAddress address, AuthorityBit bits, bool replyDelivery = false)
+    private ObjectDescriptor? Authorize(MessageQueueAddress address, AuthorityBit bits, bool replyDelivery = false)
     {
-        if (address.Named is not { } queue) { AuthorizeProgram(address, replyDelivery); return; }
+        if (address.Named is not { } queue) { AuthorizeProgram(address, replyDelivery); return null; }
         ValidateQueue(queue); new ServiceAuthorization(factory).RequireObject(queue.Library, queue.Name.Value, ObjectType.MessageQueue, bits);
-        if (new SqliteObjectStore(factory).GetForAuthorization(queue.Library, queue.Name.Value, ObjectType.MessageQueue) is null) throw new CpfException("CPF9801", "Message queue does not exist.");
+        return new SqliteObjectStore(factory).GetForAuthorization(queue.Library, queue.Name.Value, ObjectType.MessageQueue)
+            ?? throw new CpfException("CPF9801", "Message queue does not exist.");
+    }
+    private MessageQueueAddress Resolve(MessageQueueAddress address)
+    {
+        if (address.Named is not { } named) return address;
+        ValidateQueue(named); return new(new JobTemporaryLibrary(factory).Resolve(named, ObjectType.MessageQueue));
+    }
+    private static QueuedMessage Visible(QueuedMessage message, SqliteConnection connection, SqliteTransaction? transaction = null)
+    {
+        if (message.Predefined is not { } definition) return message;
+        var privateFile = definition.JobTemporary || definition.Library == LibraryNames.QTemp;
+        if (!privateFile && definition.Library.StartsWith("@T", StringComparison.Ordinal))
+        {
+            // Classify legacy references in the message read's SQLite snapshot.
+            using var query = connection.CreateCommand(); query.Transaction = transaction;
+            query.CommandText = "SELECT 1 FROM sys_job_temp_libraries WHERE library=$library"; query.Parameters.AddWithValue("$library", definition.Library);
+            privateFile = query.ExecuteScalar() is not null;
+        }
+        return privateFile ? message with { Predefined = definition with { Library = LibraryNames.QTemp, JobTemporary = true,
+            RequestedLibrary = definition.RequestedLibrary == definition.Library ? LibraryNames.QTemp : definition.RequestedLibrary },
+            ActualMessageFileLibrary = message.ActualMessageFileLibrary == definition.Library ? LibraryNames.QTemp : message.ActualMessageFileLibrary } : message;
+    }
+
+    // Older snapshots did not retain the private namespace marker. Preserve it
+    // before the map disappears, including for messages retained in other jobs.
+    internal static void MarkPrivateSnapshots(SqliteConnection connection, SqliteTransaction transaction, string library)
+    {
+        using var query = connection.CreateCommand(); query.Transaction = transaction;
+        query.CommandText = """
+            UPDATE sys_message_entries SET predefined=json_set(predefined,'$.Library','QTEMP',
+                '$.RequestedLibrary',CASE WHEN json_extract(predefined,'$.RequestedLibrary')=$library THEN 'QTEMP' ELSE json_extract(predefined,'$.RequestedLibrary') END)
+            WHERE CASE WHEN json_valid(predefined) THEN json_extract(predefined,'$.Library')=$library
+              AND json_extract(predefined,'$.Version') IN (1,2,3) AND coalesce(json_extract(predefined,'$.JobTemporary'),0)=0 ELSE 0 END
+            """;
+        query.Parameters.AddWithValue("$library", library); query.ExecuteNonQuery();
+    }
+    private void AuthorizeReply(SqliteConnection connection, SqliteTransaction transaction, MessageQueueAddress destination, int? senderJob)
+    {
+        using var access = destination.Named is { } named ? JobTemporaryLibrary.EnterInquiryReply(factory, connection, transaction, named, senderJob) : null;
+        if (access is null) { Authorize(destination, SendAuthority, replyDelivery: true); return; }
+        // The persisted inquiry grants only system reply delivery, like a program
+        // queue. Locks still belong to the replier and can conflict with the sender.
+        var target = destination.Named!.Value; var locks = new JobLockStore(factory);
+        locks.RequireAccess("QSYS", target.Library, ObjectType.Library, Authorities.UseBits);
+        locks.RequireAccess(target.Library, target.Name.Value, ObjectType.MessageQueue, SendAuthority);
     }
     private static void ValidateQueue(QualifiedName queue)
     {

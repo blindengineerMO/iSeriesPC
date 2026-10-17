@@ -18,6 +18,7 @@ public sealed partial class SqliteFileStore
     });
     public DatabaseRecordCursor OpenSequentialCursor(string library, string name, string member, bool keyed = true, CancellationToken cancellationToken = default)
     {
+        library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
         cancellationToken.ThrowIfCancellationRequested();
         Authorize(library, name, AuthorityBit.Read);

@@ -33,6 +33,17 @@ public sealed class MigrationTests : IDisposable
     [InlineData(15)]
     [InlineData(16)]
     [InlineData(17)]
+    [InlineData(18)]
+    [InlineData(19)]
+    [InlineData(20)]
+    [InlineData(21)]
+    [InlineData(22)]
+    [InlineData(23)]
+    [InlineData(24)]
+    [InlineData(25)]
+    [InlineData(26)]
+    [InlineData(27)]
+    [InlineData(28)]
     public void Modern_catalog_upgrade_preserves_history_and_adds_new_features(int version)
     {
         var factory = Factory();

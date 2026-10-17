@@ -68,6 +68,9 @@ public sealed class SessionServer
             system.Jobs.RecoverInterruptedInteractiveJobs();
             new Ipc.Services.Work.BatchQueue(system.Connections, system.Jobs).RecoverInterrupted();
             new Ipc.Services.Work.JobLockStore(system.Connections).RecoverEndedJobs();
+            new Ipc.Services.Work.JobTemporaryLibrary(system.Connections).RecoverEndedJobs();
+            new Ipc.Services.Work.UserSpaceStore(system.Connections).RecoverReplacedObjects();
+            new Ipc.Services.Work.NativeJobStore(system.Connections).BeginHostEpoch();
             using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
             listener.Bind(new UnixDomainSocketEndPoint(_socketPath));
             if (!OperatingSystem.IsWindows())

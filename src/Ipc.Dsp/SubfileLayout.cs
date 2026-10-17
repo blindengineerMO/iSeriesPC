@@ -25,8 +25,10 @@ internal static class SubfileLayout
             if (message is not null && Keyword(record, "SFLNXTCHG") is not null) Fail(record, "SFLNXTCHG", "Message subfiles do not return changed input records.");
             if (message is not null && (record.Fields.Count != 2 || !record.Fields[0].Keywords.Any(k => k.Name == "SFLMSGKEY") || !record.Fields[1].Keywords.Any(k => k.Name == "SFLPGMQ")))
                 Fail(record, "SFLMSGRCD", "Message subfiles require exactly SFLMSGKEY followed by SFLPGMQ.");
-            if (record.Fields.Any(f => f.Keywords.Any(k => k.Name is "SFLMSGKEY" or "SFLPGMQ")) && message is null)
-                Fail(record, "SFLMSGKEY", "Predefined message fields require SFLMSGRCD.");
+            if (record.Fields.Any(f => f.Keywords.Any(k => k.Name == "SFLMSGKEY")) && message is null)
+                Fail(record, "SFLMSGKEY", "Message keys require SFLMSGRCD.");
+            if (record.Fields.Any(f => f.Keywords.Any(k => k.Name == "SFLPGMQ")) && message is null && control is null)
+                Fail(record, "SFLPGMQ", "Program queue fields require a message subfile or its control record.");
             var rows = definition.Rows; var columns = definition.Columns;
             if (window is not null)
             {
@@ -44,6 +46,11 @@ internal static class SubfileLayout
             if (Number(record, "SFLPAG") > Number(record, "SFLSIZ")) Fail(record, "SFLPAG", "Page size exceeds subfile size.");
             var visible = data!.Fields.Where(f => f.Usage != PanelFieldUsage.Hidden).ToArray();
             var messageData = Keyword(data, "SFLMSGRCD");
+            var queueFields = record.Fields.Count(f => f.Keywords.Any(k => k.Name == "SFLPGMQ"));
+            if (Keyword(record, "SFLINZ") is not null && (messageData is null || queueFields != 1))
+                Fail(record, "SFLINZ", "Message initialization requires a message subfile and exactly one control SFLPGMQ field.");
+            if (queueFields != 0 && (messageData is null || Keyword(record, "SFLINZ") is null || queueFields != 1))
+                Fail(record, "SFLPGMQ", "Control program queue fields require message SFLINZ.");
             if (visible.Length == 0 && messageData is null) Fail(record, "SFL", "Subfile requires visible fields.");
             var top = messageData is null ? visible.Min(f => f.Row) : int.Parse(messageData.Arguments[0]);
             var height = messageData is null ? visible.Max(f => f.Row) - top + 1 : 1;

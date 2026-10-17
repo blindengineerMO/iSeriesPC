@@ -25,6 +25,7 @@ public sealed class DataAreaStore(SqliteConnectionFactory factory)
         int ccsid = 37, string text = "", string authority = "*LIBCRTAUT")
     {
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); type = type.ToUpperInvariant(); authority = authority.ToUpperInvariant();
+        library = new JobTemporaryLibrary(factory).ResolveLibrary(library);
         ValidateDimensions(type, length, decimals, ccsid);
         if (text == "*BLANK") text = "";
         if (text.Length > 50 || text.Any(char.IsControl)) throw Invalid("Data-area text requires at most 50 printable characters.");
@@ -61,6 +62,7 @@ public sealed class DataAreaStore(SqliteConnectionFactory factory)
     public DataAreaValue Read(string library, string name, int? start = null, int? length = null)
     {
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant();
+        library = new JobTemporaryLibrary(factory).ResolveLibrary(library);
         var descriptor = new SqliteObjectStore(factory).GetRequired(library, name, ObjectType.DataArea);
         var payload = Parse(descriptor.Source);
         ValidateDescriptor(descriptor, payload);
@@ -75,6 +77,7 @@ public sealed class DataAreaStore(SqliteConnectionFactory factory)
     {
         ArgumentNullException.ThrowIfNull(value);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant();
+        library = new JobTemporaryLibrary(factory).ResolveLibrary(library);
         var authorization = new ServiceAuthorization(factory);
         authorization.RequireObject(library, name, ObjectType.DataArea, AuthorityBit.ObjectOperate | AuthorityBit.Update);
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);

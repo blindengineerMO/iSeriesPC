@@ -8,7 +8,10 @@ namespace Ipc.Cl.Interpreter;
 
 public sealed record ClFileRequest(string File, string RecordFormat, string OpenId, bool AllowVariableLength, bool AllowNull, bool BinaryAsInteger);
 public sealed record ClFileField(string Name, string Type, int Length, int Decimals);
-public sealed record ClDatabaseFile(string ResolvedFile, string RecordFormat, string FormatSignature, IReadOnlyList<ClFileField> Fields);
+public sealed record ClDisplayRecord(string Name, IReadOnlyList<string> Fields, bool Subfile = false);
+public sealed record ClDatabaseFile(string ResolvedFile, string RecordFormat, string FormatSignature, IReadOnlyList<ClFileField> Fields,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<ClDisplayRecord>? DisplayRecords = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] int DisplayFormatCount = 0);
 public sealed record ClFileBinding(ClFileRequest Request, ClDatabaseFile Definition);
 public sealed record ClFileReadResult(IReadOnlyDictionary<string, object?> Values, string? ErrorId = null, string? Error = null);
 
@@ -55,7 +58,9 @@ public sealed record ClFileBindings(int Version, string TextHash, IReadOnlyList<
                 var names = request.File?.Split('/');
                 if (names is null || names.Length is < 1 or > 2 || !ObjectName.IsValid(names[^1]) ||
                     names.Length == 2 && names[0] is not ("*LIBL" or "*CURLIB") && !ObjectName.IsValid(names[0]) ||
-                    request.RecordFormat != "*ALL" && !ObjectName.IsValid(request.RecordFormat) || request.OpenId != "*NONE" && !ObjectName.IsValid(request.OpenId)) throw Invalid();
+                    request.RecordFormat is null || request.RecordFormat != "*ALL" &&
+                    (request.RecordFormat.Split(' ') is not { Length: >= 1 and <= 99 } formats || formats.Any(f => !ObjectName.IsValid(f)) || formats.Distinct().Count() != formats.Length) ||
+                    request.OpenId != "*NONE" && !ObjectName.IsValid(request.OpenId)) throw Invalid();
                 Validate(file.Definition);
             }
             return bindings;
@@ -67,8 +72,12 @@ public sealed record ClFileBindings(int Version, string TextHash, IReadOnlyList<
     {
         if (definition.ResolvedFile is null || definition.ResolvedFile.Split('/') is not { Length: 2 } names || names.Any(n => !ObjectName.IsValid(n)) ||
             !ObjectName.IsValid(definition.RecordFormat) || definition.FormatSignature is null || definition.FormatSignature.Length != 64 || definition.FormatSignature.Any(c => !char.IsAsciiHexDigit(c)) ||
-            definition.Fields is null || definition.Fields.Count is < 1 or > 1024 || definition.Fields.Any(f => f is null || !ObjectName.IsValid(f.Name)) ||
+            definition.Fields is null || definition.Fields.Count > 1024 || definition.DisplayRecords is null && definition.Fields.Count == 0 || definition.Fields.Any(f => f is null || !ObjectName.IsValid(f.Name)) ||
             definition.Fields.Select(f => f.Name).Distinct(StringComparer.Ordinal).Count() != definition.Fields.Count) throw Invalid();
+        if (definition.DisplayRecords is null && definition.DisplayFormatCount != 0) throw Invalid();
+        if (definition.DisplayRecords is { } records && (records.Count is < 1 or > 99 || definition.DisplayFormatCount < records.Count || definition.DisplayFormatCount > 256 || records.Any(r => r is null || !ObjectName.IsValid(r.Name) || r.Fields is null ||
+            r.Fields.Count > 1024 || r.Fields.Any(f => !definition.Fields.Any(d => d.Name == f)) || r.Fields.Distinct().Count() != r.Fields.Count) ||
+            records.Select(r => r.Name).Distinct().Count() != records.Count || records[0].Name != definition.RecordFormat)) throw Invalid();
         foreach (var field in definition.Fields)
         {
             var valid = field.Type switch { "*CHAR" => field.Length is >= 1 and <= 32767 && field.Decimals == 0,

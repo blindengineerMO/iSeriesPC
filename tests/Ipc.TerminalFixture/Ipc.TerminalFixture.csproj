@@ -1,4 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><IsPackable>false</IsPackable></PropertyGroup>
   <ItemGroup><ProjectReference Include="../../src/Ipc.Console/Ipc.Console.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../Shared/CryptoProgramSources.cs" Link="CryptoProgramSources.cs" /></ItemGroup>
 </Project>

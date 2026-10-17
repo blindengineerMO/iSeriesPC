@@ -68,6 +68,7 @@ public enum RpgOpcode
     OnError,
     BegProc,
     EndProc,
+    ReadC,
 }
 
 public enum RpgFieldKind
@@ -96,10 +97,12 @@ public enum RpgFieldSource
     DataStructure,
     LocalDataStructure,
     Array,
+    ExternalFile,
 }
 
 public sealed class RpgField
 {
+    public bool OpaqueBytes { get; set; }
     public required string Name { get; init; }
 
     public RpgFieldKind Kind { get; init; }
@@ -246,6 +249,7 @@ public sealed class RpgProgram
     public bool IsFreeForm { get; set; }
 
     public List<string> FileSpecs { get; } = new();
+    public List<RpgWorkstationBinding> Workstations { get; } = new();
 
     public RpgField? FindField(string name) =>
         Fields.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));

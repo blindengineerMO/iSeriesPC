@@ -13,6 +13,8 @@ public sealed partial class SqliteFileStore
     public int CopyRecords(QualifiedName source, string sourceMember, QualifiedName target, string targetMember,
         bool replace = false, bool map = false, bool drop = false, CancellationToken cancellationToken = default)
     {
+        var temporary = new JobTemporaryLibrary(_factory);
+        source = temporary.Resolve(source, FileType); target = temporary.Resolve(target, FileType);
         sourceMember = sourceMember.ToUpperInvariant(); targetMember = targetMember.ToUpperInvariant();
         Authorize(source.Library, source.Name.Value, AuthorityBit.Read);
         Authorize(target.Library, target.Name.Value, AuthorityBit.Add | (replace ? AuthorityBit.Delete : AuthorityBit.None));

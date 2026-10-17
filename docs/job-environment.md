@@ -27,14 +27,17 @@ connection's job based on user-supplied text.
 LDA is always created with the job and is copied in the same transaction as batch
 submission, the command request and its log. Later parent/child changes are
 independent. Its copy survives a queued-job restart. This matches IBM's
-[local data area description](https://www.ibm.com/docs/ssw_ibm_i_72/rbam6/rbam6pdf.pdf).
+[local data area description](https://www.ibm.com/docs/en/i/7.6.0?topic=areas-local-data-area).
 
 `JobService.CreateGroupJob` accepts an owned live interactive parent. A fresh,
 opaque group identity is assigned when needed; the child joins that exact group
 under the same profile/CCSID. It starts with its own blank LDA and empty runtime
 handles. The GDA is 512 bytes and remains until the final group member ends. A
 same-profile job outside the group cannot select its GDA by guessing the group ID.
-The terminal's group-transfer UI and command workflow remain C06 work.
+The terminal's CHGGRPA creates GDA storage when the first group is named; TFRGRPJOB
+preserves it across transfers. Secondary terminal partitions have independent groups.
+These sizes and lifetimes follow IBM's
+[group data area contract](https://www.ibm.com/docs/en/i/7.6.0?topic=areas-group-data-area).
 
 Initialization data accepts up to 2,000 raw bytes at submission. Claiming a routing
 step creates a 2,000-byte area, copies the submitted bytes, pads the remainder with
@@ -59,8 +62,11 @@ DSPDTAARA DTAARA(*LDA 1 5)
 ```
 
 The current commands support `*LDA`, `*GDA` and `*PDA`; character values use the
-job CCSID with strict conversion and byte-length validation. Full named data-area
-commands and CL variable-return handling belong to C07/C11. Partial GDA writes
+job CCSID with strict conversion and byte-length validation. Named data areas are
+documented in [data areas](data-areas.md); compiled CL supports RTVDTAARA return
+variables for private areas. A job without group membership reports CPF1046 for
+`*GDA`; unavailable routing initialization reports CPF1072 for `*PDA`. These IDs
+remain usable by MONMSG. Partial GDA writes
 serialize through SQLite transactions, preventing lost updates in different ranges.
 Job completion/cancellation/recovery deletes private areas transactionally and
 removes unreferenced groups. Completed jobs do not retain these application bytes.
@@ -110,3 +116,45 @@ group membership/cleanup, initialization, same-profile cross-job denial, scoped
 resource cleanup, nested CL exception unwinding, actual RPG shared reads and explicit
 close. `JobEnvironmentPersistenceTests` reopens an on-disk catalog, preserves a
 queued child's environment, and removes the interrupted parent's private state.
+
+### C11 storage completion evidence
+
+The C11 checklist item requires the storage lifecycle below, using the routing
+extension already recorded under completed C04. It does not establish native
+prestart-pool dispatch or parameter packing.
+
+| Requirement | Authoritative evidence |
+| --- | --- |
+| Automatic CHAR LDA creation, size and encoded blanks | Schema-16 trigger and seven independent CCSID fixtures in `JobDataAreaLifecycleTests` |
+| Atomic batch inheritance, independent parent/child bytes | `JobEnvironmentTests`, queued catalog-reopen and compiled CL retrieval cases |
+| Shared 512-byte GDA with separate groups and private LDAs | CL group calls, independent-process disjoint writes, terminal CHGGRPA/TFRGRPJOB/SysReq acceptance |
+| Routing initialization and raw payload bounds | NULL/0/1/1999/2000/2001-byte cases; claim materialization clears pending bytes atomically |
+| Failed routing leaves no partial claim/initialization | Trigger-injected rollback verifies queued state, attempt count, pending bytes and a subsequent valid claim |
+| Job ownership and cancellation | Same-profile and administrator job contexts cannot select another job; a cancelled group member cannot change surviving shared data |
+| Cleanup and restart | Normal/abnormal final-member cleanup, pending cancellation, interrupted-job recovery and queued-child persistence cases |
+| No standalone data-area object or leaked read buffers | Object-catalog and detached-byte assertions plus exact endpoint/failed-range checks |
+
+`JobDataAreaLifecycleTests` adds 27 cases to the existing environment and CL tests.
+Its process fixture performs competing writes through separate SQLite connections
+in separate OS processes. The full terminal scenario checks GDA sharing and LDA
+isolation while preserving an edited panel across group/secondary transfers.
+
+## Native job API views
+
+[QUSRJOBI/QUSLJOB](job-apis.md) read committed job admission and environment data.
+Basic identity is public; JOBI0700 library lists require own/same-user job or job
+control authority, and JOBL0200 suppresses protected fields for unauthorized rows.
+Library output uses logical QTEMP and excludes private backing names. Native job
+IDs persist across ordinary opens and refresh only at exclusive server startup.
+Concurrent authenticated socket jobs exercise private list creation, raw-ID
+retrieval and distinct caller identities without sharing QTEMP objects.
+
+## Cryptographic key contexts
+
+[Native QC3 key contexts](cryptography-apis.md) belong to the job across program
+returns and activation groups. Each executing job can retain up to 256 encrypted
+keys. Other jobs cannot use/destroy its tokens, including jobs of the same profile
+and JOBCTL callers. Context creation prepares outputs before committing; current
+profile/job liveness is checked at service boundaries. Job end/recovery deletes
+contexts transactionally. Independent socket jobs verify creation in one call,
+use in a later call, foreign-token denial and signoff cleanup.

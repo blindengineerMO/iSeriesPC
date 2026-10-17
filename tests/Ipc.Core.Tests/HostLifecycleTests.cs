@@ -44,6 +44,8 @@ public sealed class HostLifecycleTests
                 system.Jobs.CreateInteractive("TESTER"))));
             Assert.Equal(12, jobs.Select(j => j.Key.Number).Distinct().Count());
             var greatest = jobs.Max(j => j.Key.Number);
+            // Completion releases job-owned namespaces before historical job rows can be purged.
+            foreach (var job in jobs) system.Jobs.Complete(job.Key);
             using (var connection = system.Connections.Open())
             {
                 using var cmd = connection.CreateCommand();

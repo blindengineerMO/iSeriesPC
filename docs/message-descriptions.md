@@ -132,3 +132,15 @@ special mappings, atomic changes/replies, immutable snapshots, legacy payloads,
 authority, encoding failures, default removal and restart after file deletion.
 The display PTY fixture rejects a bad operator reply, cancels/reopens F4, sends a
 mapped reply and receives its checked return code through compiled CL.
+
+## Private message files
+
+QTEMP message files support create, add/change/remove/list, snapshots, copy/export
+and job cleanup. Their description payload keeps the existing format; sent
+predefined snapshots use version 3 to retain a private-source marker. Queued text,
+help, replacement bytes and reply validation survive source edits/deletion and
+job end. Public metadata uses QTEMP; SNDMSGFLIB becomes blank when the original
+source object disappears. Legacy snapshot versions 1/2 remain readable and their
+private names are sanitized across cleanup. See
+[private messaging](message-queues.md#job-private-queues-and-message-files) for
+reply routing, lifecycle and acceptance evidence.

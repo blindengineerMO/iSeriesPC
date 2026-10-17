@@ -11,7 +11,7 @@ public sealed class DisplayDdsCompiler(Func<string, string, string?>? messageRes
         "HLPPNLGRP", "HLPTITLE", "DSPSIZ", "INDARA", "PAGEDOWN", "PAGEUP", "ALTPAGEDWN", "ALTPAGEUP", "HELP", "TEXT" };
     private static readonly HashSet<string> RecordKeywords = new(StringComparer.Ordinal) {
         "HLPTITLE", "PAGEDOWN", "PAGEUP", "HELP", "CSRLOC", "RTNCSRLOC", "TEXT", "OVERLAY",
-        "SFLMSGRCD", "SFL", "SFLCTL", "SFLSIZ", "SFLPAG", "SFLDSP", "SFLDSPCTL", "SFLCLR", "SFLEND", "SFLNXTCHG", "SFLFOLD", "SFLDROP", "WINDOW" };
+        "SFLMSGRCD", "SFL", "SFLCTL", "SFLSIZ", "SFLPAG", "SFLDSP", "SFLDSPCTL", "SFLCLR", "SFLINZ", "SFLEND", "SFLNXTCHG", "SFLFOLD", "SFLDROP", "WINDOW" };
     private static readonly HashSet<string> HelpKeywords = new(StringComparer.Ordinal) { "HLPARA", "HLPPNLGRP" };
     private static readonly HashSet<string> FieldKeywords = new(StringComparer.Ordinal) {
         "DSPATR", "COLOR", "DFT", "DFTVAL", "ERRMSG", "ERRMSGID", "MSGCON", "COMP", "CHECK", "CHKMSGID",
@@ -100,6 +100,9 @@ public sealed class DisplayDdsCompiler(Func<string, string, string?>? messageRes
             if (item.Fields.Count == 0 && !item.Keywords.Any(k => k.Name == "SFLCTL")) throw Error(sourceName, item.Line, item.Name, "Record has no fields.");
             foreach (var value in item.Fields)
             {
+                if (value.Keywords.Any(k => k.Name is "SFLMSGKEY" or "SFLPGMQ") &&
+                    (value.Keywords.Count != 1 || value.Conditions.Length != 0 || value.Constant || value.Decimals != 0))
+                    throw Error(sourceName, value.Line, value.Name, "Predefined message fields permit only their name and SFLMSGKEY/SFLPGMQ keyword.");
                 var literal = value.Keywords.FirstOrDefault(k => k.Name is "DFT" or "MSGCON");
                 if (value.Constant && literal?.Name == "DFT") value.Length = literal.Arguments[0].Length;
                 if (value.Constant && value.Keywords.Any(k => k.Name == "DATE")) value.Length = 10;
@@ -186,12 +189,14 @@ public sealed class DisplayDdsCompiler(Func<string, string, string?>? messageRes
                 Require(args.Length == 1 && args[0] is "*RCD" or "*NONE" || args.Length == 2 && args[0] == "*FLD" && ObjectName.IsValid(args[1]) ||
                     args.Length == 4 && args.All(a => int.TryParse(a, out var n) && n > 0), "Expected *RCD, *NONE, *FLD field, or top left bottom right."); break;
             case "SFLMSGKEY": case "SFLPGMQ":
-                Count(0, 0); var predefinedLength = name == "SFLMSGKEY" ? 4 : 10;
+                Count(0, name == "SFLPGMQ" ? 1 : 0);
+                Require(args.Length == 0 || args[0] == "10", "Only ten-byte program message queue names are supported.");
+                var predefinedLength = name == "SFLMSGKEY" ? 4 : 10;
                 Require(field is not null && field.Type == PanelFieldType.Character && field.Length is 0 || field is not null && field.Type == PanelFieldType.Character && field.Length == predefinedLength, "Predefined message fields require their fixed character length.");
                 Require(keyword.Conditions.Length == 0 && field!.Row == 0 && field.Column == 0, "Predefined message fields are unconditional and hidden.");
                 field!.Length = predefinedLength; field.Usage = PanelFieldUsage.Hidden; break;
             case "SFLMSGRCD": Count(1, 1); Require(int.TryParse(args[0], out var messageRow) && messageRow is >= 1 and <= 27 && keyword.Conditions.Length == 0, "Expected unconditional message start line."); break;
-            case "SFL": case "SFLDSP": case "SFLDSPCTL": case "SFLCLR": case "SFLNXTCHG": Count(0, 0); break;
+            case "SFL": case "SFLDSP": case "SFLDSPCTL": case "SFLCLR": case "SFLINZ": case "SFLNXTCHG": Count(0, 0); break;
             case "SFLEND": Count(0, 1); Require(args.Length == 0 || args[0] == "*MORE", "Supported option is *MORE."); break;
             case "SFLCTL": Count(1, 1); Require(ObjectName.IsValid(args[0]), "Invalid subfile record name."); break;
             case "SFLSIZ": case "SFLPAG": Count(1, 1); Require(int.TryParse(args[0], out var count) && count is >= 1 and <= 9999 && keyword.Conditions.Length == 0, "Expected unconditional size 1–9999."); break;

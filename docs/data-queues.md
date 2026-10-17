@@ -4,7 +4,9 @@ The shared runtime provides durable local `*DTAQ` objects with opaque entries,
 FIFO/LIFO/keyed ordering and atomic destructive or non-destructive receives.
 The C11/C14 checkpoint adds checked QSNDDTAQ/QRCVDTAQ/QCLRDTAQ program bindings in
 Ipc.Api; see [API layouts and callers](api.md#local-data-queue-program-apis).
-DDM, journaling, USRSPCs and the rest of C11 remain open.
+Queues can use [job-private QTEMP](temporary-libraries.md). The byte-addressable
+[user-space checkpoint](user-spaces.md) is also implemented. DDM, journaling and
+the rest of C11 remain open.
 
 | Command | Accepted parameters |
 |---|---|

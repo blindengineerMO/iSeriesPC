@@ -147,3 +147,18 @@ CUPS, Node, systemd, Docker, external IBM MQ and object transfer. They expose va
 structured health/error results, timeouts/cancellation and dry-run previews with redacted secrets.
 No shell interpolation of untrusted names or passwords. Docker instance isolation includes
 catalog, ports, volumes, credentials and lifecycle; host provisioning remains separately tested.
+
+## C14 software cryptography subset
+
+The hash/HMAC/encrypt/decrypt and key-management subset uses QC3CALHA, QC3CALHM,
+QC3ENCDT, QC3DECDT, QC3CRTKX and QC3DESKX. Required behavior is single-call
+DATA0100 with ALGD0500 hashes 1–5, ALGD0200 AES with 16-byte blocks and 16/24/32-byte
+keys, ECB/CBC/CTR, native encrypt/decrypt padding controls, raw KEYD0200 and
+job-owned KEYD0100 contexts. Keys must be protected in storage, checked against
+the current job, included in wrapping-key management and released transactionally
+at job end/recovery. Known-answer vectors, invalid keys, denied access, atomic
+receivers and actual CL/RPG callers establish acceptance. Exact descriptors,
+limits and evidence are in [cryptography-apis.md](cryptography-apis.md).
+Other native ciphers/formats, persistent keystore records, hardware providers and
+streaming algorithm contexts remain broader compatibility work; no full QC3 API
+family or ILE-binding parity is claimed.

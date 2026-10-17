@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text;
 using Ipc.Core.Messages;
 using Ipc.Core.Text;
@@ -54,7 +55,7 @@ internal sealed class RpgArgumentScope : IDisposable
                 // Expressions are private values, never writable receivers.
                 var value = values[index];
                 arguments.Add(formal is null ? value : Constant(formal, value));
-                bytes += formal is not null ? StorageLength(formal) : value is string text ? Encode(text).Length : 16;
+                bytes += formal is not null ? StorageLength(formal) : value is ProgramBuffer raw ? raw.Length : value is string text ? Encode(text).Length : 16;
             }
             else
             {
@@ -65,6 +66,7 @@ internal sealed class RpgArgumentScope : IDisposable
                     throw Bad("RPG API arguments require scalar fields; arrays and data structures are not supported.");
                 ValidateScalar(field);
                 bytes += StorageLength(formal ?? field);
+                if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
                 if (field.Source == RpgFieldSource.Constant)
                 {
                     var value = context.ReadValue(field.Name);
@@ -74,9 +76,49 @@ internal sealed class RpgArgumentScope : IDisposable
                 else
                 {
                     if (formal is not null && (field.Length != formal.Length || field.Decimals != formal.Decimals ||
-                        (field.Kind == RpgFieldKind.Character) != (formal.Kind == RpgFieldKind.Character)))
+                        (field.Kind == RpgFieldKind.Character) != (formal.Kind == RpgFieldKind.Character) ||
+                        (field.Kind == RpgFieldKind.Integer) != (formal.Kind == RpgFieldKind.Integer) || field.OpaqueBytes != formal.OpaqueBytes))
                         throw Bad("RPG API actual field type, length or scale differs from its prototype.");
                     var original = context.Reference(field.Name);
+                    if (field.Kind == RpgFieldKind.Integer)
+                    {
+                        if (!byField.TryGetValue(field.Name, out var integer) && (original is null || !byReference.TryGetValue(original, out integer)))
+                        {
+                            var width = StorageLength(field);
+                            object? NormalizeInteger(object? value)
+                            {
+                                CheckActive();
+                                var number = IntegerValue(value, width);
+                                if (original is not null) _ = original.Normalize(number);
+                                return number;
+                            }
+                            ProgramBuffer ReadInteger() => IntegerBuffer((long)NormalizeInteger(context.ReadApiScalar(field.Name))!, width, ccsid);
+                            integer = new(() => NormalizeInteger(context.ReadApiScalar(field.Name)),
+                                value => { CheckActive(); context.WriteApiScalar(field.Name, NormalizeInteger(value)); }, NormalizeInteger,
+                                "*INT", width, 0, ReadInteger);
+                            byField.Add(field.Name, integer); if (original is not null) byReference.Add(original, integer);
+                        }
+                        arguments.Add(integer); continue;
+                    }
+                    if (field.OpaqueBytes)
+                    {
+                        if (!byField.TryGetValue(field.Name, out var opaque) && (original is null || !byReference.TryGetValue(original, out opaque)))
+                        {
+                            object? NormalizeOpaque(object? value)
+                            {
+                                CheckActive();
+                                if (value is not ProgramBuffer raw || raw.Length != field.Length || raw.Ccsid != ccsid) throw Bad("Invalid opaque RPG API buffer.");
+                                var copy = new ProgramBuffer(raw.ToArray(), ccsid);
+                                if (original is not null) _ = original.Normalize(copy);
+                                return copy;
+                            }
+                            ProgramBuffer ReadOpaque() => (ProgramBuffer)NormalizeOpaque(context.ReadApiScalar(field.Name))!;
+                            opaque = new(() => ReadOpaque(), value => { CheckActive(); context.WriteApiScalar(field.Name, NormalizeOpaque(value)); }, NormalizeOpaque,
+                                "*CHAR", field.Length, 0, ReadOpaque);
+                            byField.Add(field.Name, opaque); if (original is not null) byReference.Add(original, opaque);
+                        }
+                        arguments.Add(opaque); continue;
+                    }
                     if (!byField.TryGetValue(field.Name, out var argument) &&
                         (original is null || !byReference.TryGetValue(original, out argument)))
                     {
@@ -134,8 +176,15 @@ internal sealed class RpgArgumentScope : IDisposable
         }
         ProgramConstant Constant(RpgField field, object? value)
         {
+            if (field.Kind == RpgFieldKind.Integer)
+            {
+                var width = StorageLength(field); var integer = IntegerValue(value, width);
+                return new("*INT", width, 0, IntegerBuffer(integer, width, ccsid), integer);
+            }
             if (field.Kind == RpgFieldKind.Character)
             {
+                if (field.OpaqueBytes && value is ProgramBuffer raw && raw.Length == field.Length && raw.Ccsid == ccsid)
+                    return new("*CHAR", field.Length, 0, new(raw.ToArray(), ccsid), raw);
                 if (value is not string text || text.Length > field.Length) throw Bad("RPG API constant does not fit its character prototype.");
                 var padded = text.PadRight(field.Length); var data = Encode(padded);
                 if (data.Length != field.Length) throw Bad("RPG API constant does not fit its declared byte width.");
@@ -148,12 +197,45 @@ internal sealed class RpgArgumentScope : IDisposable
             return new("*DEC", field.Length, field.Decimals, new(new RecordCodec(ccsid).Encode(format, new Dictionary<string, object?> { ["VALUE"] = number }), ccsid), number);
         }
     }
-    private static int StorageLength(RpgField field) => field.Kind == RpgFieldKind.Character ? field.Length : (field.Length + 2) / 2;
+    private static int StorageLength(RpgField field) => field.Kind switch
+    {
+        RpgFieldKind.Character => field.Length,
+        RpgFieldKind.Integer => field.Length switch { 3 => 1, 5 => 2, 10 => 4, 20 => 8, _ => throw Bad("Unsupported RPG integer precision.") },
+        _ => (field.Length + 2) / 2
+    };
+    private static long IntegerValue(object? value, int width)
+    {
+        if (value is ProgramBuffer raw)
+        {
+            if (raw.Length != width) throw Bad("Invalid RPG integer buffer length.");
+            var data = raw.ToArray();
+            return width switch { 1 => (sbyte)data[0], 2 => BinaryPrimitives.ReadInt16BigEndian(data),
+                4 => BinaryPrimitives.ReadInt32BigEndian(data), 8 => BinaryPrimitives.ReadInt64BigEndian(data), _ => throw Bad("Unsupported RPG integer width.") };
+        }
+        var number = value switch { decimal d => d, long l => l, int i => i, short s => s, sbyte b => b, _ => throw Bad("RPG integer storage requires an exact signed number.") };
+        var (min, max) = width switch { 1 => ((decimal)sbyte.MinValue, (decimal)sbyte.MaxValue), 2 => (short.MinValue, short.MaxValue),
+            4 => (int.MinValue, int.MaxValue), 8 => (long.MinValue, long.MaxValue), _ => throw Bad("Unsupported RPG integer width.") };
+        if (decimal.Truncate(number) != number || number < min || number > max) throw Bad("RPG API integer does not fit its declared signed width.");
+        return (long)number;
+    }
+    private static ProgramBuffer IntegerBuffer(long value, int width, int ccsid)
+    {
+        var data = new byte[width];
+        switch (width)
+        {
+            case 1: data[0] = unchecked((byte)(sbyte)value); break;
+            case 2: BinaryPrimitives.WriteInt16BigEndian(data, (short)value); break;
+            case 4: BinaryPrimitives.WriteInt32BigEndian(data, (int)value); break;
+            case 8: BinaryPrimitives.WriteInt64BigEndian(data, value); break;
+        }
+        return new(data, ccsid);
+    }
     private static void ValidateScalar(RpgField field)
     {
-        if (field.IsArray || field.IsDataStructure || field.Varying || field.Kind is not (RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Decimal))
-            throw Bad("RPG API borrowing supports fixed CHAR and packed scalar fields only.");
-        if (field.Length is < 1 or > 1048576 || field.Kind != RpgFieldKind.Character &&
+        if (field.IsArray || field.IsDataStructure || field.Varying || field.Kind is not (RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Decimal or RpgFieldKind.Integer))
+            throw Bad("RPG API borrowing supports fixed CHAR, signed INT and packed scalar fields only.");
+        if (field.Kind == RpgFieldKind.Integer && (field.Length is not (3 or 5 or 10 or 20) || field.Decimals != 0)) throw Bad("Unsupported RPG integer dimensions.");
+        if (field.Length is < 1 or > 1048576 || field.Kind is not (RpgFieldKind.Character or RpgFieldKind.Integer) &&
             (field.Length > 28 || field.Decimals < 0 || field.Decimals > field.Length)) throw Bad("Unsupported RPG API field dimensions.");
     }
     private void CheckActive() => ObjectDisposedException.ThrowIf(!_active, this);

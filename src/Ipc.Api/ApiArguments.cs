@@ -41,6 +41,28 @@ internal sealed class ApiArguments(int ccsid)
         return buffer;
     }
     internal string Text(object? value, int width) => new ProgramBuffer(Character(value, width).ToArray().AsSpan(0, width), ccsid).ToText().TrimEnd(' ');
+    internal int Binary32(object? value)
+    {
+        if (value is ProgramArgument reference)
+        {
+            if (reference.Type == "*INT" ? reference.Length != 4 : reference.Type is not ("*CHAR" or "*RAW")) throw Bad("API requires a four-byte signed binary integer.");
+            value = (object?)reference.ToBuffer() ?? reference.Value;
+        }
+        if (value is ProgramConstant constant)
+        {
+            if (constant.Type != "*RAW" && (constant.Type != "*INT" || constant.Length != 4)) throw Bad("Invalid binary API constant layout.");
+            value = constant.Buffer;
+        }
+        if (value is ProgramBuffer buffer)
+        {
+            if (buffer.Length < 4) throw Bad("Binary API parameter requires four bytes.");
+            return BinaryPrimitives.ReadInt32BigEndian(buffer.ToArray());
+        }
+        if (value is not (int or long or short or decimal)) throw Bad("API requires a signed binary integer.");
+        var number = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+        if (number < int.MinValue || number > int.MaxValue || number != decimal.Truncate(number)) throw Bad("Binary API integer is out of range.");
+        return (int)number;
+    }
     internal int Packed(object? value, int digits)
     {
         if (value is ProgramArgument reference)

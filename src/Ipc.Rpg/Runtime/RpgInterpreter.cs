@@ -4,7 +4,7 @@ using Ipc.Rpg.Parsing;
 
 namespace Ipc.Rpg.Runtime;
 
-public sealed class RpgInterpreter
+public sealed partial class RpgInterpreter
 {
     private readonly RpgHost _host;
     private readonly Dictionary<string, RpgFileCursor> _files = new(StringComparer.OrdinalIgnoreCase);
@@ -33,13 +33,18 @@ public sealed class RpgInterpreter
         try
         {
             BindEntryParameters(program, context, parameters);
+            InitializeWorkstations(context);
             Execute(program.MainStatements, context, new RpgBlockState());
             return context;
         }
         finally
         {
             try { foreach (var handle in _fileHandles.Values) handle.Dispose(); }
-            finally { _fileHandles.Clear(); _files.Clear(); context.ReleaseReferences(); }
+            finally
+            {
+                try { if (!_host.RetainWorkstations || context.Indicators[0]) context.CloseWorkstations(); }
+                finally { _fileHandles.Clear(); _files.Clear(); context.ReleaseReferences(); }
+            }
         }
     }
 
@@ -298,18 +303,25 @@ public sealed class RpgInterpreter
 
                 return -1;
             case RpgOpcode.Open:
+                if (OpenWorkstation(stmt, ctx)) return -1;
                 OpenOpcode(stmt);
                 return -1;
             case RpgOpcode.Close:
+                if (CloseWorkstation(stmt, ctx)) return -1;
                 CloseOpcode(stmt);
                 return -1;
             case RpgOpcode.Force:
                 _ = GetCursor(FirstFile(stmt));
                 return -1;
             case RpgOpcode.Chain:
+                if (WorkstationIo(stmt, ctx, RpgWorkstationOperation.Chain)) return -1;
                 return ChainOpcode(stmt, ctx);
             case RpgOpcode.Read:
+                if (WorkstationIo(stmt, ctx, RpgWorkstationOperation.Read)) return -1;
                 return ReadOpcode(stmt, ctx, false, false);
+            case RpgOpcode.ReadC:
+                if (!WorkstationIo(stmt, ctx, RpgWorkstationOperation.ReadChanged)) throw new RpgRuntimeException("READC requires a declared workstation subfile.");
+                return -1;
             case RpgOpcode.ReadP:
                 return ReadOpcode(stmt, ctx, true, false);
             case RpgOpcode.Reade:
@@ -321,8 +333,10 @@ public sealed class RpgInterpreter
             case RpgOpcode.SetGt:
                 return SetLimitOpcode(stmt, ctx, lower: false);
             case RpgOpcode.Write:
+                if (WorkstationIo(stmt, ctx, RpgWorkstationOperation.Write)) return -1;
                 return WriteOpcode(stmt, ctx);
             case RpgOpcode.Update:
+                if (WorkstationIo(stmt, ctx, RpgWorkstationOperation.Update)) return -1;
                 return UpdateOpcode(stmt, ctx);
             case RpgOpcode.Delete:
                 return DeleteOpcode(stmt, ctx);
@@ -375,6 +389,7 @@ public sealed class RpgInterpreter
 
     private void ApplyArithmeticIndicators(RpgStatement stmt, object? value, RpgRuntimeContext ctx)
     {
+        if (stmt.Indicator1 == 0 && stmt.Indicator2 == 0 && stmt.Indicator3 == 0) return;
         setInd(stmt.Indicator1, RpgValues.Compare(value, 0m) >= 0, ctx);
         setInd(stmt.Indicator2, RpgValues.Compare(value, 0m) <= 0, ctx);
         if (RpgValues.Compare(value, 0m) == 0)
@@ -457,6 +472,9 @@ public sealed class RpgInterpreter
                 break;
             case RpgIndicatorRef indicatorRef:
                 ctx.Indicators[indicatorRef.Indicator] = RpgValues.ToBool(value);
+                break;
+            case RpgBuiltin { Name: "SUBST" } substring:
+                ctx.WriteSubstring(substring.Arguments, value);
                 break;
             default:
                 throw new RpgRuntimeException($"Invalid assignment target '{target}'.");
@@ -993,19 +1011,7 @@ public sealed class RpgInterpreter
 
     private int ExFmtOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
-        var cursor = GetCursor(FirstFile(stmt));
-        var record = cursor.Current;
-        if (record is null)
-        {
-            cursor.ReadNext(out record, out _);
-        }
-
-        if (record is not null)
-        {
-            CopyRecordToContext(ctx, record);
-            _host.Display?.Invoke(string.Join(" ", record.Select(kv => RpgValues.ToText(kv.Value))));
-        }
-
+        if (!WorkstationIo(stmt, ctx, RpgWorkstationOperation.Exchange)) throw new RpgRuntimeException("EXFMT requires a declared WORKSTN record.");
         return -1;
     }
 

@@ -29,7 +29,7 @@ public sealed class MessageSenderTests
     [InlineData(1208, 100)]
     public void Short_sender_layout_uses_native_offsets_and_only_returns_complete_current_profile(int ccsid, int length)
     {
-        const string common = "BATCHJOB  ORIGINAL  000042SENDER          0240123040506RECEIVER      00123456";
+        const string common = "BATCHJOB  ORIGINAL  000042SENDER          1240123040506RECEIVER      00123456";
         Assert.Equal(77, common.Length);
         var expected = common + (length >= 87 ? "CURRENT   " : ""); expected = expected.PadRight(length);
         var buffer = MessageSenderLayout.Encode(Fixture(), length, false, ccsid);
@@ -43,7 +43,7 @@ public sealed class MessageSenderTests
     public void Long_sender_layout_keeps_module_procedure_and_unavailable_instruction_fields_blank(int ccsid)
     {
         var text = MessageSenderLayout.Encode(Fixture(), 725, true, ccsid).ToText();
-        Assert.Equal("BATCHJOB  ORIGINAL  000042024012304050600SENDER      ", text[..53]);
+        Assert.Equal("BATCHJOB  ORIGINAL  000042124012304050600SENDER      ", text[..53]);
         Assert.Equal(new string(' ', 267), text[53..320]); Assert.Equal("0000", text[320..324]);
         Assert.Equal(new string(' ', 30), text[324..354]); Assert.Equal("RECEIVER  ", text[354..364]);
         Assert.Equal(new string(' ', 276), text[364..640]); Assert.Equal("0000", text[640..644]);
@@ -51,6 +51,20 @@ public sealed class MessageSenderTests
         Assert.Equal(new string(' ', 35), text[690..]);
         var named = Fixture() with { Origin = Fixture().Origin! with { Recipient = "" } };
         Assert.Equal(new string(' ', 320), MessageSenderLayout.Encode(named, 720, true, ccsid).ToText()[354..674]);
+    }
+
+    [Theory]
+    [InlineData("1900-01-01", "0000101")]
+    [InlineData("1999-12-31", "0991231")]
+    [InlineData("2000-01-01", "1000101")]
+    [InlineData("2099-12-31", "1991231")]
+    [InlineData("2100-01-01", "2000101")]
+    public void Sender_dates_use_the_native_century_relative_to_1900(string date, string expected)
+    {
+        var message = Fixture(); var sent = DateTimeOffset.Parse(date + "T00:00:00Z", global::System.Globalization.CultureInfo.InvariantCulture);
+        message = message with { Origin = message.Origin! with { Sent = sent } };
+        Assert.Equal(expected, MessageSenderLayout.Encode(message, 80, false, 37).ToText()[42..49]);
+        Assert.Equal(expected, MessageSenderLayout.Encode(message, 720, true, 1208).ToText()[26..33]);
     }
 
     [Theory]

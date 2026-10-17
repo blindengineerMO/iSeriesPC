@@ -21,12 +21,24 @@ public sealed class JobCallEnvironment : IDisposable
     private Frame _current;
     private bool _disposed;
     internal JobCallEnvironment(SqliteConnectionFactory factory, JobKey job) { _job = job; _areas = new(factory); _messages = new(factory); _current = _root; }
-    public IDisposable EnterCall(string program = "QCMD")
+    public IDisposable EnterCall(string program = "QCMD", bool systemApi = false)
     {
         RequireOwner();
         var parent = _current; if (parent.Depth >= 64) throw new CpfException("IPC0126", "Call environment depth exceeds 64.");
         if (!ObjectName.IsValid(program)) throw new CpfException("IPC0126", "Invalid call-frame program name.");
-        var frame = new Frame(parent, program); _current = frame; return new CallLease(this, frame, parent);
+        var frame = new Frame(parent, program, systemApi); _current = frame; return new CallLease(this, frame, parent);
+    }
+    /// <summary>Native API stack counters refer to user invocations, excluding API implementation frames.</summary>
+    public MessageQueueAddress ApiMessageQueue(string entry, int counter)
+    {
+        RequireOwner();
+        if (entry == "*EXT") return EnsureQueue(_root);
+        if (counter < 0) throw new CpfException("CPF24A3", "Call stack counter must be nonnegative.");
+        var frames = Frames().Where(frame => !frame.SystemApi && frame != _root).ToArray();
+        var index = entry == "*" ? 0 : Array.FindIndex(frames, frame => frame.Program == entry);
+        if (index < 0 || index >= frames.Length) throw new CpfException("CPF2479", "Call stack entry was not found.");
+        if (counter >= frames.Length - index) throw new CpfException("CPF24A3", "Call stack counter exceeds the active stack.");
+        return EnsureQueue(frames[index + counter]);
     }
     public MessageQueueAddress MessageQueue(string relationship = "*SAME")
     {
@@ -121,10 +133,11 @@ public sealed class JobCallEnvironment : IDisposable
         try { Cleanup(Frames().Select(frame => (Action)(() => CloseFrame(frame))).ToArray()); }
         finally { _current = _root; }
     }
-    internal sealed class Frame(Frame? parent = null, string program = "QCMD") : IDisposable
+    internal sealed class Frame(Frame? parent = null, string program = "QCMD", bool systemApi = false) : IDisposable
     {
         public Frame? Parent { get; } = parent;
         public string Program { get; } = program;
+        public bool SystemApi { get; } = systemApi;
         public MessageQueueAddress? Queue { get; set; }
         public int Depth { get; } = (parent?.Depth ?? -1) + 1;
         public Dictionary<string, JobFileOverride> Overrides { get; } = new(StringComparer.Ordinal);

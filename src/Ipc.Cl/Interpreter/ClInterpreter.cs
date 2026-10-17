@@ -19,6 +19,7 @@ public sealed class ClInterpreter
     private readonly Func<CommandResult, bool, CommandResult>? _failureReporter;
     private readonly Action<CommandResult>? _failureHandled;
     private readonly Func<Ipc.Core.Work.ProgramArgument>? _localDataArea;
+    private readonly Func<ClFileBinding, IClDisplayFile>? _openDisplay;
 
     public ClInterpreter(
         Func<string, string, ClProgram?> programLoader,
@@ -29,7 +30,7 @@ public sealed class ClInterpreter
         Func<CommandCall, ClCommandContext, CommandResult?>? contextCommandRunner = null,
         Func<ClStatement, object, ClCommandContext, ClProgramMessage>? programMessageSender = null,
         Func<CommandResult, bool, CommandResult>? failureReporter = null, Action<CommandResult>? failureHandled = null,
-        Func<Ipc.Core.Work.ProgramArgument>? localDataArea = null)
+        Func<Ipc.Core.Work.ProgramArgument>? localDataArea = null, Func<ClFileBinding, IClDisplayFile>? openDisplay = null)
     {
         _programLoader = programLoader;
         _commandRunner = commandRunner;
@@ -44,6 +45,7 @@ public sealed class ClInterpreter
         _failureReporter = failureReporter;
         _failureHandled = failureHandled;
         _localDataArea = localDataArea;
+        _openDisplay = openDisplay;
     }
 
     public CommandResult Run(ClProgram program, IReadOnlyList<string>? parameters = null) =>
@@ -113,7 +115,7 @@ public sealed class ClInterpreter
     {
         if (parameters.Count != program.EntryParameters.Count) return CommandResult.Error("CL entry parameter count does not match PGM PARM.");
         foreach (var monitor in program.Monitors.Concat(program.Statements.SelectMany(s => s.Monitors))) monitor.Validate(_ccsid());
-        using var files = new ClOpenFiles(program.Files, _openFile);
+        using var files = new ClOpenFiles(program.Files, _openFile, _openDisplay);
         var symbols = new ClVariables();
         for (var index = 0; index < parameters.Count; index++) symbols.Bind(program.EntryParameters[index], parameters[index]);
 
@@ -208,13 +210,26 @@ public sealed class ClInterpreter
                     break;
 
                 case ClStatementKind.ReceiveFile:
-                    var received = files.Receive(statement.OpenId!);
+                case ClStatementKind.SendFile:
+                case ClStatementKind.SendReceiveFile:
                     var binding = program.Files.Single(f => f.Request.OpenId == statement.OpenId);
+                    string Variable(string field) => "&" + (statement.OpenId == "*NONE" ? "" : statement.OpenId + "_") + field;
+                    ClFileReadResult? received;
+                    if (binding.Definition.DisplayRecords is not null)
+                        received = files.Display(statement.OpenId!, statement.Kind == ClStatementKind.SendFile ? ClDisplayOperation.Send :
+                            statement.Kind == ClStatementKind.SendReceiveFile ? ClDisplayOperation.SendReceive : ClDisplayOperation.Receive,
+                            statement.FileRecordFormat!, binding.Definition.Fields.ToDictionary(f => f.Name, f => (object?)Read(Variable(f.Name)), StringComparer.Ordinal));
+                    else received = files.Receive(statement.OpenId!);
+                    if (received is null) { pc++; break; }
+                    var updates = new List<(string Name, object? Value)>();
                     foreach (var field in binding.Definition.Fields)
                     {
-                        if (!received.Values.TryGetValue(field.Name, out var value)) throw new ClRuntimeException("File host omitted a declared field.");
-                        Assign("&" + (statement.OpenId == "*NONE" ? "" : statement.OpenId + "_") + field.Name, value ?? "");
+                        if (!received.Values.TryGetValue(field.Name, out var value))
+                        { if (binding.Definition.DisplayRecords is not null) continue; throw new ClRuntimeException("File host omitted a declared field."); }
+                        var variable = Variable(field.Name);
+                        updates.Add((variable, symbols.Cell(variable).Borrow().Normalize(value ?? "")));
                     }
+                    foreach (var update in updates) Assign(update.Name, update.Value ?? "");
                     if (received.ErrorId is { } errorId) throw new ClRuntimeException(received.Error ?? "File record could not be fully converted.", errorId);
                     pc++;
                     break;

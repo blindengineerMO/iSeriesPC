@@ -128,7 +128,7 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
                 case "SELECT": Select(call, line); _lastMonitorTarget = null; break;
                 case "MONMSG": Monitor(call, line); break;
                 case "DCLF": DeclareFile(call, line); break;
-                case "RCVF": case "CLOSE": _lastMonitorTarget = FileOperation(call, line); break;
+                case "RCVF": case "CLOSE": case "SNDF": case "SNDRCVF": _lastMonitorTarget = FileOperation(call, line); break;
                 case "SNDPGMMSG": _lastMonitorTarget = Emit(SendProgramMessage(call, line), line.Location); break;
                 case "LEAVE": case "ITERATE":
                     Check(call, "CMDLBL", 1, line); var target = Parameter(call, "CMDLBL", 0)?.ToUpperInvariant(); if (target == "*NONE") target = null;
@@ -177,14 +177,17 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
         var file = CommandParser.Unquote(Parameter(call, "FILE", 0)).ToUpperInvariant();
         var format = CommandParser.Unquote(Parameter(call, "RCDFMT", 1) ?? "*ALL").ToUpperInvariant();
         var id = Option("OPNID", "*NONE");
-        if (file.Length is < 1 or > 22 || file.StartsWith('&') || format != "*ALL" && !Ipc.Core.Objects.ObjectName.IsValid(format) ||
+        var formats = CommandParser.Tokenize(format);
+        if (format != "*ALL") format = string.Join(" ", formats);
+        if (file.Length is < 1 or > 22 || file.StartsWith('&') || format != "*ALL" && (formats.Count is < 1 or > 99 || formats.Any(f => !Ipc.Core.Objects.ObjectName.IsValid(f)) || formats.Distinct().Count() != formats.Count) ||
             id != "*NONE" && !Ipc.Core.Objects.ObjectName.IsValid(id) || Files.Any(f => f.Request.OpenId == id)) throw Error(line.Location, "Invalid or repeated DCLF file, format or open identifier.");
         if (Flag("ALWGRAPHIC")) throw Error(line.Location, "Graphic database fields are not implemented.");
         var binary = Option("DCLBINFLD", "*DEC") switch { "*INT" => true, "*DEC" => false, _ => throw Error(line.Location, "Invalid DCLBINFLD.") };
         var request = new ClFileRequest(file, format, id, Flag("ALWVARLEN"), Flag("ALWNULL"), binary);
-        var definition = fileResolver?.Invoke(request) ?? throw Error(line.Location, "DCLF requires a compile-time database file resolver.");
+        var definition = fileResolver?.Invoke(request) ?? throw Error(line.Location, "DCLF requires a compile-time file resolver.");
         ClFileBindings.Validate(definition);
-        if (format != "*ALL" && format != definition.RecordFormat) throw Error(line.Location, "DCLF record format not found.");
+        if (format != "*ALL" && (definition.DisplayRecords is { } records ? !formats.SequenceEqual(records.Select(r => r.Name)) : format != definition.RecordFormat))
+            throw Error(line.Location, "DCLF record format not found.");
         Files.Add(new(request, definition));
         foreach (var field in definition.Fields)
             Emit(new() { Kind = ClStatementKind.Declare, FileVariable = true, VariableName = "&" + (id == "*NONE" ? "" : id + "_") + field.Name,
@@ -193,14 +196,29 @@ internal sealed class ClControlFlowCompiler(PreprocessedSource source, Cancellat
     private int FileOperation(CommandCall call, Line line)
     {
         var close = call.Name.Equals("CLOSE", StringComparison.OrdinalIgnoreCase);
-        Check(call, close ? "OPNID" : "DEV RCDFMT OPNID WAIT", close ? 0 : 2, line);
+        var send = call.Name.Equals("SNDF", StringComparison.OrdinalIgnoreCase);
+        var exchange = call.Name.Equals("SNDRCVF", StringComparison.OrdinalIgnoreCase);
+        Check(call, close ? "OPNID" : send ? "DEV RCDFMT OPNID" : "DEV RCDFMT OPNID WAIT", close ? 0 : 2, line);
         var id = CommandParser.Unquote(call.GetOption("OPNID") ?? "*NONE").ToUpperInvariant();
         var binding = Files.SingleOrDefault(f => f.Request.OpenId == id) ?? throw Error(line.Location, "File operation requires a preceding DCLF with the same OPNID.");
+        if (close && binding.Definition.DisplayRecords is not null) throw Error(line.Location, "CLOSE applies to database files; display files close when the program returns.");
         var format = Parameter(call, "RCDFMT", 1)?.ToUpperInvariant() ?? "*FILE";
-        if (!close && ((Parameter(call, "DEV", 0)?.ToUpperInvariant() ?? "*FILE") != "*FILE" ||
-            (call.GetOption("WAIT")?.ToUpperInvariant() ?? "*YES") != "*YES" || format != "*FILE" && format != binding.Definition.RecordFormat))
-            throw Error(line.Location, "Unsupported database RCVF device, wait or record format.");
-        return Emit(new() { Kind = close ? ClStatementKind.CloseFile : ClStatementKind.ReceiveFile, OpenId = id }, line.Location);
+        if (!close)
+        {
+            if ((Parameter(call, "DEV", 0)?.ToUpperInvariant() ?? "*FILE") != "*FILE" || (call.GetOption("WAIT")?.ToUpperInvariant() ?? "*YES") != "*YES")
+                throw Error(line.Location, "File operations support the requesting device and synchronous WAIT(*YES).");
+            if (binding.Definition.DisplayRecords is { } records)
+            {
+                if (format == "*FILE")
+                { if (binding.Definition.DisplayFormatCount != 1) throw Error(line.Location, "A multi-format display requires RCDFMT."); format = records[0].Name; }
+                var record = records.SingleOrDefault(r => r.Name == format) ?? throw Error(line.Location, "Display format is not declared by DCLF.");
+                if (record.Subfile) throw Error(line.Location, "CL writes message subfiles through their control record and SFLINZ; relative-record subfile I/O is not supported.");
+            }
+            else if (send || exchange || format != "*FILE" && format != binding.Definition.RecordFormat)
+                throw Error(line.Location, "Unsupported database file operation or record format.");
+        }
+        return Emit(new() { Kind = close ? ClStatementKind.CloseFile : send ? ClStatementKind.SendFile : exchange ? ClStatementKind.SendReceiveFile : ClStatementKind.ReceiveFile,
+            OpenId = id, FileRecordFormat = format }, line.Location);
     }
     private void Monitor(CommandCall call, Line line)
     {

@@ -32,17 +32,19 @@ public sealed partial class CommandService
     private readonly SqliteFileStore _files;
     private readonly Job? _job;
     private readonly CancellationToken _cancellationToken;
+    private readonly Ipc.Session.IProgramTerminal? _programTerminal;
 
-    public CommandService(IpcSystem system, Job? job = null, CancellationToken cancellationToken = default)
+    public CommandService(IpcSystem system, Job? job = null, CancellationToken cancellationToken = default, Ipc.Session.IProgramTerminal? programTerminal = null)
     {
         _system = system;
         _job = job;
         _cancellationToken = cancellationToken;
+        _programTerminal = programTerminal;
         _files = new SqliteFileStore(system.Connections, system.Objects, job?.UserProfile ?? "QSECOFR");
         _compiler = new ClCompiler(DescribeClDatabaseFile);
         _interpreter = new ClInterpreter(LoadProgram, RunCommand, message => _messages.AppendLine(message), cancellationToken,
             program => EnterProgram(program), () => _job?.Ccsid ?? _system.Config.Ccsid, OpenClDatabaseFile, CallFromCl, RunClContextCommand, SendClProgramMessage, ReportClFailure,
-            error => { if (error.ExceptionReference is { } reference) new Ipc.Services.Messages.MessageQueueStore(_system.Connections).MarkExceptionHandled(reference); }, ClLocalDataArea);
+            error => { if (error.ExceptionReference is { } reference) new Ipc.Services.Messages.MessageQueueStore(_system.Connections).MarkExceptionHandled(reference); }, ClLocalDataArea, OpenClDisplayFile);
         RegisterCommandObjectCommands();
         _catalog.Register("GO", ExecuteGo);
         _catalog.Register("SIGNOFF", ExecuteSignOff);
@@ -87,6 +89,8 @@ public sealed partial class CommandService
         RegisterEnvironmentCommands();
         RegisterDisplayCommands();
         RegisterDataQueueCommands();
+        RegisterUserSpaceCommands();
+        _catalog.Register("WRKAPILS", ListRuntimeApis);
         RegisterGroupCommands();
         RegisterWorkScreenCommands();
         RegisterProfileCommands();
@@ -95,14 +99,23 @@ public sealed partial class CommandService
 
     public IReadOnlyList<string> DescribeCommand(string name)
     {
+        using var identity = EnterJobIdentity();
         var key = ResolveCommandObject(name);
         return new Ipc.Services.Commands.CommandDefinitionStore(_system.Connections).Load(key.Library, key.Name.Value).Describe(key.ToString());
     }
-    public IReadOnlyList<string> AvailableCommands => SearchLibraries("*LIBL").SelectMany(library =>
-        new Ipc.Services.Sqlite.SqliteObjectStore(_system.Connections).FindSummaries(library, null, ObjectType.Command).Select(o => o.Name))
-        .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    public IReadOnlyList<string> AvailableCommands
+    {
+        get
+        {
+            using var identity = EnterJobIdentity();
+            return SearchLibraries("*LIBL").SelectMany(library =>
+                new Ipc.Services.Sqlite.SqliteObjectStore(_system.Connections).FindSummaries(library, null, ObjectType.Command).Select(o => o.Name))
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+        }
+    }
     public CommandMetadata CommandMetadata(string name)
     {
+        using var identity = EnterJobIdentity();
         var key = ResolveCommandObject(name);
         var definition = new Ipc.Services.Commands.CommandDefinitionStore(_system.Connections).Load(key.Library, key.Name.Value);
         return definition.PromptMetadata(name.Contains('/') ? key.ToString() : key.Name.Value);
@@ -133,7 +146,7 @@ public sealed partial class CommandService
         try
         {
             activation = _job is null ? null : _system.JobRuntime.Groups(_job.Key)?.Enter(descriptor);
-            var environment = _job is null ? null : _system.JobRuntime.Environment(_job.Key)?.EnterCall(descriptor.Name);
+            var environment = _job is null ? null : _system.JobRuntime.Environment(_job.Key)?.EnterCall(descriptor.Name, descriptor.Attribute == Ipc.Services.Work.BuiltinProgramService.Attribute);
             return new ProgramCallScope(identity, activation, environment);
         }
         catch { activation?.Dispose(); identity.Dispose(); throw; }
@@ -152,7 +165,8 @@ public sealed partial class CommandService
         if (groups is null) { interpreter.Run(program, parameters); return; }
         var descriptor = _loadedDescriptors.GetValue(program, _ => throw new CpfException("IPC0110", "Missing RPG source snapshot."));
         var key = program.Library + "/" + program.Name;
-        var fingerprint = Convert.ToHexString(global::System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(descriptor.Source!)));
+        var fingerprint = Convert.ToHexString(global::System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(
+            descriptor.Source! + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgWorkstationBindings.AttributeName))));
         var state = groups.Resource(key, () => new RpgActivationState(fingerprint, new RpgRuntimeContext(program, host)));
         if (state.Fingerprint != fingerprint)
         {
@@ -165,7 +179,11 @@ public sealed partial class CommandService
         finally { state.Active = false; if (state.Context.Indicators[0]) groups.RemoveResource(key); }
         // LR ends this program's retained storage.
     }
-    private sealed record RpgActivationState(string Fingerprint, RpgRuntimeContext Context) { public bool Active { get; set; } }
+    private sealed record RpgActivationState(string Fingerprint, RpgRuntimeContext Context) : IDisposable
+    {
+        public bool Active { get; set; }
+        public void Dispose() => Context.CloseWorkstations();
+    }
 
     private CommandResult ExecuteSystemValues(CommandCall call)
     {
@@ -413,7 +431,7 @@ public sealed partial class CommandService
         RpgProgram program;
         try
         {
-            program = RpgCompiler.Compile(library, name, source, resolver.ResolveRpg, _cancellationToken);
+            program = RpgCompiler.Compile(library, name, source, resolver.ResolveRpg, _cancellationToken, DescribeRpgWorkstation);
         }
         catch (RpgCompileException ex)
         {
@@ -422,6 +440,7 @@ public sealed partial class CommandService
 
         var attributes = new Dictionary<string, string>(ActivationAttributes(call));
         attributes[Ipc.Core.Compilation.CompiledSourceMap.AttributeName] = Ipc.Core.Compilation.CompiledSourceMap.Serialize(program.Source!);
+        attributes[RpgWorkstationBindings.AttributeName] = RpgWorkstationBindings.Serialize(program);
         _system.Objects.Create(new ObjectDescriptor
         {
             Key = new QualifiedName(library, name),
@@ -848,6 +867,9 @@ public sealed partial class CommandService
         CancellationToken = _cancellationToken,
         Files = new RpgSqliteFileAccess(_files),
         OpenFile = _job is null ? null : OpenRpgFile,
+        OpenWorkstation = OpenRpgWorkstation,
+        RebindWorkstation = RebindRpgWorkstation,
+        RetainWorkstations = _job is not null && _system.JobRuntime.Groups(_job.Key) is not null,
         LibraryResolver = (_, fileName) => FindFileLibrary(fileName),
         TypedProgramCaller = CallExternalProgram,
         SendMessage = message => _messages.AppendLine(message),
@@ -953,9 +975,18 @@ public sealed partial class CommandService
                 if (string.Equals(descriptor.Attribute, RpgAttribute, StringComparison.OrdinalIgnoreCase))
                 {
                     RpgProgram rpg;
-                    try { rpg = descriptor.ExtendedAttributes?.TryGetValue(Ipc.Core.Compilation.CompiledSourceMap.AttributeName, out var rpgMap) == true
-                        ? RpgCompiler.Compile(lib, name, Ipc.Core.Compilation.CompiledSourceMap.Restore(source, rpgMap), _cancellationToken)
-                        : RpgCompiler.Compile(lib, name, source, _cancellationToken); }
+                    try
+                    {
+                        var expanded = descriptor.ExtendedAttributes?.TryGetValue(Ipc.Core.Compilation.CompiledSourceMap.AttributeName, out var rpgMap) == true
+                            ? Ipc.Core.Compilation.CompiledSourceMap.Restore(source, rpgMap) : null;
+                        var bindings = descriptor.ExtendedAttributes?.TryGetValue(RpgWorkstationBindings.AttributeName, out var saved) == true
+                            ? RpgWorkstationBindings.Restore(source, saved) : null;
+                        Func<RpgWorkstationRequest, RpgWorkstationLayout>? resolver = bindings is null ? null : bindings.Resolve;
+                        rpg = expanded is not null
+                            ? RpgCompiler.Compile(lib, name, expanded, _cancellationToken, resolver)
+                            : RpgCompiler.Compile(lib, name, source, _cancellationToken, resolver);
+                        if (bindings is not null && bindings.Files.Count != rpg.Workstations.Count) throw new InvalidDataException("Unused compiled RPG workstation bindings.");
+                    }
                     catch (Exception error) when (error is InvalidDataException or RpgCompileException)
                     { throw new CpfException("IPC0006", error.Message); }
                     _loadedDescriptors.Add(rpg, descriptor);

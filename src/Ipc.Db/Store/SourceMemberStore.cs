@@ -16,6 +16,7 @@ public sealed partial class SqliteFileStore
 {
     public SourceMemberSnapshot ReadSourceMember(string library, string name, string member)
     {
+        library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
         if (!ObjectName.IsValid(member)) throw new ArgumentException("Invalid source member.");
         Authorize(library, name, AuthorityBit.Read);
@@ -28,6 +29,7 @@ public sealed partial class SqliteFileStore
     }
     public SourceMemberSnapshot SaveSourceMember(string library, string name, string member, string source, string? expectedRevision)
     {
+        library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
         if (!ObjectName.IsValid(member)) throw new ArgumentException("Invalid source member.");
         Authorize(library, name, AuthorityBit.Read | AuthorityBit.Add | AuthorityBit.Update | AuthorityBit.Delete);

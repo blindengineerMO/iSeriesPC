@@ -14,6 +14,68 @@ public static class Program
         File.WriteAllText(Path.Combine(root, $"ready-{Environment.ProcessId}"), "ready");
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         while (!File.Exists(Path.Combine(root, "start"))) await Task.Delay(10, stop.Token);
+        if (mode == "system-value-pairs")
+        {
+            for (var index = 0; index < count; index++)
+            {
+                using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
+                using var update = connection.CreateCommand(); update.Transaction = transaction;
+                update.CommandText = "UPDATE sys_sysvals SET value=CASE name WHEN 'QCCSID' THEN $ccsid ELSE $level END WHERE name IN ('QCCSID','QPWDLVL')";
+                update.Parameters.AddWithValue("$ccsid", index % 2 == 0 ? "1208" : "37");
+                update.Parameters.AddWithValue("$level", index % 2 == 0 ? "4" : "3");
+                update.ExecuteNonQuery(); transaction.Commit(); await Task.Delay(1, stop.Token);
+            }
+            Console.Write(count); return 0;
+        }
+        if (mode is "temp-message-send" or "temp-message-consume" or "temp-message-reply")
+        {
+            var job = new Ipc.Core.Work.JobKey(int.Parse(args[3]), args[4], args[5]); var tag = int.Parse(args[6]);
+            using var identity = Ipc.Services.Events.OperationIdentity.Enter(job.User, job);
+            var messages = new Ipc.Services.Messages.MessageQueueStore(factory); var values = new List<long>();
+            for (var index = 0; index < count; index++)
+            {
+                if (mode == "temp-message-send")
+                {
+                    var value = ((long)tag << 32) | (uint)index;
+                    messages.Send([new("QTEMP", "PROCESS")], new(BitConverter.GetBytes(value), 37), cancellationToken: stop.Token); values.Add(value);
+                }
+                else if (mode == "temp-message-consume")
+                    values.Add(BitConverter.ToInt64(messages.Receive(new("QTEMP", "PROCESS"), wait: TimeSpan.FromSeconds(15), cancellationToken: stop.Token)!.Data.ToArray()));
+                else
+                {
+                    var inbox = new Ipc.Core.Objects.QualifiedName("QGPL", "OPERATOR"); var inquiry = messages.List(inbox).First();
+                    messages.Reply(inbox, inquiry.Key, inquiry.Data, cancellationToken: stop.Token); values.Add(BitConverter.ToInt64(inquiry.Data.ToArray()));
+                }
+            }
+            Console.Write(JsonSerializer.Serialize(values)); return 0;
+        }
+        if (mode == "temp-file-append")
+        {
+            var job = new Ipc.Core.Work.JobKey(int.Parse(args[3]), args[4], args[5]); var offset = int.Parse(args[6]);
+            using var identity = Ipc.Services.Events.OperationIdentity.Enter(job.User, job);
+            var files = new Ipc.Db.Store.SqliteFileStore(factory, new SqliteObjectStore(factory), job.User);
+            for (var index = 0; index < count; index++) files.Insert("QTEMP", "ROWS", "ROWS", "ROW",
+                new Dictionary<string, object?> { ["ID"] = offset + index, ["AMOUNT"] = 0m, ["TEXT"] = "process" });
+            Console.Write(JsonSerializer.Serialize(files.RowCount("QTEMP", "ROWS", "ROWS"))); return 0;
+        }
+        if (mode == "temp-space-write")
+        {
+            var job = new Ipc.Core.Work.JobKey(int.Parse(args[3]), args[4], args[5]);
+            var offset = int.Parse(args[6]); var spaces = new UserSpaceStore(factory);
+            using var identity = Ipc.Services.Events.OperationIdentity.Enter(job.User, job);
+            for (var index = 1; index <= count; index++)
+                spaces.Write(new("QTEMP", "PROCESS"), offset + 1, Enumerable.Repeat((byte)index, 16).ToArray(), stop.Token);
+            Console.Write(JsonSerializer.Serialize(spaces.Read(new("QTEMP", "PROCESS"), offset + 1, 16))); return 0;
+        }
+        if (mode == "job-area-write")
+        {
+            var job = new Ipc.Core.Work.JobKey(int.Parse(args[3]), args[4], args[5]);
+            var offset = int.Parse(args[6]); var areas = new JobDataAreaStore(factory);
+            using var identity = Ipc.Services.Events.OperationIdentity.Enter(job.User, job);
+            for (var index = 1; index <= count; index++)
+                areas.Write(job, JobDataArea.Group, offset, Enumerable.Repeat((byte)index, 16).ToArray());
+            Console.Write(JsonSerializer.Serialize(areas.Read(job, JobDataArea.Group).Skip(offset).Take(16).ToArray())); return 0;
+        }
         if (mode is "data-produce" or "data-consume")
         {
             var dataQueues = new Ipc.Services.Messages.DataQueueStore(factory);

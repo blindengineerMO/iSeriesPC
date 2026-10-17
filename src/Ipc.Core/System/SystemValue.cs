@@ -62,7 +62,8 @@ public static class SystemValueNames
     public const string SignOffDisplay = "QSIGNOFF";
     public const string KeyboardLed = "QKBDBUF";
     public const string ConsoleDevice = "QCONSOLE";
-    public const string AllowAddSpecialAuthorities = "QALWUSRDMN";
+    public const string AllowUserDomain = "QALWUSRDMN";
+    public const string AllowAddSpecialAuthorities = AllowUserDomain;
     public const string AllowUserProfilesToChangePassword = "QALWCHGUSRPWD";
     public const string MaximumUnsignedValues = "QMAXSPOOL";
     public const string MaxNumberJobs = "QMAXJOB";
@@ -91,6 +92,7 @@ public sealed class SystemValueRegistry
         V(SystemValueNames.TimeFormat, "*HMS", SystemValueType.Character, "Time format"),
         V(SystemValueNames.TimeSeparator, ":"),
         V(SystemValueNames.SecurityLevel, "40", SystemValueType.Numeric, "Security level"),
+        V(SystemValueNames.AllowUserDomain, "*ALL", SystemValueType.Character, "Libraries allowing user-domain objects"),
         V(SystemValueNames.PasswordSystemLevel, "3", SystemValueType.Character, "Password compatibility level (0/1: 10, 2/3/4: 128 characters)"),
         V(SystemValueNames.PasswordMinimumLength, "6", SystemValueType.Numeric),
         V(SystemValueNames.PasswordRequiredDigit, "*NO", SystemValueType.Character, "Require digit in passwords"),

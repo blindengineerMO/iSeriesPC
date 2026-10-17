@@ -10,6 +10,8 @@ public sealed partial class ObjectCatalogOperations
     /// <summary>Delete a library and its contents in one catalog/payload/outbox transaction.</summary>
     public void DeleteLibrary(string library)
     {
+        var temporary = new JobTemporaryLibrary(factory);
+        library = temporary.ResolveLibrary(library); temporary.RequirePermanentLibrary(library);
         var key = new QualifiedName("QSYS", library);
         var authorization = new ServiceAuthorization(factory);
         authorization.RequireObject("QSYS", library, ObjectType.Library, Authorities.UseBits | AuthorityBit.ObjectExist, checkLibrary: false);

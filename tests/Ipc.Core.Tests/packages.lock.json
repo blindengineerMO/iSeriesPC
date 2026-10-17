@@ -261,6 +261,7 @@
       "ipc.workfixture": {
         "type": "Project",
         "dependencies": {
+          "Ipc.Db": "[1.0.0, )",
           "Ipc.Services": "[1.0.0, )"
         }
       }

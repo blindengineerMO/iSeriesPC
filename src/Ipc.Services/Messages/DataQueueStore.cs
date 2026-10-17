@@ -9,6 +9,7 @@ using Ipc.Core.Work;
 using Ipc.Services.Events;
 using Ipc.Services.Security;
 using Ipc.Services.Sqlite;
+using Ipc.Services.Work;
 using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Messages;
@@ -34,6 +35,7 @@ public sealed class DataQueueStore(SqliteConnectionFactory factory)
         int keyLength = 0, bool includeSender = false, string text = "", string authority = "*LIBCRTAUT", int ccsid = 37)
     {
         ValidateName(queue);
+        queue = new JobTemporaryLibrary(factory).Resolve(queue, ObjectType.DataQueue);
         var definition = new DataQueueDefinition(Guid.NewGuid().ToString("N"), maximumLength, sequence, keyLength, includeSender);
         ValidateDefinition(definition);
         if (!CodePage.IsSupported(ccsid) || text.Length > 50 || text.Any(char.IsControl)) throw Invalid("Invalid data-queue text or CCSID.");
@@ -72,7 +74,7 @@ public sealed class DataQueueStore(SqliteConnectionFactory factory)
 
     public DataQueueStatus Inspect(QualifiedName queue)
     {
-        ValidateName(queue); Authorize(queue, Authorities.UseBits);
+        ValidateName(queue); queue = new JobTemporaryLibrary(factory).Resolve(queue, ObjectType.DataQueue); Authorize(queue, Authorities.UseBits);
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction();
         var definition = ReadDefinition(connection, transaction, queue, Authorities.UseBits);
         var (entries, bytes) = Size(connection, transaction, queue);
@@ -82,6 +84,7 @@ public sealed class DataQueueStore(SqliteConnectionFactory factory)
     public long Send(QualifiedName queue, ProgramBuffer data, ProgramBuffer? key = null, CancellationToken cancellationToken = default)
     {
         ValidateName(queue);
+        queue = new JobTemporaryLibrary(factory).Resolve(queue, ObjectType.DataQueue);
         if (data.Length is < 1 or > MaximumEntryLength || key?.Length > 256) throw Invalid("Invalid data-queue entry or key length.");
         cancellationToken.ThrowIfCancellationRequested(); Authorize(queue, AuthorityBit.ObjectOperate | AuthorityBit.Add);
         using var connection = factory.Open(); using var transaction = BeginWrite(connection, cancellationToken);
@@ -114,6 +117,7 @@ public sealed class DataQueueStore(SqliteConnectionFactory factory)
         Action<DataQueueEntry>? prepareReceiver = null)
     {
         ValidateName(queue);
+        queue = new JobTemporaryLibrary(factory).Resolve(queue, ObjectType.DataQueue);
         if (wait != Timeout.InfiniteTimeSpan && (wait < TimeSpan.Zero || wait > TimeSpan.FromDays(7)) ||
             maximumDataLength is < 1 or > MaximumEntryLength || maximumKeyLength is < 0 or > 256 || key?.Length > 256 ||
             keyOrder is { } order && !Enum.IsDefined(order)) throw Invalid("Invalid data-queue receive options.");
@@ -170,7 +174,7 @@ public sealed class DataQueueStore(SqliteConnectionFactory factory)
 
     public int Clear(QualifiedName queue, ProgramBuffer? key = null, DataQueueKeyOrder? keyOrder = null, CancellationToken cancellationToken = default)
     {
-        ValidateName(queue); cancellationToken.ThrowIfCancellationRequested();
+        ValidateName(queue); queue = new JobTemporaryLibrary(factory).Resolve(queue, ObjectType.DataQueue); cancellationToken.ThrowIfCancellationRequested();
         if (keyOrder is { } order && !Enum.IsDefined(order)) throw Invalid("Invalid key comparison.");
         var required = AuthorityBit.ObjectOperate | AuthorityBit.Delete; Authorize(queue, required);
         using var connection = factory.Open(); using var transaction = BeginWrite(connection, cancellationToken);

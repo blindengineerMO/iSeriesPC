@@ -4,7 +4,7 @@ The shared runtime coordinates typed object and member-record allocations in
 `<catalog>.locks`, a private SQLite WAL sidecar. Independent processes using the
 same catalog see the same holders and waiters. Its schema is version 1; it is
 runtime state, excluded from application backups and never restored as user data.
-The current catalog schema is 16; lock coordination has its own version.
+The current catalog schema is 26; lock coordination has its own version.
 
 Locks belong to the persisted job number/name/user, not a thread, connection,
 activation group, browser token or Unix PID. A session cannot allocate or release
@@ -16,16 +16,20 @@ running as the server's Unix account is inside that trust boundary.
 
 For different jobs allocating the same typed object, `yes` means compatible:
 
-| Held / requested | `*EXCL` | `*SHRUPD` | `*SHRRD` | `*SHRNUP` |
-| --- | --- | --- | --- | --- |
-| `*EXCL` | no | no | no | no |
-| `*SHRUPD` | no | yes | yes | no |
-| `*SHRRD` | no | yes | yes | yes |
-| `*SHRNUP` | no | no | yes | yes |
+| Held / requested | `*EXCL` | `*SHRUPD` | `*SHRRD` | `*SHRNUP` | `*EXCLRD` |
+| --- | --- | --- | --- | --- | --- |
+| `*EXCL` | no | no | no | no | no |
+| `*SHRUPD` | no | yes | yes | no | no |
+| `*SHRRD` | no | yes | yes | yes | yes |
+| `*SHRNUP` | no | no | yes | yes | no |
+| `*EXCLRD` | no | no | yes | no | no |
 
-This four-state subset follows IBM's
-[lock enforcement matrix](https://www.ibm.com/support/pages/lock-enforcement-rules).
-`*EXCLRD` and other IBM allocation options are outside this command subset.
+These five states follow IBM's
+[object lock-state matrix](https://www.ibm.com/docs/en/i/7.6.0?topic=resources-lock-states-objects).
+`*EXCLRD` permits other jobs' shared-read allocations while blocking competing
+writers and exclusive-read holders. Its appended persisted value preserves
+existing locks without a sidecar schema change. Other IBM allocation options
+and per-object-type allocation restrictions remain outside this command subset.
 Library/name/type are all part of the identity: `QGPL/DATA *FILE` is distinct
 from `QGPL/DATA *PGM`. Record identity adds member and the member table's positive
 SQLite row number. Different rows do not conflict with each other.
@@ -74,9 +78,12 @@ allocations. Nonexistent explicit objects, members and records are rejected.
 | --- | --- | --- |
 | Explicit object/record | `JobLockStore.Acquire`; `ALCOBJ` for objects | allocation handle disposal, matching `DLCOBJ`, or durable job end |
 | Automatic object | authorized shared command/menu access: read/use = `*SHRRD`, data mutation = `*SHRUPD`, structural mutation = `*EXCL` | outer command/menu-load scope, including exception/cancellation |
+| User-space byte write | authorized `QUSCHGUS` / `UserSpaceStore.Write` = `*EXCLRD`, parent library = `*SHRRD`; attribute changes retain `*EXCL` | outer command scope |
 | Automatic record | `SqliteFileStore` returned rows = shared-read; inserted/updated/deleted rows = exclusive | outer command scope |
 | Commitment | `JobLockTransaction.Acquire` | successful actual SQLite commit, rollback, or disposal after rollback |
 | Open path | RPG file open | explicit close, owning call-frame return, or job end; see [job-environment.md](job-environment.md) |
+| RPG display | Declared WORKSTN open | CLOSE, LR, activation-group reclaim/*NEW return, or job end; RETURN retains rows and shared-read file/parent-library allocations |
+| Native message receive | Positive/indefinite QMHRCVM wait: queue and parent library shared-read, lifetime `MessageReceive`; a catalog token assigns the receiver job | delivery, timeout, cancellation, or completed job cleanup |
 | Parent library | explicit child allocation | child allocation release or job end |
 
 File insert/update/delete acquire row allocations before committing changes.
@@ -99,6 +106,14 @@ boundaries and file store. Future SQL, ODP, messaging and other domain operation
 must use the same service boundary; raw host SQLite/file access does not acquire
 application locks. Locks do not implement IBM's full database isolation model.
 
+The native message receiver token also rejects other jobs' receive/remove/reply
+operations with CPF2451 while permitting send. Only one waiting receiver owns a
+named queue. Its token and object/library leases are released on every normal or
+canceled exit; job terminal-state cleanup removes stale tokens during recovery.
+MessageApiTests and MessageApiIntegrationTests cover contention, cancellation and
+ENDJOB cleanup. The token is separate from the compatible shared-read object
+leases so producers can continue to deliver messages.
+
 A cancellation request does not release a running job's locks. They are released
 after execution stops and its terminal outcome commits. Process death alone also
 does not release persistent allocations: the owning host first records interrupted
@@ -108,7 +123,8 @@ can safely repeat after a crash between catalog completion and sidecar cleanup.
 
 ## Evidence
 
-`JobLockTests` covers all 16 compatibility combinations, typed identities,
+`JobLockTests` covers all 25 compatibility combinations against an independent
+literal matrix, EXCLRD commands, record read/write intent in both orders, typed identities,
 cross-job ownership, real file reads/updates/deletes, command inspection,
 multi-allocation failure cleanup, timeout, cancellation, deadlock resolution,
 reentrant access, job end, and real SQLite commit/rollback/disposal.
@@ -116,3 +132,13 @@ reentrant access, job end, and real SQLite commit/rollback/disposal.
 an actual holder, proving allocations survive until recovery and a replacement
 process can acquire afterward. MFA entry-point tests also verify that revoked
 sessions still receive their explicit authentication failure before lock setup.
+
+## Native job list publication
+
+[QUSLJOB](job-apis.md) takes the target user space's *EXCLRD operation allocation
+and checks current *CHANGE/library authority. Existing conflicting allocations
+block generation and deletion. Building and publishing the list uses one write
+transaction; fresh authority is checked before commit. Cancellation, failed SQL
+or rejected caller-area changes preserve the prior bytes, size and change metadata.
+Shared-read consumers observe committed lists, and operation leases unwind with
+the command scope. JobApiEdgeTests and JobApiIntegrationTests cover these cases.

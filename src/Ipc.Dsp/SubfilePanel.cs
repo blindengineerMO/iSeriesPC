@@ -9,7 +9,7 @@ public sealed class SubfilePanel
     private readonly PanelRecord _control;
     private readonly PanelRecord _data;
     private readonly Func<string, string, string?>? _messages;
-    private readonly Func<string, string, DisplayMessage?>? _programMessages;
+    private readonly IProgramMessageSource? _programMessageSource;
     private readonly bool _messageSubfile;
     private Dictionary<int, DisplayMessage> _visibleMessages = new();
     private PanelSession? _panel;
@@ -25,13 +25,14 @@ public sealed class SubfilePanel
     public int FirstRecord => State.RecordNumbers.Skip(_start).FirstOrDefault();
     public int PageCapacity => _pageSize * (Folded ? 1 : _height);
     public DisplayBuffer Buffer => _panel?.Buffer ?? throw new InvalidOperationException("Write control record first.");
-    public SubfilePanel(PanelDefinition definition, string control, SubfileState? state = null, Func<string, string, string?>? messages = null, Func<string, string, DisplayMessage?>? programMessages = null)
+    public SubfilePanel(PanelDefinition definition, string control, SubfileState? state = null, Func<string, string, string?>? messages = null,
+        Func<string, string, DisplayMessage?>? programMessages = null, IProgramMessageSource? programMessageSource = null)
     {
-        _programMessages = programMessages;
+        _programMessageSource = programMessageSource;
         _definition = definition; _control = definition.Records.Single(r => r.Name == control); _messages = messages;
         if (SubfileLayout.Keyword(_control, "WINDOW") is not null) throw new InvalidOperationException("Use DisplayFileSession for window composition.");
         _data = definition.Records.Single(r => r.Name == SubfileLayout.Keyword(_control, "SFLCTL")!.Arguments[0]);
-        State = state ?? new SubfileState(_data, SubfileLayout.Number(_control, "SFLSIZ"));
+        State = state ?? new SubfileState(_data, SubfileLayout.Number(_control, "SFLSIZ"), programMessages ?? (programMessageSource is null ? null : programMessageSource.Read));
         var visible = _data.Fields.Where(f => f.Usage != PanelFieldUsage.Hidden).ToArray();
         var message = SubfileLayout.Keyword(_data, "SFLMSGRCD"); _messageSubfile = message is not null;
         _top = message is null ? visible.Min(f => f.Row) : int.Parse(message.Arguments[0]);
@@ -42,18 +43,36 @@ public sealed class SubfilePanel
     public void Write(IReadOnlyDictionary<string, object?> values, IReadOnlyList<bool>? indicators = null)
     {
         if (indicators is not null && indicators.Count != 100) throw new ArgumentException("Expected 100 indicators.");
-        if (indicators is not null) _indicators = indicators.ToArray();
-        _values = new(values, StringComparer.Ordinal);
-        if (Active("SFLCLR")) { State.Clear(); _start = 0; }
-        _start = Math.Min(_start, Math.Max(0, State.Count - 1));
-        Compose();
+        var previousIndicators = _indicators; var previousValues = _values; var previousStart = _start;
+        var restore = State.Checkpoint();
+        try
+        {
+            if (indicators is not null) _indicators = indicators.ToArray();
+            _values = new(values, StringComparer.Ordinal);
+            if (Active("SFLINZ"))
+            {
+                var field = _control.Fields.Single(f => f.Keywords.Any(k => k.Name == "SFLPGMQ"));
+                var queue = values.GetValueOrDefault(field.BindingName) as string;
+                if (string.IsNullOrWhiteSpace(queue) || queue.Length > 10 || queue.Any(char.IsControl)) throw new ArgumentException("SFLINZ requires a program message queue name.");
+                var messages = _programMessageSource?.ReadAll(queue.TrimEnd()) ?? throw new InvalidOperationException("Message subfile initialization requires a program message source.");
+                State.LoadMessages(messages, queue.TrimEnd()); _start = 0;
+            }
+            else if (Active("SFLCLR")) { State.Clear(); _start = 0; }
+            _start = Math.Min(_start, Math.Max(0, State.Count - 1));
+            Compose();
+        }
+        catch
+        {
+            restore(); _indicators = previousIndicators; _values = previousValues; _start = previousStart; throw;
+        }
     }
     public PanelResponse Handle(KeyPress key)
     {
         if (_panel is null) throw new InvalidOperationException("Write control record first.");
         var aid = Normalize(key.Aid);
-        if (_messageSubfile && aid == AidKey.Pf1 && _visibleMessages.TryGetValue(Buffer.Cursor.Row, out var help))
-            return new(false, aid, new Dictionary<string, object?>(_values), _indicators.ToArray(), Buffer.Cursor, HelpId: help.HelpId);
+        if (_messageSubfile && aid == AidKey.Pf1 && _definition.Keywords.Concat(_control.Keywords).Any(k => k.Name == "HELP" && k.Enabled(_indicators)) &&
+            _visibleMessages.TryGetValue(Buffer.Cursor.Row, out var help))
+            return new(false, aid, new Dictionary<string, object?>(_values), _indicators.ToArray(), Buffer.Cursor, HelpId: help.HelpId, MessageHelp: help.Details);
         var fold = _control.Keywords.FirstOrDefault(k => k.Name is "SFLFOLD" or "SFLDROP" && k.Enabled(_indicators));
         var toggle = fold is not null && aid == FunctionAid(fold.Arguments[0]);
         var page = aid is AidKey.RollUp or AidKey.RollDown;
@@ -126,12 +145,7 @@ public sealed class SubfilePanel
                 var row = State.Read(number);
                 if (_messageSubfile)
                 {
-                    var key = row.Values.GetValueOrDefault(_data.Fields[0].BindingName) as string;
-                    var queue = row.Values.GetValueOrDefault(_data.Fields[1].BindingName) as string;
-                    if (key is null || key.Length != 4 || key.Any(c => c > 255) || string.IsNullOrWhiteSpace(queue) || queue.Length > 10 || queue.Any(char.IsControl))
-                        throw new ArgumentException("Message subfiles require a four-byte key and program queue name of at most 10 characters.");
-                    var message = _programMessages?.Invoke(queue.TrimEnd(), key) ?? throw new InvalidOperationException("Subfile message is unavailable from the program queue.");
-                    if (message.Text.Length > 32768 || message.Text.Any(char.IsControl)) throw new ArgumentException("Invalid display message text.");
+                    var message = row.Message ?? throw new InvalidOperationException("Subfile message was not captured at output.");
                     var messageRow = _top + index; visibleMessages[messageRow] = message;
                     var width = Math.Min(definition.Columns - 4, definition.Columns == 132 ? 128 : 76);
                     record.Fields.Add(new PanelField { Name = "$MSG" + number, Constant = true, Length = width, Usage = PanelFieldUsage.Output, Row = messageRow, Column = 2,

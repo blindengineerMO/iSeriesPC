@@ -41,7 +41,8 @@ public sealed class CertificateService : IDisposable
             command.CommandText = """
                 SELECT (SELECT count(*) FROM sys_mfa WHERE secret LIKE $prefix) +
                   (SELECT count(*) FROM sys_mfa_enrollments WHERE secret LIKE $prefix) +
-                  (SELECT count(*) FROM sys_certificates WHERE private_key LIKE $prefix)
+                  (SELECT count(*) FROM sys_certificates WHERE private_key LIKE $prefix) +
+                  (SELECT count(*) FROM sys_crypto_keys WHERE key_value LIKE $prefix)
                 """;
             command.Parameters.AddWithValue("$prefix", "v1." + key.Id + ".%");
             return new WrappingKeyInfo(key.Id, key.Active, Convert.ToInt64(command.ExecuteScalar()));
@@ -74,6 +75,7 @@ public sealed class CertificateService : IDisposable
                 update.Parameters.AddWithValue("$value", envelope); update.Parameters.AddWithValue("$id", row.Id); update.ExecuteNonQuery();
             }
         }
+        _factory.CryptoKeys.Rewrap(connection, transaction);
         MfaStore.Audit(connection, transaction, "security.wrapping-key.rotated", OperationIdentity.Current?.Principal ?? "*SYSTEM", true, _clock.GetUtcNow());
         transaction.Commit();
         // Old keys are retained for historical backups, even after live ciphertext is rewrapped.

@@ -113,9 +113,13 @@ public sealed class IpcSystem : IDisposable
     {
         get
         {
-            var snapshot = new SystemValueRegistry();
-            foreach (var value in _systemValueRegistry.All) snapshot.Set(value.Name, value.Value);
-            return snapshot;
+            lock (_lifecycleGate)
+            {
+                if (_started) return new SystemValueStore(_connectionFactory).ReadSnapshot();
+                var snapshot = new SystemValueRegistry();
+                foreach (var value in _systemValueRegistry.All) snapshot.Set(value.Name, value.Value);
+                return snapshot;
+            }
         }
     }
 
@@ -130,6 +134,7 @@ public sealed class IpcSystem : IDisposable
     public SecurityService Security => _security;
     public EimService EnterpriseIdentities => _eim;
     public CertificateService Certificates => _certificates;
+    public CryptographicService Cryptography => new(_connectionFactory);
     public ContentTrustService ContentTrust => _contentTrust;
     public ObjectSigningService ObjectSigning => _objectSigning;
     public SignedDeploymentService SignedDeployments => new(_connectionFactory, _contentTrust, _objectSigning);
@@ -150,12 +155,13 @@ public sealed class IpcSystem : IDisposable
         library = library.ToUpperInvariant();
         var current = job?.CurrentLibrary is { } configured && ObjectName.IsValid(configured) ? configured : "QGPL";
         if (library == "*CURLIB") return new[] { current };
-        if (library != "*LIBL") return new[] { library };
+        if (library is not ("*LIBL" or "*USRLIBL")) return new[] { library };
         var users = (job?.LibraryList is { } list && list != "*LIBL" ? list : "QGPL QUSRSYS")
             .Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
         var systemLibraries = SystemValues.Get(SystemValueNames.SystemLibraryList).Value
             .Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-        return systemLibraries.Concat(job?.CurrentLibrary == "*CRTDFT" ? Array.Empty<string>() : new[] { current }).Concat(users).Distinct(StringComparer.OrdinalIgnoreCase);
+        var userLibraries = (job?.CurrentLibrary == "*CRTDFT" ? Array.Empty<string>() : new[] { current }).Concat(users);
+        return (library == "*USRLIBL" ? userLibraries : systemLibraries.Concat(userLibraries)).Distinct(StringComparer.OrdinalIgnoreCase);
     }
 
     public Ipc.Core.Menu.ApplicationMenu? FindMenu(string name, Job? job = null, string? library = null)
@@ -201,6 +207,7 @@ public sealed class IpcSystem : IDisposable
         _config.Ccsid = int.Parse(_systemValueRegistry.Get(SystemValueNames.Ccsid).Value, global::System.Globalization.CultureInfo.InvariantCulture);
         _libraryManager.SeedSystemLibraries();
         _security.Profiles.SeedDefaults();
+        new JobTemporaryLibrary(_connectionFactory).InitializeExistingJobs();
         _jobs.SeedQueues();
         WorkDefinitions.SeedClasses();
         _subsystems.SeedDefaults();
@@ -248,7 +255,7 @@ public sealed class IpcSystem : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             name = name.ToUpperInvariant();
             if (!_systemValueRegistry.TryGet(name, out _)) throw new CpfException("IPC0003", "Unknown system value.");
-            var writable = new[] { SystemValueNames.SystemName, SystemValueNames.Ccsid, SystemValueNames.SecurityLevel,
+            var writable = new[] { SystemValueNames.SystemName, SystemValueNames.Ccsid, SystemValueNames.SecurityLevel, SystemValueNames.AllowUserDomain,
                 SystemValueNames.PasswordMinimumLength, SystemValueNames.PasswordSystemLevel, SystemValueNames.PasswordExpirationInterval,
                 SystemValueNames.MaximumSignOnAttempts, SystemValueNames.PasswordRequiredDigit,
                 SystemValueNames.PasswordRepeatedCharacters, SystemValueNames.SystemLibraryList, SystemValueNames.UserLibraryList };
@@ -263,9 +270,25 @@ public sealed class IpcSystem : IDisposable
             if (name is SystemValueNames.SystemLibraryList or SystemValueNames.UserLibraryList)
             {
                 var libraries = value.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
-                if (libraries.Length > 250 || libraries.Distinct().Count() != libraries.Length || libraries.Any(l => !_libraryManager.LibraryExists(l)))
+                foreach (var library in libraries.Where(l => l != LibraryNames.QTemp)) new JobTemporaryLibrary(_connectionFactory).RequirePermanentLibrary(library);
+                var maximum = name == SystemValueNames.SystemLibraryList ? 15 : 25;
+                if (libraries.Length > maximum || libraries.Distinct().Count() != libraries.Length || libraries.Any(l => !_libraryManager.LibraryExists(l)))
                     throw new CpfException("IPC0003", "Library list must contain existing unique libraries.");
                 value = string.Join(',', libraries);
+            }
+            if (name == SystemValueNames.AllowUserDomain)
+            {
+                var entries = value.ToUpperInvariant().Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                var libraries = entries.Where(e => e is not ("*ALL" or "*DIR")).ToArray();
+                foreach (var library in libraries.Where(l => l != LibraryNames.QTemp)) new JobTemporaryLibrary(_connectionFactory).RequirePermanentLibrary(library);
+                if (entries.Length is < 1 or > 50 || entries.Distinct().Count() != entries.Length ||
+                    entries.Contains("*ALL") && entries.Length != 1 || libraries.Length > 50 ||
+                    !entries.Contains("*ALL") && !entries.Contains("*DIR") && !libraries.Contains(LibraryNames.QTemp) ||
+                    libraries.Any(l => !ObjectName.IsValid(l) || !_libraryManager.LibraryExists(l)))
+                    throw new CpfException("IPC0003", "QALWUSRDMN requires *ALL alone, or *DIR and/or at most 50 existing unique libraries including QTEMP when libraries are listed.");
+                if (libraries.Length != 0 && !libraries.Contains(LibraryNames.QTemp))
+                    throw new CpfException("IPC0003", "Individual QALWUSRDMN libraries must include QTEMP.");
+                value = string.Join(',', entries);
             }
             if (_systemValueRegistry.Get(name).ValueType == SystemValueType.Numeric)
             {

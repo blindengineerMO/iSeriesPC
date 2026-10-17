@@ -13,18 +13,23 @@ public sealed class DisplayFileSession
     private readonly PanelDefinition _definition;
     private readonly Func<string, string, string?>? _messages;
     private readonly Func<string, string, DisplayMessage?>? _programMessages;
+    private readonly IProgramMessageSource? _programMessageSource;
     private readonly List<Layer> _layers = new();
     private readonly Dictionary<string, SubfileState> _subfiles = new(StringComparer.Ordinal);
     public DisplayBuffer Buffer { get; }
     public int WindowDepth => _layers.Count(l => l.Window);
-    public DisplayFileSession(PanelDefinition definition, Func<string, string, string?>? messages = null, Func<string, string, DisplayMessage?>? programMessages = null)
+    public DisplayFileSession(PanelDefinition definition, Func<string, string, string?>? messages = null, Func<string, string, DisplayMessage?>? programMessages = null,
+        IProgramMessageSource? programMessageSource = null)
     {
-        _definition = definition; _messages = messages; _programMessages = programMessages; Buffer = new(definition.Rows, definition.Columns);
+        if (programMessages is not null && programMessageSource is not null) throw new ArgumentException("Specify one program message source.");
+        _definition = definition; _messages = messages; _programMessageSource = programMessageSource;
+        _programMessages = programMessages ?? (programMessageSource is null ? null : programMessageSource.Read);
+        Buffer = new(definition.Rows, definition.Columns);
         foreach (var control in definition.Records.Where(r => SubfileLayout.Keyword(r, "SFLCTL") is not null))
         {
             var data = definition.Records.Single(r => r.Name == SubfileLayout.Keyword(control, "SFLCTL")!.Arguments[0]);
             if (_subfiles.ContainsKey(data.Name)) throw new ArgumentException("Each subfile requires one control record.");
-            _subfiles[data.Name] = new(data, SubfileLayout.Number(control, "SFLSIZ"));
+            _subfiles[data.Name] = new(data, SubfileLayout.Number(control, "SFLSIZ"), _programMessages);
         }
     }
     public SubfileState Subfile(string record) => _subfiles[record];
@@ -44,7 +49,7 @@ public sealed class DisplayFileSession
         SubfilePanel? subfile = existing < 0 ? null : _layers[existing].Subfile;
         if (SubfileLayout.Keyword(format, "SFLCTL") is { } control)
         {
-            subfile ??= new(local, record, _subfiles[control.Arguments[0]], _messages, _programMessages); subfile.Write(values, indicators);
+            subfile ??= new(local, record, _subfiles[control.Arguments[0]], _messages, _programMessages, _programMessageSource); subfile.Write(values, indicators);
         }
         else
         {

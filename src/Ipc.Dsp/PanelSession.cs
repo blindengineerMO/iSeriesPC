@@ -4,7 +4,8 @@ using Ipc.Terminal;
 namespace Ipc.Dsp;
 
 public sealed record PanelResponse(bool Accepted, AidKey Aid, IReadOnlyDictionary<string, object?> Values,
-    bool[] Indicators, CellPosition Cursor, string? Error = null, string? HelpId = null, IReadOnlyList<string>? ModifiedBindings = null, Ipc.Core.Menu.HelpRequest? Help = null);
+    bool[] Indicators, CellPosition Cursor, string? Error = null, string? HelpId = null, IReadOnlyList<string>? ModifiedBindings = null, Ipc.Core.Menu.HelpRequest? Help = null,
+    MessageHelp? MessageHelp = null);
 
 /// <summary>A single display-file open, with caller-owned values copied at each output/input boundary.</summary>
 public sealed class PanelSession

@@ -54,6 +54,9 @@ public sealed class RpgHost
     public IRpgFileAccess? Files { get; init; }
 
     public Func<string, RpgFileHandle>? OpenFile { get; init; }
+    public Func<Ipc.Rpg.Model.RpgWorkstationBinding, IRpgWorkstation>? OpenWorkstation { get; init; }
+    public Action<IRpgWorkstation>? RebindWorkstation { get; init; }
+    public bool RetainWorkstations { get; init; }
 
     public Func<string, string, string?>? LibraryResolver { get; init; }
 

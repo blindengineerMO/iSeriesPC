@@ -12,6 +12,8 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
 {
     public void RequireObject(string library, string name, string type, AuthorityBit required, bool checkLibrary = true, bool acquireLocks = true)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(new(library, name), type);
+        library = key.Library; name = key.Name.Value;
         if (OperationIdentity.Current is not { } identity) return;
         var (profile, groups) = Caller(identity.Principal);
         var objects = new SqliteObjectStore(factory);
@@ -36,6 +38,8 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
 
     internal void RequireSnapshot(ObjectDescriptor descriptor, AuthorityBit required)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(descriptor.Key, descriptor.ObjectType);
+        if (key != descriptor.Key) descriptor = descriptor.Snapshot(key);
         if (OperationIdentity.Current is not { } identity) return;
         var (profile, groups) = Caller(identity.Principal); var objects = new SqliteObjectStore(factory); var engine = new AuthorityEngine(factory, objects);
         var library = objects.GetForAuthorization("QSYS", descriptor.Library, ObjectType.Library);
@@ -59,6 +63,8 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
 
     public void RequireCreate(ObjectDescriptor descriptor)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(descriptor.Key, descriptor.ObjectType);
+        if (key != descriptor.Key) descriptor = descriptor.Snapshot(key);
         if (OperationIdentity.Current is not { } identity) return;
         if (descriptor.ObjectType == ObjectType.Program && descriptor.Attribute == Ipc.Services.Work.ExternalProgramService.Attribute)
             RequireSpecial(SpecialAuthority.Service, allowAdopted: false);
@@ -129,6 +135,11 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
 
     private void Deny(string library, string name, string type, AuthorityBit required)
     {
+        if (ObjectName.IsValid(library) && ObjectName.IsValid(name))
+        {
+            var visible = new Ipc.Services.Work.JobTemporaryLibrary(factory).Visible(new(library, name), type);
+            library = visible.Library; name = visible.Name.Value;
+        }
         throw new CpfException("CPF9802", $"Not authorized to {library}/{name} {type}.");
     }
     private static bool Has(AuthorityBit granted, AuthorityBit required) => (granted & required) == required;

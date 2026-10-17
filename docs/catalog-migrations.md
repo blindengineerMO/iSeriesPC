@@ -1,5 +1,32 @@
 # Catalog migrations and recovery
 
+Schema 29 adds encrypted, job-owned cryptographic key contexts with opaque
+8-byte IDs, a job index and active-job/cleanup triggers. Raw key bytes are wrapped
+by the existing private AES-GCM key ring and authenticated to job/token/type.
+Job completion and recovery remove rows in the same transaction; failed cleanup
+rolls back job completion. Wrapping-key inventory/rotation now covers these rows.
+CryptoContextTests verifies schema-28 data/ID preservation, failed-29 rollback,
+ordinary reopen, authenticated ciphertext, rotation/failure and exclusive server
+startup cleanup. See [crypto API contracts](cryptography-apis.md).
+
+Schema 28 adds unique opaque native job IDs, an insert trigger and the shared
+list-cursor epoch secret. Existing jobs receive IDs without changing job data;
+new IDs commit with job creation and cascade on deletion. IDs survive ordinary
+opens and schema upgrade/reopen. Only exclusive session-server startup refreshes
+all IDs and the cursor secret atomically before readiness. Ordinary IpcSystem
+startup preserves the epoch. NativeJobIdentityTests verifies schema-27 backfill,
+failed-upgrade/epoch rollback, insert/delete, reopen, and actual server startup.
+See [native job APIs](job-apis.md) for the external contract.
+
+Schema 27 expands queue-entry payload capacity to 6000 bytes for native immediate
+messages and adds job-owned waiting-receiver reservations. The table rebuild
+preserves every existing column, foreign-key route, snapshot, receive/reply state
+and AUTOINCREMENT high-water mark, including deleted keys and empty queues.
+Receiver reservations cascade with queue/job deletion and clear when jobs end.
+NativeMessageMigrationTests verifies successful upgrade, integrity/foreign keys,
+byte-for-byte retained metadata, deleted-key preservation and rollback after an
+injected post-rebuild failure. The schema/version/history update is atomic.
+
 Schema 24 adds indexed `*DTAQ` entries with cascading object references. Version-1
 IPCDQ1 definitions live in object payloads. Schema-23 message bytes/state remain
 unchanged; see [data queues](data-queues.md) for lifecycle and migration evidence.

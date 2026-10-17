@@ -41,6 +41,7 @@ public sealed class AuthorityEngine
 
     public void Grant(string library, string name, string type, string userOrGroup, AuthorityBit bits)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(_factory).Resolve(new(library, name), type); library = key.Library; name = key.Name.Value;
         new ServiceAuthorization(_factory).RequireObject(library, name, type, AuthorityBit.ObjectManagement);
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
@@ -59,6 +60,7 @@ public sealed class AuthorityEngine
 
     public void Revoke(string library, string name, string type, string userOrGroup)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(_factory).Resolve(new(library, name), type); library = key.Library; name = key.Name.Value;
         new ServiceAuthorization(_factory).RequireObject(library, name, type, AuthorityBit.ObjectManagement);
         using var connection = _factory.Open();
         using var cmd = connection.CreateCommand();
@@ -74,6 +76,7 @@ public sealed class AuthorityEngine
 
     public void GrantAuthL(string library, string name, string type, string authl, AuthorityBit bits)
     {
+        var key = new Ipc.Services.Work.JobTemporaryLibrary(_factory).Resolve(new(library, name), type); library = key.Library; name = key.Name.Value;
         new ServiceAuthorization(_factory).RequireObject(library, name, type, AuthorityBit.ObjectManagement);
         if (GetDescriptor("QSYS", authl.ToUpperInvariant(), ObjectType.AuthorizationList) is null)
             new ServiceAuthorization(_factory).RequireSpecial(SpecialAuthority.SecurityAdministrator);

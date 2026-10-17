@@ -10,6 +10,8 @@ public sealed class SqliteConnectionFactory : IDisposable
     private SqliteConnection? _keepAlive;
     private bool _disposed;
     private LockCatalog? _locks;
+    private Ipc.Services.Security.CryptoKeyContexts? _cryptoKeys;
+    internal Ipc.Services.Security.CryptoKeyContexts CryptoKeys { get { lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); return _cryptoKeys ??= new(this); } } }
     internal LockCatalog Locks { get { lock (_gate) { ObjectDisposedException.ThrowIf(_disposed, this); return _locks ??= new LockCatalog(this); } } }
 
     public SqliteConnectionFactory(string dataDirectory, string databaseFile = "system.db", bool useWriters = true)
@@ -110,6 +112,7 @@ public sealed class SqliteConnectionFactory : IDisposable
         {
             if (_disposed) return;
             _disposed = true;
+            _cryptoKeys?.Dispose();
             _locks?.Dispose();
             _keepAlive?.Dispose();
             _keepAlive = null;

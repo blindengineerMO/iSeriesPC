@@ -79,6 +79,7 @@ public static class RpgValues
     {
         null => string.Empty,
         string s => s,
+        Ipc.Core.Work.ProgramBuffer buffer => buffer.ToText(),
         bool b => b ? "1" : "0",
         DateTimeOffset d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
         DateTime d => d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
@@ -207,6 +208,8 @@ public static class RpgValues
 
     public static int Compare(object? left, object? right)
     {
+        if (left is Ipc.Core.Work.ProgramBuffer rawLeft && right is Ipc.Core.Work.ProgramBuffer rawRight)
+            return rawLeft.ToArray().AsSpan().SequenceCompareTo(rawRight.ToArray());
         if (IsNumeric(left) && IsNumeric(right))
         {
             if (IsFloat(left) || IsFloat(right))
@@ -239,6 +242,18 @@ public static class RpgValues
             return lb.CompareTo(rb);
         }
 
-        return string.Compare(ToText(left), ToText(right), StringComparison.Ordinal);
+        if (left is string characterLeft && right is string characterRight)
+        {
+            var width = Math.Max(characterLeft.Length, characterRight.Length);
+            return string.Compare(characterLeft.PadRight(width), characterRight.PadRight(width), StringComparison.Ordinal);
+        }
+
+        var leftText = ToText(left); var rightText = ToText(right);
+        if (left is Ipc.Core.Work.ProgramBuffer && right is string || right is Ipc.Core.Work.ProgramBuffer && left is string)
+        {
+            var width = Math.Max(leftText.Length, rightText.Length);
+            return string.Compare(leftText.PadRight(width), rightText.PadRight(width), StringComparison.Ordinal);
+        }
+        return string.Compare(leftText, rightText, StringComparison.Ordinal);
     }
 }

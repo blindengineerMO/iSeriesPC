@@ -13,8 +13,8 @@ RUNPNL FILE(QGPL/CUSTOMERS) RCDFMT(ENTRY)
 
 `RUNPNL` is an iSeriesPC terminal preview command. It displays the named record
 through the shared panel runtime and returns to the menu on a successful input/AID.
-Batch and communication jobs reject this interactive request. It does not resume
-an RPG `EXFMT`; the language binding is a separate C09 item.
+Batch and communication jobs reject this interactive request. Compiled RPG
+`EXFMT` uses the [WORKSTN language binding](rpg-spec.md#12-workstn-display-files-and-subfiles).
 
 ## Source contract
 
@@ -169,18 +169,55 @@ an empty subfile until a host program loads records. RPG display binding is C09.
 
 The plan's `SFLMSG` label maps to the canonical DDS `SFL SFLMSGRCD(line)` with
 exactly two predefined hidden character fields: `SFLMSGKEY` (four bytes), followed
-by `SFLPGMQ` (ten characters). Their lengths/hidden usage can be omitted in DDS.
+by `SFLPGMQ` or `SFLPGMQ(10)` (ten characters). Their lengths/hidden usage can be omitted in DDS.
+No other field keywords or indicator conditions are allowed on these predefined fields.
 Message controls use the same size, page, display and clear behavior. Messages are
 one high-intensity line, clipped to the available 76/128-column message area.
 They do not accept or return edited message fields. SFLNXTCHG is invalid here.
 See IBM's [SFLMSGRCD definition](https://www.ibm.com/docs/en/i/7.4.0?topic=80-sflmsgrcd-subfile-message-record-keyword-display-files).
 
-The file-open program-message resolver receives the program queue and four opaque
-key bytes represented losslessly as four Latin-1 characters. It returns printable
-text and optional help context. Missing messages fail output; keys and queue names
-are never rendered. Paging retains the cursor, and F1 selects the message beneath
-it. This is the display-side message lookup contract: durable program MSGQs, delivery
-and automatic queue initialization belong to C11; shared help panels use the [UIM help viewer](shared-help.md). The callback must apply its owning queue's authority policy.
+`DisplayFileStore.Open(library, name, environment)` binds an open file to the
+executing job's active program queues through `JobProgramMessageSource`. The
+queue field selects `*` (the output caller), `*EXT`, or the nearest active frame
+with the specified program name. Named object queues and CL relationship values
+such as `*PRV` are not display queue names. Even *ALLOBJ cannot use another job's
+retained source. The lower-level callback interface remains available to other hosts.
+
+Writing a subfile row looks up its queue and four-byte message reference key,
+represented losslessly as four Latin-1 characters. Output captures immutable
+message text and second-level text using the saved predefined description and
+replacement bytes. Missing messages fail that row's write/update without replacing
+an existing row. Paging and later control writes use the captured text even after
+the queue entry or source MSGF is removed. These reads never mark a message old,
+handle an exception, consume an inquiry or deliver a default reply. Unsupported
+terminal glyphs and control characters become `?`; keys and queue names are hidden.
+
+For single-output message loading, specify `SFLINZ` and exactly one `SFLPGMQ`
+field on the control record. When SFLINZ is selected, pass the queue name in that
+field to `Write(control, values, indicators)`. The service reads all messages in one
+SQLite snapshot, including beyond its ordinary 1,000-entry listing page. The
+subfile grows beyond SFLSIZ to fit this snapshot (up to the queue's 4,096-message
+limit), resets to its first page, and replaces previous rows. An inactive SFLINZ
+retains previous rows/page; SFLCLR clears copied rows without touching the queue.
+An initialization or control-output failure preserves the prior rows, capacity,
+page, editor and buffer. With both SFLINZ and SFLCLR selected, initialization
+supplies the replacement rows. Ordinary non-message SFLINZ and the ILE 276-byte
+queue layout remain unsupported with compile-time diagnostics.
+
+With HELP selected, F1 returns the captured `PanelResponse.MessageHelp` for the
+message under the cursor. The terminal host presents first/second-level text in
+the shared help viewer and restores the suspended display on return. Paging
+retains the cursor. See IBM's [SFLPGMQ output rules](https://www.ibm.com/docs/en/i/7.6.0?topic=s-sflpgmq)
+and [message-subfile example](https://www.ibm.com/docs/en/i/7.4.0?topic=type-example-message-subfile-using-dds).
+
+Compiled CL binds DCLF/SNDF/RCVF/SNDRCVF fields and indicators to the terminal,
+including control-format SFLINZ and saved message help. See the [CL display
+contract](cl-runtime.md#display-files-and-terminal-exchange). Compiled RPG WORKSTN
+binds EXFMT/READ/WRITE, SFILE RRNs, READC/CHAIN/UPDATE and message subfiles to the
+same runtime; see [the supported contract](rpg-spec.md#12-workstn-display-files-and-subfiles).
+ILE procedure selection and asynchronous/multiple-device exchange remain C07/C09/C11 work. RUNPNL still
+previews empty values and cannot supply a SFLINZ queue field. The terminal fixture
+tests the public live store/session interface and compiled CL/RPG exchange.
 
 ## Verification
 
@@ -196,3 +233,11 @@ atomic page validation, CF/CA behavior, numeric edit tracking, paging/folding,
 per-row indicators, hidden keys, message lookup/paging/help, independent file opens,
 control clear/rewrite, nested-window limits, invalid layouts, and restoration of
 unsent text and cursor after closing a window.
+
+`MessageSubfileTests` uses real job/frame queues to verify opaque keys (including
+high-bit bytes), CCSIDs 37/1208, saved private MSGF text/help, unchanged receive and
+exception state, inquiry non-delivery, nearest recursive frames, foreign-job
+denial, bulk loading beyond a listing page, automatic size extension, 80/132-column
+clipping, refresh rollback, source removal, and strict DDS diagnostics. The display
+PTY script drives a compiled live message subfile through paging and F1 after its
+queue entries and private MSGF have been removed, then checks terminal restoration.

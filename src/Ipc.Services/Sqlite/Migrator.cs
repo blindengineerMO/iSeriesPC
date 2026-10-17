@@ -90,6 +90,11 @@ public sealed class Migrator
         new SchemaMigration(22, "Message sender snapshots", new[] { MessageSenderMigration.Sql }),
         new SchemaMigration(23, "Predefined message snapshots", new[] { PredefinedMessageMigration.Sql }),
         new SchemaMigration(24, "Durable data queues", new[] { DataQueueMigration.Sql }),
+        new SchemaMigration(25, "Durable byte-addressable user spaces", new[] { UserSpaceMigration.Sql }),
+        new SchemaMigration(26, "Job-private temporary library namespaces", new[] { JobTemporaryLibraryMigration.Sql }),
+        new SchemaMigration(27, "Native immediate message payload capacity", new[] { NativeMessagePayloadMigration.Sql }),
+        new SchemaMigration(28, "Native job identifiers and list cursors", new[] { NativeJobIdentityMigration.Sql }),
+        new SchemaMigration(29, "Job-owned encrypted cryptographic key contexts", new[] { CryptoContextMigration.Sql }),
     };
 
     public Migrator(SqliteConnectionFactory factory) : this(factory, Migrations) { }

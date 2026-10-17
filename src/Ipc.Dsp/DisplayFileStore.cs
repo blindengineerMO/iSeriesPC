@@ -9,6 +9,9 @@ public sealed class DisplayFileStore(SqliteConnectionFactory factory, Func<strin
 {
     public const string Attribute = "DSPF";
     private const string DefinitionKey = "ipc.dspf.definition.v1";
+    public DisplayFileSession Open(string library, string name, Ipc.Services.Work.JobCallEnvironment environment)
+        => new(Load(library, name), messageResolver,
+            programMessageSource: new JobProgramMessageSource(new(factory), environment));
     public PanelDefinition Create(string library, string name, string source, string? description = null, int ccsid = 37, bool replace = false)
     {
         if (!Ipc.Core.Text.CodePage.IsSupported(ccsid)) throw new CpfException("IPC0127", "Unsupported display-file CCSID.");

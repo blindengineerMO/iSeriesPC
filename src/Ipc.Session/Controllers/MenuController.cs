@@ -20,6 +20,10 @@ public sealed partial class MenuController : ISessionController, IDisposable
     private readonly DisplayForm _form;
     private readonly FieldEditor _editor;
     private readonly ExecutionSession _execution;
+    private readonly ProgramTerminal _programTerminal;
+    private readonly string _requestedStartMenu;
+    private readonly bool _requestedStartupSignOff;
+    private bool _initialProgram;
     private readonly CancellationTokenSource _terminalStop;
     private readonly TerminalGroup _terminalGroup;
     public bool StartupSignOff { get; private set; }
@@ -53,32 +57,48 @@ public sealed partial class MenuController : ISessionController, IDisposable
         });
         _editor = new FieldEditor(_form);
         _terminalStop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        try { _execution = attached is null ? new ExecutionSession(system, profile, _terminalStop.Token, authSessionId) : new ExecutionSession(system, attached, _terminalStop.Token); }
-        catch { _terminalStop.Dispose(); throw; }
+        _programTerminal = new(_terminalStop.Token);
+        _requestedStartMenu = startMenu ?? profile.InitialMenu ?? MenuNames.Main;
+        _requestedStartupSignOff = attached is null && profile.InitialMenu?.Equals("*SIGNOFF", StringComparison.OrdinalIgnoreCase) == true;
+        try { _execution = attached is null ? new ExecutionSession(system, profile, _terminalStop.Token, authSessionId, terminal: _programTerminal) : new ExecutionSession(system, attached, _terminalStop.Token, _programTerminal); }
+        catch { _programTerminal.Dispose(); _terminalStop.Dispose(); throw; }
         _job = _execution.Job;
+        _current = new ApplicationMenu { Name = "STARTUP", Title = "Initial program" };
+        _terminalGroup = group ?? new TerminalGroup(this, cancellationToken);
         try
         {
-            using var identity = Ipc.Services.Events.OperationIdentity.Enter(profile.Name, _job.Key, _job.AuthSessionId);
-            using var locks = new Ipc.Services.Work.JobLockStore(system.Connections).EnterCommand(_job.Key, cancellationToken);
-            if (attached is null) RunInitialProgram(profile.InitialProgram);
-            StartupSignOff = attached is null && profile.InitialMenu?.Equals("*SIGNOFF", StringComparison.OrdinalIgnoreCase) == true;
-            _current = StartupSignOff ? new ApplicationMenu { Name = "SIGNOFF", Title = "Initial program completed" } : ResolveStart(startMenu ?? profile.InitialMenu ?? MenuNames.Main);
+            if (attached is not null || !RunInitialProgram(profile.InitialProgram)) FinishInitialProgram();
+            Paint();
         }
-        catch { _execution.Dispose(); _terminalStop.Dispose(); throw; }
-        _terminalGroup = group ?? new TerminalGroup(this);
-        Paint();
+        catch
+        {
+            if (group is null) _terminalGroup.End(JobCompletion.Abnormal, "Interactive initialization failed.");
+            else EndOwn(JobCompletion.Abnormal, "Interactive initialization failed.");
+            throw;
+        }
     }
 
-    private void RunInitialProgram(string? program)
+    private bool RunInitialProgram(string? program)
     {
         program = program?.Trim().ToUpperInvariant();
-        if (string.IsNullOrEmpty(program) || program is "*NONE" or "QCMD" or "QSYS/QCMD") return;
+        if (string.IsNullOrEmpty(program) || program is "*NONE" or "QCMD" or "QSYS/QCMD") return false;
         var name = Ipc.Core.Objects.QualifiedName.Parse(program, "*LIBL");
-        var result = _execution.Execute("CALL PGM(" + name + ")");
+        _initialProgram = true;
+        var result = _programTerminal.Start(() => _execution.Execute("CALL PGM(" + name + ")"));
+        if (result is null) return true;
+        _initialProgram = false;
         if (result.IsError) throw new CpfException("CPF1164", "Initial program failed: " + result.Message);
+        return false;
+    }
+    private void FinishInitialProgram()
+    {
+        using var identity = Ipc.Services.Events.OperationIdentity.Enter(_profile.Name, _job.Key, _job.AuthSessionId);
+        using var locks = new Ipc.Services.Work.JobLockStore(_system.Connections).EnterCommand(_job.Key, _terminalStop.Token);
+        StartupSignOff = _requestedStartupSignOff;
+        _current = StartupSignOff ? new ApplicationMenu { Name = "SIGNOFF", Title = "Initial program completed" } : ResolveStart(_requestedStartMenu);
     }
 
-    private DisplayBuffer OwnBuffer => _help?.Buffer ?? _commandPrompt?.Buffer ?? _designer?.Buffer ?? _display?.Buffer ?? _work?.Buffer ?? _buffer;
+    private DisplayBuffer OwnBuffer => _help?.Buffer ?? _commandPrompt?.Buffer ?? _designer?.Buffer ?? _programTerminal.Display?.Session.Buffer ?? _display?.Buffer ?? _work?.Buffer ?? _buffer;
     public DisplayBuffer Buffer => _terminalGroup.Buffer;
 
     public string CurrentMenu => $"{_terminalGroup.Active._current.Library}/{_terminalGroup.Active._current.Name}";
@@ -103,7 +123,12 @@ public sealed partial class MenuController : ISessionController, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        try { _execution.End(completion, message); }
+        try
+        {
+            if (_programTerminal.IsRunning) _terminalStop.Cancel();
+            _programTerminal.Dispose();
+            _execution.End(completion, message);
+        }
         finally
         {
             _terminalStop.Dispose();
@@ -121,6 +146,7 @@ public sealed partial class MenuController : ISessionController, IDisposable
             return new SessionEvent("Failed", EndSession: true);
         }
         if (_help is not null) return HandleHelp(keyPress);
+        if (_programTerminal.Display is not null) return HandleProgramDisplay(keyPress);
         if (_commandPrompt is not null) return HandleCommandPrompt(keyPress);
         if (_designer is not null) return HandleDesigner(keyPress);
         if (_display is not null)
@@ -130,6 +156,8 @@ public sealed partial class MenuController : ISessionController, IDisposable
                 using var locks = new Ipc.Services.Work.JobLockStore(_system.Connections).EnterCommand(_job.Key, CancellationToken);
                 _ = _system.Objects.GetRequired(_displayRequest!.Library, _displayRequest.File, Ipc.Core.Objects.ObjectType.File);
                 var response = _display.Handle(keyPress);
+                if (response.MessageHelp is { } details) return OpenBuiltinHelp(details.Title,
+                    new[] { details.Text, details.SecondLevel.Length == 0 ? "No additional message information is available." : details.SecondLevel });
                 if (response.Help is { } help) return OpenHelp(help);
                 if (response.HelpId is { } helpId) return OpenBuiltinHelp(helpId, new[] { "Display help context: " + helpId, "This record has no panel-group binding. Add HLPPNLGRP and HLPARA to provide application help." });
                 if (response.Accepted)
@@ -264,7 +292,50 @@ public sealed partial class MenuController : ISessionController, IDisposable
         }
     }
 
-    private SessionEvent RunCommand(string line) => ApplyCommandResult(_execution.Execute(line));
+    private SessionEvent RunCommand(string line)
+    {
+        if (_programTerminal.IsRunning)
+        {
+            var control = _execution.ExecuteTerminalControl(line);
+            if (!control.IsError)
+            {
+                if (control.GroupJob is not null) return ApplyCommandResult(control);
+                var paragraphs = control.Listing ?? control.WorkList?.Rows.Select(r => r.Text).ToArray() ?? new[] { control.Message ?? "Job details." };
+                return OpenBuiltinHelp("Job details", paragraphs);
+            }
+            Screens.Status(OwnBuffer, control.Message ?? "Program is waiting for input.", error: true); return new("ProgramDisplay");
+        }
+        var result = _programTerminal.Start(() => _execution.Execute(line));
+        return result is null ? new("ProgramDisplay") : ApplyCommandResult(result);
+    }
+
+    private SessionEvent HandleProgramDisplay(KeyPress key)
+    {
+        var display = _programTerminal.Display!;
+        try
+        {
+            var response = display.InContext(() => { display.CheckAccess(); return display.Session.Handle(key); });
+            if (response.MessageHelp is { } details) return display.InContext(() => OpenBuiltinHelp(details.Title,
+                new[] { details.Text, details.SecondLevel.Length == 0 ? "No additional message information is available." : details.SecondLevel }));
+            if (response.Help is { } help) return display.InContext(() => OpenHelp(help));
+            if (response.HelpId is { } id) return display.InContext(() => OpenBuiltinHelp(id, new[] { "Display help context: " + id }));
+            if (!response.Accepted) return new("ProgramDisplay", Message: response.Error);
+            return ResumeProgram(_programTerminal.Resume(response));
+        }
+        catch (Exception error) when (error is CpfException or ArgumentException or InvalidOperationException)
+        {
+            if (_programTerminal.Display is not null) return ResumeProgram(_programTerminal.Fail(error is CpfException ? error : new CpfException("CPF4131", error.Message)));
+            return ReturnToWorkOrMenu(error.Message, error: true);
+        }
+    }
+    private SessionEvent ResumeProgram(CommandResult? result)
+    {
+        if (result is null) return new("ProgramDisplay");
+        if (!_initialProgram) return ApplyCommandResult(result);
+        _initialProgram = false;
+        if (result.IsError) { Screens.Status(_buffer, "CPF1164: Initial program failed.", error: true); return new("Failed", EndSession: true, Message: result.Message); }
+        FinishInitialProgram(); Paint(); return new("Menu", EndSession: StartupSignOff);
+    }
 
     private SessionEvent ApplyCommandResult(CommandResult result)
     {
@@ -294,14 +365,15 @@ public sealed partial class MenuController : ISessionController, IDisposable
 
         if (result.Outcome == CommandOutcome.DisplayPanel && result.Panel is { } request)
         {
-            var definition = new Ipc.Dsp.DisplayFileStore(_system.Connections).Load(request.Library, request.File);
-            var panel = new Ipc.Dsp.DisplayFileSession(definition, (id, file) =>
+            var store = new Ipc.Dsp.DisplayFileStore(_system.Connections, (id, file) =>
             {
                 var key = Ipc.Core.Objects.QualifiedName.Parse(file, "*LIBL");
                 var library = _system.SearchLibraries(_job, key.Library).FirstOrDefault(l => _system.Objects.Exists(l, key.Name.Value, Ipc.Core.Objects.ObjectType.MessageFile))
                     ?? throw new CpfException("CPF2401", "Display message file not found.");
                 return new Ipc.Services.Messages.MessageDescriptionStore(_system.Connections).Get(library, key.Name.Value, id);
             });
+            var environment = _system.JobRuntime.Environment(_job.Key) ?? throw new CpfException("IPC0126", "Job call environment is unavailable.");
+            var panel = store.Open(request.Library, request.File, environment);
             panel.Write(request.Record, new Dictionary<string, object?>());
             _display = panel; _displayRequest = request;
             return new SessionEvent("DisplayPanel");

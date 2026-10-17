@@ -43,7 +43,7 @@ public sealed partial class CommandService
         var record = CommandParser.Unquote(call.GetOption("RCDFMT") ?? definition.Records.First(r => !r.Keywords.Any(k => k.Name == "SFL")).Name).ToUpperInvariant();
         if (!definition.Records.Any(r => r.Name == record && !r.Keywords.Any(k => k.Name == "SFL"))) throw new CpfException("CPF4131", "Display record not found.");
         // Validate initial output before returning a panel request to the terminal controller.
-        new DisplayFileSession(definition, ResolveDisplayMessage).Write(record, new Dictionary<string, object?>());
+        store.Open(library, name, EnvironmentForJob()).Write(record, new Dictionary<string, object?>());
         return new CommandResult { Outcome = CommandOutcome.DisplayPanel, Panel = new(library, name, record) };
     }
     private CommandResult ExecutePanelGroup(CommandCall call)

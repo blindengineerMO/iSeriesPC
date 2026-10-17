@@ -61,6 +61,13 @@
       "ipc.core": {
         "type": "Project"
       },
+      "ipc.db": {
+        "type": "Project",
+        "dependencies": {
+          "Ipc.Core": "[1.0.0, )",
+          "Ipc.Services": "[1.0.0, )"
+        }
+      },
       "ipc.services": {
         "type": "Project",
         "dependencies": {

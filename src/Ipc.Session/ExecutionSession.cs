@@ -17,8 +17,9 @@ public sealed class ExecutionSession : IDisposable
     private bool _ended;
     public Job Job { get; }
 
-    internal ExecutionSession(IpcSystem system, UserProfile profile, CancellationToken cancellationToken, string? authSessionId = null, bool communication = false)
-        : this(system, CreateInteractive(system, profile, authSessionId, communication), cancellationToken) { }
+    internal ExecutionSession(IpcSystem system, UserProfile profile, CancellationToken cancellationToken, string? authSessionId = null, bool communication = false,
+        IProgramTerminal? terminal = null)
+        : this(system, CreateInteractive(system, profile, authSessionId, communication), cancellationToken, terminal) { }
 
     private static Job CreateInteractive(IpcSystem system, UserProfile profile, string? authSessionId, bool communication)
     {
@@ -33,12 +34,12 @@ public sealed class ExecutionSession : IDisposable
             : system.Jobs.CreateInteractive(profile.Name, currentLibrary: currentLibrary, libraryList: libraries, ccsid: profile.Ccsid);
     }
 
-    internal ExecutionSession(IpcSystem system, Job job, CancellationToken cancellationToken)
+    internal ExecutionSession(IpcSystem system, Job job, CancellationToken cancellationToken, IProgramTerminal? terminal = null)
     {
         _system = system;
         Job = job;
         _runtime = system.JobRuntime.Attach(job, cancellationToken);
-        _commands = new CommandService(system, Job, _runtime.CancellationToken);
+        _commands = new CommandService(system, Job, _runtime.CancellationToken, terminal);
     }
 
     public IReadOnlyList<string> AvailableCommands => _commands.AvailableCommands;
@@ -48,6 +49,15 @@ public sealed class ExecutionSession : IDisposable
 
     public CommandResult Execute(string command) => ExecuteCore(() => _commands.Execute(command));
     internal CommandResult ExecuteProgram(string target, IReadOnlyList<object?> parameters) => ExecuteCore(() => _commands.RunProgram(target, parameters));
+
+    internal CommandResult ExecuteTerminalControl(string command)
+    {
+        ObjectDisposedException.ThrowIf(_ended, this); CancellationToken.ThrowIfCancellationRequested();
+        using var identity = OperationIdentity.Enter(Job.UserProfile ?? Job.Key.User, Job.Key, Job.AuthSessionId);
+        using var locks = new Ipc.Services.Work.JobLockStore(_system.Connections).EnterCommand(Job.Key, CancellationToken);
+        var result = _commands.ExecuteTerminalControl(command);
+        _system.DurableEvents.Append("terminal.control", new { outcome = result.Outcome.ToString() }); return result;
+    }
 
     private CommandResult ExecuteCore(Func<CommandResult> invoke)
     {

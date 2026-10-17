@@ -17,6 +17,11 @@ return from the initial program completes the job and signs off. Other profiles
 enter their configured menu, default MAIN. Profile administration commands are
 covered by the later command/admin workflow items.
 
+Initial CL programs can suspend on [display-file input](cl-runtime.md#display-files-and-terminal-exchange).
+The initial menu or *SIGNOFF action occurs when that invocation returns. A waiting
+program keeps its frames and allocations; disconnect/end cancels and joins it
+before cleanup. This also applies to initial programs for new group jobs.
+
 ## Group jobs
 
 ```cl
@@ -54,6 +59,11 @@ runs DSPJOB; option 90 signs off. F3/F12 restore the calling screen unchanged.
 The alternate job uses the same authenticated profile and has a separate GDA/group
 of up to 16 jobs, for at most 32 jobs on the terminal. TFRSECJOB is an iSeriesPC
 command exposing option 1. A system request does not discard unsent display input.
+
+Compiled CL and RPG display waits retain their editors across transfers. Verified built-in
+group controls run while the interpreter is paused; DSPJOB uses a read-only viewer.
+Other commands do not re-enter that invocation. Intentionally ending a waiting
+original group leaves its surviving groups active.
 
 The QSYS/SYSREQ menu is the iSeriesPC authority/signature control object. Revoking
 its use denies System Request and hides an already-open request screen. Menu options

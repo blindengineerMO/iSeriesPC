@@ -21,6 +21,8 @@ public enum ClStatementKind
     ReceiveFile,
     CloseFile,
     NoOp,
+    SendFile,
+    SendReceiveFile,
 }
 
 public sealed class ClStatement
@@ -29,6 +31,7 @@ public sealed class ClStatement
 
     public bool FileVariable { get; init; }
     public string? OpenId { get; init; }
+    public string? FileRecordFormat { get; init; }
     public List<ClMessageMonitor> Monitors { get; } = new();
     public string MessageType { get; init; } = "*INFO";
     public string? MessageId { get; init; }

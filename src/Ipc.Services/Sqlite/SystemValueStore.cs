@@ -12,6 +12,18 @@ public sealed class SystemValueStore
         _factory = factory;
     }
 
+    /// <summary>One committed catalog read, with date/time captured together from the host clock.</summary>
+    public SystemValueRegistry ReadSnapshot(DateTimeOffset? timestamp = null)
+    {
+        var now = timestamp ?? DateTimeOffset.Now;
+        var snapshot = new SystemValueRegistry();
+        LoadInto(snapshot);
+        // These values describe the running host; old persisted startup dates are not a clock.
+        snapshot.Set(SystemValueNames.Date, now.ToString("yyyy-MM-dd", global::System.Globalization.CultureInfo.InvariantCulture));
+        snapshot.Set(SystemValueNames.Time, now.ToString("HH:mm:ss", global::System.Globalization.CultureInfo.InvariantCulture));
+        return snapshot;
+    }
+
     public void SeedFromRegistry(SystemValueRegistry registry)
     {
         new Ipc.Services.Security.ServiceAuthorization(_factory).RequireSpecial(Ipc.Core.Security.SpecialAuthority.SecurityAdministrator);
@@ -31,7 +43,7 @@ public sealed class SystemValueStore
     public void Set(string name, string value)
     {
         new Ipc.Services.Security.ServiceAuthorization(_factory).RequireSpecial(
-            name == SystemValueNames.SecurityLevel
+            name is SystemValueNames.SecurityLevel or SystemValueNames.AllowUserDomain
                 ? Ipc.Core.Security.SpecialAuthority.SecurityAdministrator | Ipc.Core.Security.SpecialAuthority.AllObject
                 : Ipc.Core.Security.SpecialAuthority.SecurityAdministrator);
         using var connection = _factory.Open();

@@ -189,8 +189,8 @@ public class IpcSystemTests
 
         Assert.True(system.Libraries.LibraryExists("QGPL"));
         Assert.Equal("40", system.SystemValues.Get(SystemValueNames.SecurityLevel).Value);
-        Assert.Equal(LibraryNames.SystemDefaults.Count + 17 + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
-        foreach (var api in new[] { "QCMDEXC", "QSNDDTAQ", "QRCVDTAQ", "QCLRDTAQ" })
+        Assert.Equal(LibraryNames.SystemDefaults.Count + 13 + Ipc.Services.Work.BuiltinProgramService.Names.Count + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
+        foreach (var api in Ipc.Services.Work.BuiltinProgramService.Names)
         {
             var program = system.Objects.GetRequired("QSYS", api, ObjectType.Program);
             Assert.Equal("IPCAPI", program.Attribute);

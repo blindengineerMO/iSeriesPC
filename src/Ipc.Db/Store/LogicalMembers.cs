@@ -8,6 +8,7 @@ public sealed partial class SqliteFileStore
 {
     public void AddLogicalMember(string library, string name, string member, IReadOnlyList<string>? physicalMembers = null)
     {
+        library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
         if (!ObjectName.IsValid(member)) throw LogicalError("Invalid logical member name.");
         Authorize(library, name, AuthorityBit.ObjectManagement);

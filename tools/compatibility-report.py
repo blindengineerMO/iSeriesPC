@@ -92,15 +92,26 @@ def render():
         for old, new in catalog[key].items():
             lines.append(f"| `{old}` | {new} |")
     lines += ["", "## Observed RPG opcode parser mappings", "",
-              "Recognition is not execution/semantic acceptance. Fixed and free forms can differ.", "",
-              "| Spelling | IR opcode |", "|---|---|"]
+              "Recognition is not execution/semantic acceptance. Fixed and free forms can differ.",
+              "Unknown operations fail compilation with original source locations. Fixed operations",
+              "occupy the emulator's seven-column operation field; ON-ERROR and SNDPGMMSG are free-only.", "",
+              "| Spelling | Fixed parser | Free parser | IR opcode |", "|---|---|---|---|"]
     source = (ROOT / "src/Ipc.Rpg/Parsing/RpgCompiler.cs").read_text()
-    for name, opcode in sorted(set(re.findall(r'"([A-Z-]+)" => RpgOpcode\.(\w+)', source))):
-        lines.append(f"| `{name}` | `{opcode}` |")
+    mappings = {}
+    for method in ("MapOpcode", "MapFreeOpcode"):
+        body = re.search(rf"private static RpgOpcode {method}\(string opcode\) => opcode switch\s*\{{(.*?)\n    \}};", source, re.S)
+        if body is None:
+            raise ValueError(f"Missing RPG opcode mapping: {method}")
+        mappings[method] = dict(re.findall(r'"([A-Z-]+)" => RpgOpcode\.(\w+)', body[1]))
+    for name in sorted(mappings["MapOpcode"].keys() | mappings["MapFreeOpcode"].keys()):
+        fixed, free = mappings["MapOpcode"].get(name), mappings["MapFreeOpcode"].get(name)
+        if fixed and (len(name) > 7 or free and fixed != free):
+            raise ValueError(f"Unreachable or inconsistent RPG opcode mapping: {name}")
+        lines.append(f"| `{name}` | {'Recognized' if fixed else '—'} | {'Recognized' if free else '—'} | `{fixed or free}` |")
     lines += ["", "See [RPG specification](rpg-spec.md) and [DDS specification](dds-schema.md) for",
               "current subset details. [Display DDS](display-files.md) has a strict compiler and panel runtime.",
               "[UIM help](shared-help.md) and [command definitions](command-definitions.md) are implemented.",
-              "API host, printer DDS, logical-file DDS, and the",
+              "Broader API host contracts, printer DDS, logical-file DDS, and the",
               "complete typed command parameter catalog remain planned. Current PF DDS recognizes",
               "A/S/P/B/F/L/D/T/Z fields and VARLEN/ALWNULL/CCSID/TEXT/DESC keywords; strict rejection",
               "of every unsupported keyword and independent record-codec fixtures remain open.", ""]

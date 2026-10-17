@@ -7,12 +7,26 @@ namespace Ipc.Rpg.Runtime;
 public sealed class RpgRuntimeContext
 {
     private readonly RpgProgram _program;
+    private readonly HashSet<string> _externalCharacters;
     private RpgHost _host;
+    internal int Ccsid => _host.Ccsid();
+    internal RpgWorkstationState WorkstationState { get; } = new();
+    public void CloseWorkstations() => WorkstationState.Dispose();
+    private sealed record FileStatus(bool Found, bool EndOfFile, bool Error);
+    private readonly Dictionary<string, FileStatus> _fileStatus = new(StringComparer.OrdinalIgnoreCase);
+    private FileStatus _lastFileStatus = new(false, false, false);
+    internal void SetFileStatus(string file, bool? found = null, bool? eof = null, bool error = false, bool clearFileEof = false)
+    {
+        var previous = _fileStatus.GetValueOrDefault(file, new(false, false, false));
+        _lastFileStatus = new(found ?? _lastFileStatus.Found, eof ?? _lastFileStatus.EndOfFile, error);
+        _fileStatus[file] = new(found ?? previous.Found, clearFileEof ? false : eof ?? previous.EndOfFile, error);
+    }
     internal void RebindHost(RpgHost host) => _host = host;
     private readonly Dictionary<string, object?> _slots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Ipc.Core.Work.ProgramArgument> _references = new(StringComparer.OrdinalIgnoreCase);
     internal Ipc.Core.Work.ProgramArgument? Reference(string name) => _references.GetValueOrDefault(name);
-    internal object? ReadApiScalar(string name) => _references.TryGetValue(name, out var reference) ? reference.Value : _slots[name];
+    internal object? ReadApiScalar(string name) => _references.TryGetValue(name, out var reference)
+        ? _program.FindField(name)?.OpaqueBytes == true ? reference.ToBuffer() : reference.Value : _slots[name];
     internal void WriteApiScalar(string name, object? value)
     {
         if (_references.TryGetValue(name, out var reference)) reference.Value = value;
@@ -33,7 +47,7 @@ public sealed class RpgRuntimeContext
             "*FLT" => field.Kind == RpgFieldKind.Float && field.Length == argument.Length,
             _ => false };
         if (!compatible) throw new RpgRuntimeException("CL/RPG reference parameter types or lengths do not match.");
-        _ = Coerce(field, argument.Value);
+        _ = Coerce(field, field.OpaqueBytes ? argument.ToBuffer() : argument.Value);
         _references.Add(field.Name, argument);
     }
     internal void ReleaseReferences()
@@ -42,9 +56,9 @@ public sealed class RpgRuntimeContext
         {
             foreach (var reference in _references)
             {
-                var value = reference.Value.Value;
+                var value = _program.FindField(reference.Key)?.OpaqueBytes == true ? reference.Value.ToBuffer() : reference.Value.Value;
                 // Keep detached character storage semantic without interpreting raw API text as *BLANK keywords.
-                _slots[reference.Key] = value is Ipc.Core.Work.ProgramBuffer buffer && _program.FindField(reference.Key)?.Kind == RpgFieldKind.Character
+                _slots[reference.Key] = value is Ipc.Core.Work.ProgramBuffer buffer && _program.FindField(reference.Key) is { Kind: RpgFieldKind.Character, OpaqueBytes: false }
                     ? buffer.ToText() : value;
             }
         }
@@ -58,6 +72,8 @@ public sealed class RpgRuntimeContext
     public RpgRuntimeContext(RpgProgram program, RpgHost host)
     {
         _program = program;
+        _externalCharacters = program.Workstations.SelectMany(w => w.Layout.Records).SelectMany(r => r.Fields)
+            .Where(f => f.Kind == RpgFieldKind.Character && !f.Opaque).Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _host = host;
         Initialize();
     }
@@ -101,6 +117,8 @@ public sealed class RpgRuntimeContext
 
     private object InitialValue(RpgField field)
     {
+        if (field.OpaqueBytes) return new Ipc.Core.Work.ProgramBuffer(field.InitialValue is { } hex && hex.StartsWith("X'", StringComparison.OrdinalIgnoreCase)
+            ? Convert.FromHexString(hex[2..^1]) : Ipc.Core.Text.CodePage.FromCcsid(_host.Ccsid()).GetBytes(new string(' ', field.Length)), _host.Ccsid());
         var init = field.InitialValue;
         if (string.Equals(init, "*BLANK", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(init, "*BLANKS", StringComparison.OrdinalIgnoreCase))
@@ -174,10 +192,12 @@ public sealed class RpgRuntimeContext
             return _arrays[field.Name];
         }
 
-        return _references.TryGetValue(field.Name, out var reference) ? Coerce(field, reference.Value) : _slots[field.Name];
+        return _references.TryGetValue(field.Name, out var reference) ? Coerce(field, field.OpaqueBytes ? reference.ToBuffer() : reference.Value) : _slots[field.Name];
     }
 
-    public void WriteValue(string name, object? value)
+    public void WriteValue(string name, object? value) => WriteValue(name, value, literalCharacter: false);
+
+    private void WriteValue(string name, object? value, bool literalCharacter)
     {
         var element = _program.FindDsElement(name);
         if (element is not null)
@@ -198,9 +218,17 @@ public sealed class RpgRuntimeContext
             throw new RpgRuntimeException($"Cannot assign to constant field '{name}'.");
         }
 
-        var converted = Coerce(field, value);
+        var converted = Coerce(field, value, literalCharacter);
         if (_references.TryGetValue(field.Name, out var reference)) reference.Value = converted;
         else _slots[field.Name] = converted;
+    }
+
+    internal object? NormalizeWorkstationValue(string name, object? value)
+    {
+        var field = _program.FindField(name) ?? throw new RpgRuntimeException("Missing display field: " + name);
+        var converted = Coerce(field, value);
+        if (_references.TryGetValue(name, out var reference)) _ = reference.Normalize(converted);
+        return converted;
     }
 
     public object? ReadArrayValue(string name, long index)
@@ -254,6 +282,11 @@ public sealed class RpgRuntimeContext
 
     public void ClearValue(string name)
     {
+        if (_program.FindField(name) is { OpaqueBytes: true } opaque)
+        {
+            WriteValue(opaque.Name, new Ipc.Core.Work.ProgramBuffer(Ipc.Core.Text.CodePage.FromCcsid(_host.Ccsid()).GetBytes(new string(' ', opaque.Length)), _host.Ccsid()));
+            return;
+        }
         var element = _program.FindDsElement(name);
         if (element is not null)
         {
@@ -324,18 +357,36 @@ public sealed class RpgRuntimeContext
         return text[(int)index - 1].ToString();
     }
 
-    private object? Coerce(RpgField field, object? value)
+    private object? Coerce(RpgField field, object? value, bool literalCharacter = false)
     {
+        if (field.OpaqueBytes)
+        {
+            if (value is Ipc.Core.Work.ProgramBuffer raw && raw.Length == field.Length) return new Ipc.Core.Work.ProgramBuffer(raw.ToArray(), _host.Ccsid());
+            throw new RpgRuntimeException("Raw character fields require a program buffer of their declared byte width.");
+        }
         if (value is Ipc.Core.Work.ProgramBuffer buffer)
         {
             if (field.Kind is not (RpgFieldKind.Character or RpgFieldKind.VaryingChar)) throw new RpgRuntimeException("RPG numeric byte-buffer arguments require a typed ABI adapter.");
             try { value = buffer.ToText(); }
             catch (Ipc.Core.Messages.CpfException error) { throw new RpgRuntimeException(error.Message); }
         }
+        if (_externalCharacters.Contains(field.Name))
+        {
+            var text = CoerceToString(value);
+            var encoding = (System.Text.Encoding)Ipc.Core.Text.CodePage.FromCcsid(_host.Ccsid()).Clone();
+            encoding.EncoderFallback = System.Text.EncoderFallback.ExceptionFallback;
+            try
+            {
+                var bytes = encoding.GetByteCount(text);
+                if (bytes > field.Length) throw new RpgRuntimeException("Display character value exceeds its byte length.");
+                return text + new string(' ', field.Length - bytes);
+            }
+            catch (System.Text.EncoderFallbackException) { throw new RpgRuntimeException("Display character value is not representable in the job CCSID."); }
+        }
         return field.Kind switch
         {
-        RpgFieldKind.Character => CoerceToString(ParseBlank(value)).PadRight(field.Length)[..field.Length],
-        RpgFieldKind.VaryingChar or RpgFieldKind.ProcPtr => CoerceToString(ParseBlank(value)),
+        RpgFieldKind.Character => CoerceToString(literalCharacter ? value : ParseBlank(value)).PadRight(field.Length)[..field.Length],
+        RpgFieldKind.VaryingChar or RpgFieldKind.ProcPtr => CoerceToString(literalCharacter ? value : ParseBlank(value)),
         RpgFieldKind.Zoned or RpgFieldKind.Packed or RpgFieldKind.Decimal => Round(ParseDecimalValue(value), field.Decimals),
         RpgFieldKind.Binary or RpgFieldKind.Integer => RpgValues.ToLong(value),
         RpgFieldKind.Float => RpgValues.ToDouble(value),
@@ -524,6 +575,14 @@ public sealed class RpgRuntimeContext
 
     public object? EvalBuiltin(string name, IReadOnlyList<RpgExpr> arguments)
     {
+        FileStatus Status()
+        {
+            if (arguments.Count == 0) return _lastFileStatus;
+            if (arguments.Count != 1 || arguments[0] is not RpgFieldRef file) throw new RpgRuntimeException("File status requires a file name.");
+            if (!_program.Workstations.Any(w => w.Request.Name.Equals(file.Name, StringComparison.OrdinalIgnoreCase)))
+                throw new RpgRuntimeException("Unknown workstation status file: " + file.Name);
+            return _fileStatus.GetValueOrDefault(file.Name, new(false, false, false));
+        }
         var upper = name.ToUpperInvariant();
         switch (upper)
         {
@@ -571,10 +630,11 @@ public sealed class RpgRuntimeContext
                 RequireArgCount(name, arguments, 1);
                 return RpgValues.ToDate(arguments[0].Eval(this));
             case "FOUND":
-                return false;
+                return Status().Found;
             case "EOF":
-                return false;
+                return Status().EndOfFile;
             case "ERROR":
+                return _lastFileStatus.Error;
             case "STATUS":
                 return string.Empty;
             case "PARMS":
@@ -588,7 +648,16 @@ public sealed class RpgRuntimeContext
     private object? EvalSubstring(IReadOnlyList<RpgExpr> arguments)
     {
         RequireArgCount("%SUBST", arguments, 2, 3);
-        var text = RpgValues.ToText(arguments[0].Eval(this));
+        var value = arguments[0].Eval(this);
+        if (value is Ipc.Core.Work.ProgramBuffer buffer)
+        {
+            var from = RpgValues.ToLong(arguments[1].Eval(this));
+            var count = arguments.Count == 3 ? RpgValues.ToLong(arguments[2].Eval(this)) : buffer.Length - from + 1;
+            if (from < 1 || from > buffer.Length + 1 || count < 0 || count > buffer.Length - from + 1)
+                throw new RpgRuntimeException("Byte-buffer substring is outside the character field.");
+            return new Ipc.Core.Work.ProgramBuffer(buffer.ToArray().AsSpan((int)from - 1, (int)count), buffer.Ccsid);
+        }
+        var text = RpgValues.ToText(value);
         var start = (int)RpgValues.ToLong(arguments[1].Eval(this));
         if (start < 1 || start > text.Length + 1)
         {
@@ -600,6 +669,38 @@ public sealed class RpgRuntimeContext
             ? (int)Math.Min(remaining, Math.Max(0, RpgValues.ToLong(arguments[2].Eval(this))))
             : remaining;
         return text.Substring(start - 1, length);
+    }
+
+    internal void WriteSubstring(IReadOnlyList<RpgExpr> arguments, object? value)
+    {
+        RequireArgCount("%SUBST", arguments, 2, 3);
+        if (arguments[0] is not RpgFieldRef field || _program.FindField(field.Name) is not { IsArray: false, Kind: RpgFieldKind.Character or RpgFieldKind.VaryingChar })
+            throw new RpgRuntimeException("Writable %SUBST requires a scalar character field.");
+        var target = ReadValue(field.Name); var size = target is Ipc.Core.Work.ProgramBuffer raw ? raw.Length : RpgValues.ToText(target).Length;
+        var from = RpgValues.ToLong(arguments[1].Eval(this)); var count = arguments.Count == 3 ? RpgValues.ToLong(arguments[2].Eval(this)) : size - from + 1;
+        if (from < 1 || from > size + 1 || count < 0 || count > size - from + 1) throw new RpgRuntimeException("Writable substring is outside the character field.");
+        if (target is Ipc.Core.Work.ProgramBuffer buffer)
+        {
+            byte[] source;
+            if (value is Ipc.Core.Work.ProgramBuffer bytes)
+            {
+                if (bytes.Ccsid != Ccsid) throw new RpgRuntimeException("Substring assignment CCSIDs do not match.");
+                source = bytes.ToArray();
+            }
+            else
+            {
+                var encoding = (System.Text.Encoding)Ipc.Core.Text.CodePage.FromCcsid(Ccsid).Clone(); encoding.EncoderFallback = System.Text.EncoderFallback.ExceptionFallback;
+                try { source = encoding.GetBytes(RpgValues.ToText(value)); }
+                catch (System.Text.EncoderFallbackException) { throw new RpgRuntimeException("Substring text is not representable in the job CCSID."); }
+            }
+            var result = buffer.ToArray(); var slice = result.AsSpan((int)from - 1, (int)count); slice.Fill(Ipc.Core.Text.CodePage.FromCcsid(Ccsid).GetBytes(" ")[0]);
+            source.AsSpan(0, Math.Min(source.Length, slice.Length)).CopyTo(slice); WriteValue(field.Name, new Ipc.Core.Work.ProgramBuffer(result, Ccsid));
+        }
+        else
+        {
+            var result = RpgValues.ToText(target).ToCharArray(); var source = RpgValues.ToText(value).PadRight((int)count);
+            source.AsSpan(0, (int)count).CopyTo(result.AsSpan((int)from - 1, (int)count)); WriteValue(field.Name, new string(result), literalCharacter: true);
+        }
     }
 
     private static void RequireArgCount(string name, IReadOnlyList<RpgExpr> arguments, int min, int? max = null)
