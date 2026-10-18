@@ -50,6 +50,7 @@ public sealed partial class RpgDiskFileTests : IDisposable
     private void Compile(string source, string name = "APP", string group = "*NEW")
     { var result = Create(source, name, group); Assert.False(result.IsError, result.Message); }
     private ExecutionSession Session() => new(_system, _system.Jobs.CreateInteractive("QSECOFR"), CancellationToken.None);
+    private ExecutionSession Session(int ccsid) => new(_system, _system.Jobs.CreateInteractive("QSECOFR", ccsid: ccsid), CancellationToken.None);
     private static string Body => "read DATA;\nsndpgmmsg %char(ID)+':'+%trim(TEXT);\nseton LR;";
     private static void Ok(CommandResult result, string text)
     { Assert.False(result.IsError, result.Message); Assert.Contains(text, result.Message); }

@@ -22,6 +22,8 @@ internal static class RpgStructureValidator
         foreach (var statement in statements)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (statement.NativeControlLevel == "SR" && routine is null && statement.Opcode != RpgOpcode.BegSr)
+                throw Error(statement, "SR calculations require a subroutine.");
             void Boundary()
             {
                 if (blocks.TryPeek(out var open)) throw Error(open.Opening, open.Opening.Opcode + " is not closed before a routine boundary.");
@@ -41,6 +43,8 @@ internal static class RpgStructureValidator
                     if (blocks.Count >= 256) throw Error(statement, "RPG control nesting exceeds 256 blocks.");
                     blocks.Push(new(statement)); break;
                 case RpgOpcode.OnError:
+                    if (statement.NativeOperation is not null && !blocks.Any(b => b.Opening.Opcode == RpgOpcode.Monitor))
+                        throw Error(statement, "Native ON-ERROR requires a MONITOR group.");
                     if (blocks.Any(b => b.Opening.Opcode == RpgOpcode.Monitor))
                     {
                         var monitor = Matching(b => b.Opening.Opcode == RpgOpcode.Monitor, "ON-ERROR crosses an unclosed control block.");
@@ -61,7 +65,10 @@ internal static class RpgStructureValidator
                     _ = Matching(b => b.Opening.Opcode == RpgOpcode.If, "ENDIF without a matching IF in this block.");
                     blocks.Pop(); break;
                 case RpgOpcode.EndDo:
-                    _ = Matching(b => b.IsLoop, "ENDDO without a matching DO/FOR in this block.");
+                    var loop = Matching(b => b.IsLoop, "ENDDO without a matching DO/FOR in this block.");
+                    if (statement.NativeOperation is { } ending && (ending == "ENDFOR" && loop.Opening.Opcode != RpgOpcode.For ||
+                        ending == "ENDDO" && loop.Opening.Opcode == RpgOpcode.For || statement.Factor2 is not null && loop.Opening.Opcode != RpgOpcode.Do))
+                        throw Error(statement, "Native loop terminator or increment does not match its opening operation.");
                     blocks.Pop(); break;
                 case RpgOpcode.When:
                 case RpgOpcode.Other:

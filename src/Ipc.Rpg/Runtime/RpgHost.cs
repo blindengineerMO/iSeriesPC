@@ -17,6 +17,9 @@ public delegate RpgExternalCallResult? RpgCallHandler(string library, string nam
 public delegate RpgExternalCallResult? RpgTypedCallHandler(string library, string name,
     IReadOnlyList<object?> parameters, Func<IReadOnlyList<object?>>? borrowArguments);
 
+public delegate RpgExternalCallResult? RpgDispatchCallHandler(string library, string name, IReadOnlyList<object?> parameters,
+    Func<IReadOnlyList<object?>>? borrowApiArguments, Func<IReadOnlyList<object?>?>? borrowProgramArguments);
+
 public delegate void RpgMessageHandler(string message);
 
 public delegate string? RpgReceiveHandler();
@@ -80,6 +83,7 @@ public sealed class RpgHost
     public RpgCallHandler? ProgramCaller { get; init; }
 
     public RpgTypedCallHandler? TypedProgramCaller { get; init; }
+    public RpgDispatchCallHandler? ProgramDispatcher { get; init; }
 
     public RpgMessageHandler? SendMessage { get; init; }
 

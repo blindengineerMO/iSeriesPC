@@ -42,8 +42,8 @@ public sealed partial class RpgInterpreter
         try
         {
             Execute(routine.Statements, context, new RpgBlockState(), routine.Name);
-            if (automatic && routine.Procedure is not null && !_returned && !_programEnded && !context.Indicators[0])
-                throw new CpfException("RNX9001", "RPG subprocedure failed after *PSSR: " + routine.Procedure + ".");
+            if (automatic && (routine.Procedure is not null || context.Program.IsNativeProcedure) && !_returned && !_programEnded && !context.Indicators[0])
+                throw new CpfException("RNX9001", "RPG subprocedure failed after *PSSR: " + (routine.Procedure ?? context.Program.NativeProcedureName) + ".");
             if (!isError || _programEnded || _returned || context.Indicators[0] || routine.Ending?.Factor2 is not { Length: > 0 } point) return;
             var expression = RpgExpressionParser.Parse(point);
             var value = RpgValues.ToText(expression.Eval(context)).TrimEnd();

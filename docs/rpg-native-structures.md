@@ -1,5 +1,8 @@
 # Native RPG data structures
 
+[Forward LIKEDS templates](rpg-forward-structures.md) support later layouts,
+inherited initialization, structure parameters and returns.
+
 Free-form DCL-DS/END-DS declarations now allocate byte-backed storage. Subfields
 share those bytes through QUALIFIED references, POS and OVERLAY. This supports
 native API receiver layouts without constructing an entire header as hexadecimal
@@ -22,7 +25,7 @@ callp QWCRSVAL(INFO:%size(INFO):1:'QCCSID    ':ERROR);
 ```
 
 The declaration grammar accepts named and anonymous structures, anonymous filler
-subfields, optional matching END-DS names, DCL-SUBF, QUALIFIED, LEN, INZ, DIM and
+subfields, optional matching END-DS names, DCL-SUBF, QUALIFIED, LEN, INZ, DIM, OCCURS and
 LIKEDS. DCL-SUBF is required when a subfield name is a supported operation code.
 Declarations precede calculations, may span lines and use one semicolon-terminated
 declaration per source statement. Errors preserve original include locations.
@@ -111,17 +114,46 @@ with native storage are bounded to 256 parameters and 1 MiB of aggregate native
 snapshots, before allocating copies or entering the host. API borrowing also
 checks its existing aggregate argument budget.
 
-Nested DS definitions, TEMPLATE, external/LIKEREC layouts, ALIGN/pointers,
-varying/null/unsigned/graphic types, named-constant declaration expressions,
+[Data templates](rpg-templates.md) now retain metadata without runtime storage.
+Nested DS definitions, WORKSTN file templates and file parameters, EXTNAME/WORKSTN record layouts, ALIGN/pointers,
+varying/null/unsigned/graphic types, additional declaration built-ins/forward references,
 additional date/time formats, general array functions/relations, native fixed
 D/C layouts and full ordinary CL/RPG entry-reference/prototype ABI remain open.
 The [INFDS/PSDS subset](rpg-feedback-structures.md) now uses this storage for
 common file feedback, program errors and last-file snapshots. Extended feedback
-areas and INDDS remain open. The broader C09 requirements remain unchecked.
+areas remain open. [INDDS](rpg-indicator-structures.md) now uses the same
+native storage for WORKSTN conditioning and response flags. The broader C09
+requirements remain unchecked.
+
+[Multiple-occurrence structures](rpg-occurrences.md) support OCCURS, EVAL %OCCUR,
+current-occurrence fields/CLEAR, CLEAR *ALL, total %SIZE and whole-MO API arguments.
+They use the same native bytes and retain active selection across RETURN.
+
+[DCL-C and declaration constants](rpg-declaration-constants.md) now supply native
+dimensions, positions, offsets and initializers, including pure layout queries.
+
+[Standalone runtime arrays](rpg-standalone-arrays.md) now use these same native
+element views for DCL-S DIM, whole-array assignment and scoped API borrowing.
+
+[Array sorting/search/totals/subarrays](rpg-array-operations.md) now operate on
+these native element views. Sorting an overlay moves complete base records,
+including chained overlays in the selected array element/current occurrence.
+
+[Keyed DS arrays](rpg-keyed-arrays.md) now sort complete structure elements
+using DS(*).KEY or scalar %FIELDS lists and support exact keyed %LOOKUP.
 
 `RpgNativeStructureTests` covers byte vectors, initialization, overlays/stride,
 arrays, bounds, metadata, call lifetime, alias ranges and conversion failures.
 The integration cases compile saved programs, remove source, receive QWCRSVAL
 headers/error structures at CCSIDs 37/1208 and retain native fields across RETURN.
+[Native fixed DS](rpg-fixed-structures.md) now enters this same byte engine.
 The real terminal compiles and calls RPGNATDS using typed binary and character
 receiver fields. Independent IBM i golden and scale acceptance remains required.
+
+[Native standalone scalars](rpg-native-scalars.md) now use the same byte codec and
+conversion rules. Borrowed scalar entry bindings refresh caller bytes, publish
+writes immediately, preserve aliases/ranges and validate outer receivers before
+API queue mutation. Legacy/imported-field unification and the full ABI remain open.
+
+[DISK LIKEREC record structures](rpg-record-structures.md) now supply native
+layouts, result operands and parameter/return types.

@@ -30,6 +30,7 @@ public sealed class RpgCompileFailedException : RpgException
 
 public sealed class RpgRuntimeException : RpgException
 {
+    internal bool CallArgumentError { get; set; }
     internal bool FeedbackRecorded { get; set; }
     internal HashSet<object> ErrorHandlerInvocations { get; init; } = [];
     internal bool SuppressErrorSubroutines { get; init; }

@@ -59,12 +59,15 @@ public sealed class ClInterpreter
         var byteCount = 0L;
         foreach (var parameter in parameters)
         {
-            if (parameter is not (null or string or bool or byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal or Ipc.Core.Work.ProgramBuffer or Ipc.Core.Work.ProgramConstant))
+            if (parameter is not (null or string or bool or byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal or Ipc.Core.Work.ProgramBuffer or Ipc.Core.Work.ProgramConstant or Ipc.Core.Work.ProgramArgument))
                 return new(CommandResult.Error("Unsupported CL argument value."), Array.Empty<object?>());
-            byteCount += parameter is Ipc.Core.Work.ProgramConstant constant ? constant.Buffer.Length : parameter is Ipc.Core.Work.ProgramBuffer buffer ? buffer.Length : Encoding.UTF8.GetByteCount(ClExpression.Text(parameter ?? ""));
+            byteCount += parameter is Ipc.Core.Work.ProgramArgument reference ? reference.ToBuffer()?.Length ??
+                (reference.Value is Ipc.Core.Work.ProgramBuffer referenceBuffer ? referenceBuffer.Length : Math.Max(reference.Length, Encoding.UTF8.GetByteCount(ClExpression.Text(reference.Value ?? "")))) :
+                parameter is Ipc.Core.Work.ProgramConstant constant ? constant.Buffer.Length : parameter is Ipc.Core.Work.ProgramBuffer buffer ? buffer.Length : Encoding.UTF8.GetByteCount(ClExpression.Text(parameter ?? ""));
             if (byteCount > 1048576) return new(CommandResult.Error("CL arguments exceed 1 MiB."), Array.Empty<object?>());
         }
         var cells = new List<ClVariableCell>();
+        var references = new Dictionary<Ipc.Core.Work.ProgramArgument, ClVariableCell>(ReferenceEqualityComparer.Instance);
         try
         {
             var declarations = program.Statements.Where(s => s.Kind == ClStatementKind.Declare).ToDictionary(s => s.VariableName!, StringComparer.OrdinalIgnoreCase);
@@ -72,6 +75,17 @@ public sealed class ClInterpreter
             {
                 var definition = declarations.TryGetValue(program.EntryParameters[i], out var declaration) ? ClVariableDefinition.From(declaration, _ccsid()) : null;
                 var value = parameters[i] ?? "";
+                if (value is Ipc.Core.Work.ProgramArgument reference)
+                {
+                    var bound = ClVariableCell.Reference(reference, definition, _ccsid());
+                    if (references.TryGetValue(reference, out var alias))
+                    {
+                        if (alias.Definition != definition) throw new ClRuntimeException("Aliased CL reference parameters require identical declarations.");
+                        bound = alias;
+                    }
+                    else references.Add(reference, bound);
+                    cells.Add(bound); continue;
+                }
                 if (value is Ipc.Core.Work.ProgramConstant constant) { cells.Add(ClCallArgument.Cell(constant, definition)); continue; }
                 if (definition is null && value is Ipc.Core.Work.ProgramBuffer raw) definition = new ClVariableDefinition("*CHAR", raw.Length, 0);
                 if (definition?.Type == "*CHAR" && value is Ipc.Core.Work.ProgramBuffer characterBuffer)

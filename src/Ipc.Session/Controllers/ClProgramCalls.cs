@@ -39,8 +39,8 @@ public sealed partial class CommandService
                 arguments.Select(argument => (object?)argument.Constant ?? argument.ToBuffer() ?? argument.Value).ToArray(), _cancellationToken);
             // Validate the entire response before changing any caller cell. A valid
             // failure response still writes back before MONMSG handles the escape.
-            var values = invocation.Parameters.Select((value, index) => arguments[index].Normalize(value)).ToArray();
-            for (var index = 0; index < values.Length; index++) arguments[index].Value = values[index];
+            var values = invocation.Parameters.Select((value, index) => arguments[index].NormalizeReturnedValue(value)).ToArray();
+            for (var index = 0; index < values.Length; index++) if (!arguments[index].IsReadOnly) arguments[index].Value = values[index];
             if (invocation.Message.Length > 0) _messages.AppendLine(invocation.Message);
             return invocation.Success ? CommandResult.Ok(invocation.Message) : CommandResult.Error(invocation.Message);
         }
@@ -50,7 +50,7 @@ public sealed partial class CommandService
             try
             {
                 var entry = RpgInterpreter.EntryParameterNames(rpg);
-                if (entry.Count != arguments.Count || entry.Distinct(StringComparer.OrdinalIgnoreCase).Count() != entry.Count)
+                if (!RpgInterpreter.AcceptsEntryParameterCount(rpg, arguments.Count) || entry.Distinct(StringComparer.OrdinalIgnoreCase).Count() != entry.Count)
                     return CommandResult.Error("RPG entry parameter count or declarations do not match the caller.");
                 RunRpg(rpg, BindRpgConstants(rpg, arguments.Select(argument => (object?)argument.Constant ?? argument).ToArray())); return CommandResult.Ok();
             }
@@ -63,13 +63,22 @@ public sealed partial class CommandService
     {
         if (!parameters.Any(value => value is ProgramConstant)) return parameters;
         var entry = RpgInterpreter.EntryParameterNames(program);
-        if (entry.Count != parameters.Count) throw new ClRuntimeException("RPG entry parameter count does not match CALL.");
+        if (!RpgInterpreter.AcceptsEntryParameterCount(program, parameters.Count)) throw new ClRuntimeException("RPG entry parameter count does not match CALL.");
         return parameters.Select((value, index) =>
         {
             if (value is not ProgramConstant constant) return value;
             var field = program.FindField(entry[index]) ?? throw new ClRuntimeException("RPG entry parameter is not declared.");
+            if (field.VariableSizeParameter && constant.Type is "*CHAR" or "*RAW")
+                return (object?)ClCallArgument.Bind(constant, "*CHAR", constant.Buffer.Length);
+            if (field.IsArray || field.IsDataStructure)
+            {
+                var unit = field.Kind switch { RpgFieldKind.Integer => field.Length switch { 3 => 1, 5 => 2, 10 => 4, _ => 8 },
+                    RpgFieldKind.Packed => (field.Length + 2) / 2, _ => field.Length };
+                return (object?)ClCallArgument.Bind(constant, "*CHAR", checked(unit * (field.IsArray ? field.Dimension : 1)));
+            }
             var (type, length) = field.Kind switch {
                 RpgFieldKind.Character => ("*CHAR", field.Length), RpgFieldKind.Packed or RpgFieldKind.Decimal => ("*DEC", field.Length),
+                RpgFieldKind.Integer when field.NativeScalar => ("*INT", field.Length switch { 3 => 1, 5 => 2, 10 => 4, _ => 8 }),
                 RpgFieldKind.Integer or RpgFieldKind.Binary => ("*INT", field.Length <= 5 ? 2 : field.Length <= 10 ? 4 : 8),
                 RpgFieldKind.Float => ("*FLT", field.Length),
                 RpgFieldKind.Indicator => ("*LGL", 1), _ => throw new ClRuntimeException("Unsupported RPG CALL constant receiver layout.") };

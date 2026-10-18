@@ -209,3 +209,10 @@ cancellable indefinite override waits. E/%ERROR/%STATUS, ER precedence and struc
 [bounded status contract](rpg-file-status.md). Full native status mapping remains
 open. C08/C09/C11
 remain unchecked.
+
+[Record structures](rpg-record-structures.md) now support LIKEREC and checked
+result operands for declared DISK input, update and output.
+
+[DISK file templates and LIKEFILE definitions](rpg-file-definitions.md) now
+provide qualified module-level file copies without opening their templates.
+File parameters and WORKSTN variants remain open.

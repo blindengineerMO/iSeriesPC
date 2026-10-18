@@ -76,6 +76,8 @@ public sealed class DisplayDdsCompiler(Func<string, string, string?>? messageRes
             var allowed = help is not null ? HelpKeywords : field is not null ? FieldKeywords : record is not null ? RecordKeywords : FileKeywords;
             foreach (var keyword in keywords)
             {
+                if (keyword.Name == "INDARA" && keyword.Conditions.Length > 0)
+                    throw Error(sourceName, line, keyword.Name, "INDARA must be unconditional.");
                 var function = FunctionKey(keyword.Name);
                 if (!allowed.Contains(keyword.Name) && !(help is null && field is null && function)) throw Error(sourceName, line, keyword.Name, "Unsupported keyword at this DDS level.");
                 ValidateKeyword(keyword, definition, field, sourceName);

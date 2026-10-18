@@ -42,8 +42,9 @@ public sealed partial class CommandService
             return new RpgDisplayRecord(record.Name, RecordName(record.Name), fields, subfile, record.Keywords.Any(k => k.Name == "SFLMSGRCD"),
                 control is null ? null : RecordName(control.Arguments[0]), int.Parse(size, CultureInfo.InvariantCulture));
         }).ToArray();
-        var signature = RpgWorkstationLayout.SignatureFor(records);
-        var layout = new RpgWorkstationLayout(library + "/" + name, signature, records);
+        var indicatorArea = panel.Keywords.Any(k => k.Name == "INDARA");
+        var signature = RpgWorkstationLayout.SignatureFor(records, indicatorArea);
+        var layout = new RpgWorkstationLayout(library + "/" + name, signature, records) { IndicatorArea = indicatorArea };
         RpgWorkstationBindings.Validate(new(request, layout)); return layout;
     }
 
@@ -63,7 +64,9 @@ public sealed partial class CommandService
                 new JobDataAreaStore(_system.Connections).RequireOwner(_job.Key);
                 if (_system.Objects.GetRequired(library, name, ObjectType.File).Created != created)
                     throw new CpfException("CPF4131", "The open display file was replaced.");
-                if (DescribeRpgWorkstation(binding.Request, library, name, store.Load(library, name)).Signature != binding.Layout.Signature)
+                var current = DescribeRpgWorkstation(binding.Request, library, name, store.Load(library, name));
+                var signature = binding.Layout.IndicatorArea is null ? RpgWorkstationLayout.SignatureFor(current.Records) : current.Signature;
+                if (signature != binding.Layout.Signature)
                     throw new CpfException("CPF4131", "Display record format changed; recompile the RPG program.");
             }
             Validate(); var panel = store.Load(library, name); var file = store.Open(library, name, EnvironmentForJob()); Validate();

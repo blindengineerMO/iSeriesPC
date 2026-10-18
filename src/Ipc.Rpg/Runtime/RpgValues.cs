@@ -217,7 +217,16 @@ public static class RpgValues
     public static int Compare(object? left, object? right)
     {
         if (left is Ipc.Core.Work.ProgramBuffer rawLeft && right is Ipc.Core.Work.ProgramBuffer rawRight)
-            return rawLeft.ToArray().AsSpan().SequenceCompareTo(rawRight.ToArray());
+        {
+            var a = rawLeft.ToArray(); var b = rawRight.ToArray();
+            var blank = Ipc.Core.Text.CodePage.FromCcsid(rawLeft.Ccsid).GetBytes(" ")[0];
+            for (var index = 0; index < Math.Max(a.Length, b.Length); index++)
+            {
+                var comparison = (index < a.Length ? a[index] : blank).CompareTo(index < b.Length ? b[index] : blank);
+                if (comparison != 0) return comparison;
+            }
+            return 0;
+        }
         if (IsNumeric(left) && IsNumeric(right))
         {
             if (IsFloat(left) || IsFloat(right))

@@ -1,4 +1,4 @@
-# Completion progress — 2026-10-17
+# Completion progress — 2026-10-18
 
 The user requested completion of all 106 PLAN.md checklist items. **36 items are
 complete and 70 remain open.** The app is under construction. PLAN.md is intentionally
@@ -1055,3 +1055,1097 @@ PSSR RETURN. Full regression verification follows. Native cycle return points,
 local-file declarations, full fixed calculations, remaining error/status/ILE
 contracts and independent native reference acceptance remain open. C09/C11 stay
 partial; checklist remains 36 complete / 70 open. See docs/rpg-error-subroutines.md.
+
+
+Final RPG error-subroutine verification (2026-10-17): all 3233 tests pass, zero
+failures/skips, including 60 new cases beyond the 3173-test baseline. All 60 final
+targeted cases pass. Locked restore, zero-warning/error Release solution build,
+expanded display PTY with CRTBNDRPG/CALL RPGERRSR, generated inventory and
+whitespace checks pass. E/ER/MONITOR precedence, nested EXSR, procedure-local
+PSSR, explicit versus automatic ENDSR, feedback visibility, RETURN/GOTO,
+case-insensitive labels and active FOR/SELECT recovery are verified. Native
+CHAR subfield/array return-point reset, main CANCL/RNX9001, recursive handlers,
+cancellation/job end, implicit-open default handling, saved-source programs
+and workstation errors are covered. Abnormal exits release retained update
+locks and discard failed activation state; fresh calls are verified. Native
+cycle restart points, local files, remaining fixed/error/ILE families and
+independent native-system acceptance remain open. Full-suite runtime is 6m49s,
+not a performance target. Schema remains 31, command catalog 306 and checklist
+36 complete / 70 open. See docs/rpg-error-subroutines.md.
+
+
+RPG INDDS checkpoint (2026-10-17): named scalar native structures now bind
+WORKSTN DDS INDARA to independent or explicitly shared 99-byte indicator banks.
+Character-zero defaults, typed initialization/CLEAR, native indicator/CHAR
+subfields and arrays, final LIKEDS lengths, byte/API aliases and retained
+RETURN/LR lifetime are supported. Conditioning and response deltas stay separate
+from global IN; copied output flags and pre-commit response validation preserve
+program storage. Version-two saved bindings hash INDARA while version-one
+snapshots remain readable against live display files. 52 new cases cover native
+bytes, sharing/isolation, real CA/CF, saved-source removal, retained/fresh calls,
+metadata and declaration failures; all 115 focused cases pass. Earlier saved
+QWCRSVAL/feedback and new display tests now explicitly create/assert actual
+CCSID 1208 jobs; changing the profile alone did not change those job-argument
+fixtures. Corrected cases pass. The terminal now exercises RPGINDDS; full-suite
+and terminal verification follow. Multiple-occurrence structures, PRINTER,
+native fixed D-specs and independent native-system acceptance keep C09 open.
+Schema remains 31, command catalog 306 and checklist 36 complete / 70 open.
+See docs/rpg-indicator-structures.md.
+
+
+Validation fixture correction (2026-10-17): the waiting-receiver data-queue test now starts a dedicated worker, observes its blocked state and cancels/drains it on every exit. It no longer assumes a 100 ms pool continuation runs before a five-second receive timeout; a loaded full run exposed that assumption. Queue production behavior is unchanged.
+
+
+Final INDDS focused verification: all 156 targeted display/indicator/native-CCSID/data-queue cases pass, including the corrected waiting-receiver fixture. Final full-suite verification follows.
+
+
+Final RPG INDDS verification (2026-10-17): all 3285 tests pass, zero failures/
+skips, including 52 new cases beyond the 3233-test baseline. All 156 final focused
+display/indicator/native-CCSID/data-queue cases pass. Locked restore, zero-warning/
+error Release solution build, expanded display PTY with CRTBNDRPG/CALL RPGINDDS,
+generated inventory and whitespace checks pass. Known bytes, 99-byte defaults,
+subfields/arrays/overlays, final LIKEDS lengths, native API alias lifetime, local
+and shared banks, pre-commit validation, global IN independence and real CA/CF
+exchange are verified. Saved-source and retained RETURN/LR tests now explicitly
+create/assert real CCSID 1208 jobs, as do corrected earlier QWCRSVAL/feedback
+fixtures. Version-two INDARA signatures detect live layout changes and reject
+tampering/downgrades; legacy version-one snapshots still execute. The queue wait
+fixture uses a dedicated receiver, blocked-state observation and unconditional
+cancellation/drain rather than a timing-dependent pool continuation. No queue
+production behavior changed. Multiple-occurrence structures, PRINTER, native
+fixed D-specs and independent native-system acceptance remain open. Full-suite
+runtime is 7m24s, not a performance target. Schema remains 31, command catalog
+306 and checklist 36 complete / 70 open. See docs/rpg-indicator-structures.md.
+
+
+RPG multiple-occurrence checkpoint (2026-10-17): native free DCL-DS supports
+OCCURS, EVAL %OCCUR selection and status 122 recovery. Independent occurrence
+bytes apply to initialization, qualified/unqualified fields, arrays, value
+images, SUBST, current CLEAR and %KDS. CLEAR *ALL clears every occurrence and
+selects occurrence 1; %SIZE(*ALL) returns the total byte allocation. Whole-MO
+native API/copied-host parameters contain all occurrences, while subfield
+addresses freeze at call entry. INDDS supports separate 99-byte occurrences
+with conditioning and response addresses captured at I/O entry. Retained RETURN
+keeps selection; LR/reclaim start fresh. 59 new cases and all 236 focused cases
+pass, including actual CCSID 37/1208 saved programs, QWCRSVAL, separate CA/CF
+banks, cancellation and final expanded storage bounds. Locked restore and
+zero-warning/error Release solution build pass. Full-suite and expanded display
+PTY verification follow. Named-constant declaration counts, native fixed D/C,
+pointer alignment, extended feedback, PRINTER, full expression typing/entry ABI
+and independent native reference acceptance remain open. C09 stays partial;
+checklist remains 36 complete / 70 open. See docs/rpg-occurrences.md.
+
+
+Final occurrence type check (2026-10-17): source metadata also rejects native
+FLOAT(4) behind %ABS; conversion through %INT remains valid. All 237 final focused
+cases pass, including 60 new cases beyond the 3285-test baseline. Release build
+passes with zero warnings/errors. The preceding full run was stopped before
+completion to include this regression; final full-suite verification is running.
+The expanded display PTY has passed with CA/CF responses in separate occurrences.
+
+
+Final RPG multiple-occurrence verification (2026-10-17): all 3345 tests pass,
+zero failures/skips, including 60 new cases beyond the 3285-test baseline. All
+237 final focused cases pass. Locked restore, zero-warning/error Release solution
+build, expanded display PTY with separate INDDS CA/CF occurrences, generated
+inventory and whitespace checks pass. Native occurrence byte vectors at CCSIDs
+37/1208, initialization/LIKEDS, current value/SUBST/CLEAR and %KDS, status 122
+with MONITOR/PSDS, zero-scale/non-float selection including native FLOAT(4)
+behind %ABS, atomic cancelled CLEAR *ALL, total %SIZE and storage limits are
+verified. Whole-MO API/copied-host arguments include all occurrences; captured
+subfield addresses and pending INDDS response banks survive selection changes.
+Saved-source removal, real QWCRSVAL and CA/CF exchange, retained selection and
+LR/reclaim are verified in actual CCSID 37/1208 jobs. Named-constant declaration
+counts, native fixed D/C/OCCUR, pointers/alignment, extended feedback, PRINTER,
+full expression typing/entry ABI and independent native-system reference
+acceptance remain open. Full-suite runtime is 7m26s, not a performance target.
+Schema remains 31, command catalog 306 and checklist 36 complete / 70 open.
+C09 remains partial. See docs/rpg-occurrences.md.
+
+
+RPG declaration-constant checkpoint (2026-10-17): free DCL-C direct/CONST forms
+infer literal types and remain immutable. Earlier named constants and supported
+ABS/LEN/SIZE/ELEM built-ins supply scalar type dimensions, native LEN/DIM/OCCURS,
+subfield dimensions/POS/OVERLAY and typed INZ. Evaluation uses declaration
+metadata and folded values, without creating a runtime context or invoking host
+callbacks. Final INFDS/INDDS lengths propagate through LIKEDS before layout
+queries; discovery skips complete multiline literals. Counts, literal budgets,
+nesting, precision and integer/float byte bounds remain enforced. Source/include
+errors prevent program creation. Research corrected the prior %ELEM(MO)
+restriction: IBM permits this and returns total occurrences. Runtime, tests and
+documentation now match that rule. Saved QWCRSVAL fixtures use the single-entry
+offset directory and system QCCSID, while explicitly creating/asserting actual
+CCSID 37/1208 jobs. All 292 focused cases pass, including 60 new cases beyond
+the 3345-test baseline. Locked restore and zero-warning/error Release build pass;
+full-suite and display PTY verification follow. Additional pure built-ins, forward
+dependencies, native fixed/local/standalone-array declarations, external/nested
+layouts, CHARCOUNT/CCSID, full entry ABI and independent native acceptance remain
+open. C09 stays partial; checklist remains 36 complete / 70 open.
+See docs/rpg-declaration-constants.md.
+
+
+Final RPG declaration-constant verification (2026-10-17): all 3405 tests pass,
+zero failures/skips, including 60 new cases beyond the 3345-test baseline. All
+292 focused cases pass. Locked restore, zero-warning/error Release solution
+build, display PTY using named occurrence/character constants, generated
+inventory and whitespace checks pass. Direct/CONST declarations, inferred
+numeric/character/hex/indicator/float types, literal preservation, native
+dimensions/positions/offsets/initializers, pure metadata queries, immutable
+targets, include locations and count/literal/nesting/byte bounds are verified.
+Final INFDS/INDDS/LIKEDS sizes work in either declaration order; multiline
+literals cannot introduce phantom file hints. Saved-source QWCRSVAL callers
+run in actual CCSID 37/1208 jobs with the correct single-entry offset and system
+QCCSID. IBM's %ELEM multiple-occurrence contract replaces the prior incorrect
+rejection in runtime, tests and docs. Additional pure functions/forward
+dependencies, native fixed/local/standalone-array declarations, external/nested
+layouts, complete CHARCOUNT/CCSID and entry ABI, and independent native-system
+acceptance remain open. Full-suite runtime is 7m02s, not a performance target.
+Schema remains 31, command catalog 306 and checklist 36 complete / 70 open.
+C09 remains partial. See docs/rpg-declaration-constants.md.
+
+
+RPG standalone-array checkpoint (2026-10-17): free DCL-S DIM now allocates
+contiguous native element storage with typed defaults/INZ, constant dimensions,
+whole-array assignment/arithmetic, common-count copy, CLEAR and layout queries.
+Native DS and standalone indexes reject scaled/float/nonnumeric values with 105
+and out-of-range indexes with 121. INT now truncates numeric/character fractions,
+reports invalid data/overflow and handles float-to-signed-integer boundaries
+without decimal rounding. Whole arrays borrow raw CHAR buffers; indexed elements
+keep native types, aliases share bytes and lazy/copy addresses freeze at entry.
+Scaled numeric arrays correctly expose zero-decimal raw-buffer metadata through
+compatible scalar prototypes. Private conversion images and final cancellation
+checks preserve entire arrays on failure. UTF-8 queue output normalization
+precedes dequeue; opaque arrays preserve arbitrary bytes. Saved QWCRSVAL, source
+removal and RETURN/LR/reclaim run in actual CCSID 37/1208 jobs. All 318 final
+focused cases pass, including 53 new cases beyond the 3405-test baseline. Locked
+restore and zero-warning/error Release build pass. Full-suite and expanded
+RPGARRAYS terminal verification follow. Varying/compile-time/pre-runtime arrays,
+sorting/search/aggregation/subarray functions, full expression/entry ABI, native
+fixed arrays, CHARCOUNT/CCSID and independent native reference acceptance remain
+open. C09 remains partial; checklist is 36 complete / 70 open.
+See docs/rpg-standalone-arrays.md.
+
+
+Final RPG standalone-array verification (2026-10-17): all 3458 tests pass, zero
+failures/skips, including 53 new cases beyond the 3405-test baseline. All 318
+final focused cases pass. Locked restore, zero-warning/error Release solution
+build, expanded display PTY with CRTBNDRPG/CALL RPGARRAYS, generated inventory
+and whitespace checks pass. Native byte vectors, typed defaults/INZ, DIM(1),
+constant layout queries, scalar broadcast/common-count arithmetic and copy,
+CLEAR, detached values and numeric/storage bounds are verified. Strict native
+indexes report 105/121; INT truncates decimal/character/float values and handles
+signed 64-bit float boundaries without decimal rounding. Raw array API buffers
+expose zero decimals while indexed elements retain their native types. Aliases,
+scalar prototypes, lazy/copied address capture and borrowed lifetime are covered.
+Private images preserve entire arrays on conversion failure/cancellation,
+including cancellation during the final conversion. Invalid UTF-8 queue output
+remains queued with unchanged receivers; opaque arrays preserve bytes. Saved
+QWCRSVAL, source removal, retained RETURN and LR/reclaim use actual CCSID 37/1208
+jobs. Varying/compile-time/pre-runtime arrays, sorting/search/aggregation/subarray
+functions, full expression/entry ABI, native fixed arrays, complete CHARCOUNT/
+CCSID and independent native-system reference acceptance remain open. Full-suite
+runtime is 7m02s, not a performance target. Schema remains 31, command catalog
+306 and checklist 36 complete / 70 open. C09 remains partial.
+See docs/rpg-standalone-arrays.md.
+
+
+RPG array-operation checkpoint (2026-10-17): free SORTA with compatible A/D
+extenders, native ASCEND/DESCEND metadata, five LOOKUP variants, XFOOT and SUBARR
+now share native standalone/DS array storage. Sequenced lookup follows IBM's
+first-equal and nearest-duplicate rules within start/count bounds; character
+comparison uses captured CCSID bytes and native blank padding. Overlay sorting
+moves complete base records, including chained overlays in selected structure
+array elements/current occurrences. Numeric totals use exact scaled coefficients
+or index-ordered floats and report overflow. Subarrays support EVAL, sort and
+totals while copied call values cannot write back into their source. Numeric,
+range, conversion and source diagnostics retain status/location. All 574 expanded
+focused checks pass, including 75 new cases beyond the 3458-test baseline. Saved
+program/source-removal cases use actual CCSID 37/1208 jobs. Locked restore and
+zero-warning/error Release build pass; full-suite and expanded RPGARRAYS terminal
+verification follow. Keyed DS/%FIELDS sorts, alternate collation, LOOKUPNE,
+fixed/legacy array operations, full expression/array ABI and independent native
+acceptance including overlap remain open. C09 remains partial; checklist is
+36 complete / 70 open. See docs/rpg-array-operations.md.
+
+
+Final RPG array-operation verification (2026-10-17): all 3533 tests pass,
+zero failures/skips, including 75 new cases beyond the 3458-test baseline. All
+574 expanded focused checks pass. Locked restore, zero-warning/error Release
+solution build, display PTY with SORTA/LOOKUP/XFOOT/SUBARR, generated inventory
+and whitespace checks pass. Both actual CCSID 37/1208 saved-program jobs and
+source removal are verified. Lookup covers first-equal/nearest duplicates,
+start/count ranges and numeric search precision; sorting covers native byte
+collation, opaque invalid-UTF8 bytes, compatible direction extenders and complete
+base-record movement through chained overlays in selected occurrences. Subarray
+assignment preserves surrounding elements; copied call values cannot write back
+to source arrays. Exact decimal and index-ordered float totals detect overflow
+without source mutation. Keyed DS/%FIELDS sorts, alternate collation, LOOKUPNE,
+fixed/legacy operations, full expression/array ABI and independent native-system
+acceptance including overlap remain open. Full-suite runtime is 7m02s, not a
+performance target. Schema remains 31, command catalog 306 and checklist
+36 complete / 70 open. C09 remains partial. See docs/rpg-array-operations.md.
+
+
+RPG keyed-array checkpoint (2026-10-17): native DS arrays now sort complete
+records through DS(*).KEY, indexed scalar-array keys and scalar %FIELDS lists.
+Subarray selections support explicit/default counts; dynamic key indexes freeze
+before sorting. Default/A sort ascending and D descending, ignoring an indexed
+key array's sequence metadata. Exact keyed LOOKUP is sequential with first-match
+range behavior; relative variants reject keyed DS arrays. Nonkey numeric blanks,
+opaque bytes and record gaps move without conversion. Multiple keys are read in
+priority order on ties without a count-by-key matrix; private byte publication
+preserves storage on key conversion errors/cancellation. Source validation rejects
+missing keys and non-scalar/qualified/expression %FIELDS operands, enforcing
+the 1024-key bound. Keyed
+forms do not become writable API arguments. All 655 expanded focused checks
+pass, including 81 new cases beyond 3533. Saved-source removal and RETURN/LR/
+reclaim run in actual CCSID 37/1208 jobs. Locked restore and zero-warning/error
+Release build pass. Full-suite and RPGKEYARR display PTY verification follow.
+Nested keyed paths/DS declarations, alternate collation, additional array BIFs,
+fixed arrays, full expression/array ABI and independent native-system golden/
+scale/overlap acceptance remain open. C09 stays partial; checklist remains
+36 complete / 70 open. See docs/rpg-keyed-arrays.md.
+
+
+RPG keyed-array validation follow-up (2026-10-17): a rejection test confirmed
+that the generic expression parser accepted comma-separated %FIELDS lists.
+SORTA now uses the existing balanced keyword/colon-list parser for that operand,
+normalizes case before name validation and rejects commas/non-name expressions.
+Missing closing/trailing delimiters also have explicit rejection coverage. All
+661 expanded focused checks pass, including 87 new cases beyond 3533. Release
+build remains zero-warning/error; final full-suite and display PTY checks follow.
+The earlier 3614-test full run passed before these final validation additions.
+C09 remains partial; see docs/rpg-keyed-arrays.md.
+
+
+Final RPG keyed-array verification (2026-10-17): all 3620 tests pass,
+zero failures/skips, including 87 new cases beyond the 3533-test baseline. All
+661 expanded focused checks pass. Locked restore, zero-warning/error Release
+solution build, display PTY with CRTBNDRPG/CALL RPGKEYARR, generated inventory
+and whitespace checks pass. Keyed scalar/indexed-array sorts, multi-key priority,
+direction and captured indexes, explicit/default subarray ranges, typed keys,
+CCSID byte order, record gaps and opaque/uninitialized nonkey bytes are verified.
+Exact keyed lookup is sequential and range/duplicate aware; relative variants
+reject DS keys. Source validation rejects missing keys and non-scalar/qualified/expression
+%FIELDS operands, comma lists and malformed delimiters, accepts mixed-case names and enforces
+1024 keys. Private record images preserve data on key conversion failure;
+keyed forms cannot enter writable API borrowing. Saved programs after source
+removal, retained RETURN, LR and reclamation use actual CCSID 37/1208 jobs.
+Nested DS/key paths, additional array BIFs, alternate collation, fixed arrays,
+full expression/array ABI and independent native-system golden/scale/overlap
+acceptance remain open. Full-suite runtime is 7m17s, not a performance
+target. Schema remains 31, command catalog 306 and checklist 36 complete /
+70 open. C09 remains partial. See docs/rpg-keyed-arrays.md.
+
+
+RPG compile-time-array checkpoint (2026-10-17): free standalone CTDATA,
+PERRCD, numeric EXTFMT(S/L/R) and inferred DIM(*CTDATA) now load validated
+trailing records into native array storage. Preprocessing preserves directive/
+comment-looking data and multiline code literals; includes retain origins and
+synthetic EOF lines do not inflate inferred counts. Named sections bind by name,
+unnamed sections by declaration order; missing entries use type defaults and
+partial final slots must be blank. Numeric source widths, implied scales/signs,
+float formats, ISO datetime and native precision/byte bounds reject bad data
+before program creation. Numeric sequence checks include default tails; character
+sequence and encoding checks use activation CCSID with record locations before
+calculations. CLEAR applies defaults; RETURN retains changes and LR/reclaim reload
+saved initializers. All 798 expanded focused checks pass, including 65 new cases
+and retirement of one obsolete unconditional CTDATA rejection (net 64 beyond
+3620). Saved-source removal and lifecycle tests use actual CCSID 37/1208 jobs.
+Locked restore and zero-warning/error Release build pass; full-suite and RPGCTDATA
+terminal verification follow. Alternating/fixed/DS-subfield CTDATA, pre-runtime
+FROMFILE/TOFILE, opaque/multibyte source-CCSID rules, full array/entry ABI and
+independent native-system golden/scale acceptance remain open. C09 remains
+partial; checklist is 36 complete / 70 open. See docs/rpg-compile-time-arrays.md.
+
+
+CTDATA regression verification follow-up (2026-10-17): the first full suite
+ran all 3684 cases; 3683 passed and an existing data-queue authority-revocation
+wait returned without the expected denial. Its four-second receive and delayed
+continuation allowed expiry before revocation, consistent with the observed
+null return. Receive already rechecks authority each loop.
+The fixture now uses a dedicated cancellable receiver, start/observed-wait
+synchronization and an infinite receive with a 30-second cancellation bound.
+It also verifies an unrelated keyed entry remains queued and readable after
+denial. Queue service behavior is unchanged. All 839 expanded focused checks,
+including the queue fixtures, pass; Release build is zero-warning/error. The
+final full-suite rerun is in progress. The CTDATA terminal PTY already passed
+on both screen sizes. C09 remains partial; see docs/rpg-compile-time-arrays.md.
+
+
+Final RPG compile-time-array verification (2026-10-17): all 3684 tests pass,
+zero failures/skips. There are 65 new CTDATA cases and one retired obsolete
+rejection, a net increase of 64 beyond 3620. All 839 expanded focused checks
+pass, including the corrected queue fixtures. Locked restore, zero-warning/error
+Release solution build, display PTY with CRTBNDRPG/CALL RPGCTDATA, generated
+inventory and whitespace checks pass. CTDATA/PERRCD, S/L/R numeric source formats,
+float/ISO datetime, named/declaration-order sections, inferred dimensions and
+later constants, literal data preservation, include origins, EOF accounting,
+defaults, sequence/encoding errors and native byte vectors are verified. Saved
+programs after source removal and RETURN/LR/reclaim run in actual CCSID 37/1208
+jobs. The full-suite timing-sensitive authority-revocation fixture now uses a
+dedicated observed waiter, cancellable infinite receive and retained keyed data
+checks; queue service behavior is unchanged. Alternating/fixed/DS-subfield CTDATA,
+pre-runtime FROMFILE/TOFILE, opaque and full multibyte source-CCSID rules, full
+expression/array ABI and independent native-system golden/scale acceptance remain
+open. Full-suite runtime is 7m20s, not a performance target. Schema remains
+31, command catalog 306 and checklist 36 complete / 70 open. C09 remains partial.
+See docs/rpg-compile-time-arrays.md.
+
+
+RPG alternating-array checkpoint (2026-10-17): free standalone ALT(main)
+loads interleaved pairs into separate native arrays, with either declaration
+order, named/declaration-order main sections, independent formats/sequences and
+matching fixed or inferred dimensions. PERRCD counts pairs and combined source
+widths enforce the 100-position bound. Space-padded numeric digit fields now load
+for both paired and standalone CTDATA. SORTA/CLEAR and native API buffers remain
+independent. Invalid targets/options, duplicate alternates, chains/cycles,
+mismatched dimensions, unused final pair data and source/value errors reject
+with locations. Saved-source removal and RETURN/LR/reclaim run in actual CCSID
+37/1208 jobs. All 891 expanded focused checks pass, including 52 new cases beyond
+3684. Locked restore and zero-warning/error Release build pass; final full-suite
+and RPGALTARR display PTY verification are running. Unequal-dimension native
+acceptance, alternate-name section edges, pre-runtime/fixed/DS-subfield arrays,
+source-CCSID/opaque rules, full array ABI and independent native golden/scale
+acceptance remain open. C09 stays partial; checklist remains 36 complete / 70
+open. See docs/rpg-alternating-arrays.md.
+
+
+Final RPG alternating-array verification (2026-10-17): all 3736 tests pass,
+zero failures/skips, including 52 new cases beyond 3684. All 891 expanded focused
+checks pass. Locked restore, zero-warning/error Release solution build, display
+PTY with CRTBNDRPG/CALL RPGALTARR on both screen sizes, generated inventory and
+whitespace checks pass. ALT supports either declaration order, named/bare main
+sections, PERRCD pair counts, independent types/formats/sequences, matching
+fixed/inferred dimensions and later layout constants. Exact 100-position
+records, blank unused pairs, defaults, include origins and creation failures are
+covered. Space-padded numeric fields now work in paired and standalone CTDATA.
+SORTA, CLEAR and native API bytes preserve independent storage. Saved programs
+after source removal and RETURN/LR/reclaim use actual CCSID 37/1208 jobs.
+Unequal-dimension native acceptance, alternate-name section edges, pre-runtime,
+fixed/DS-subfield arrays, opaque/full source-CCSID rules, complete array ABI and
+independent native-system golden/scale acceptance remain open. The matching-
+dimension requirement is the supported implementation contract. Full-suite
+runtime is 7m03s, not a performance target. Schema remains 31, command catalog
+306 and checklist 36 complete / 70 open. C09 remains partial.
+See docs/rpg-alternating-arrays.md.
+
+
+RPG traditional-definition checkpoint (2026-10-17): native fixed D-spec S
+fields/arrays and C constants now use the shared strict declaration pipeline.
+Both native and existing shifted origins, type/default inference, right-justified
+length/decimals, keyword continuations, CTDATA/PERRCD/EXTFMT/ALT and inferred
+counts/layout constants are covered. Arrays use native byte storage and existing
+operations/API views. Fixed comments and commentary columns no longer alter
+quote/data state; literals retain slashes/doubled apostrophes. Continuations use
+bounded collection with cancellation. Unsupported native forms/options, invalid
+columns, duplicate symbols and split literals reject with source locations.
+All 964 expanded focused checks pass, including 67 new cases beyond 3736 and
+legacy fixed parser/API regressions. Saved-source removal, QWCRSVAL native
+input/receivers, CCSID ordering and RETURN/LR/reclaim use actual CCSID 37/1208
+jobs. Locked restore and zero-warning/error Release build pass; final full-suite
+and RPGFIXARR display PTY checks are running. Native fixed DS/PR/PI/local and
+calculation forms, continued names/literals, additional types/keywords,
+pre-runtime and DS-subfield CTDATA, full ABI and independent native golden/scale
+acceptance remain open. C09 remains partial; checklist stays 36 complete / 70
+open. See docs/rpg-fixed-declarations.md.
+
+
+Traditional-definition validation follow-up (2026-10-17): review found that
+shared scalar INT initializer validation enforced signed 64-bit limits but not
+the declared 1/2/4-byte width. The shared check now enforces every signed native
+width before program creation, including free scalars; array/DS/CTDATA checks
+remain consistent. Eighteen additional cases cover exact minimum/maximum and
+adjacent invalid values for scalar/array widths plus free-scalar regressions.
+All 982 expanded focused checks pass, including 85 new cases beyond 3736.
+Release build is zero-warning/error. The earlier full run was interrupted to
+apply this correction; final full-suite and terminal acceptance are running
+against the rebuilt assembly. C09 remains partial; see docs/rpg-fixed-declarations.md.
+
+
+Final RPG traditional-definition verification (2026-10-17): all 3821 tests
+pass, zero failures/skips, including 85 new cases beyond 3736. All 982 expanded
+focused checks pass. Locked restore, zero-warning/error Release solution build,
+display PTY with CRTBNDRPG/CALL RPGFIXARR on both screen sizes, generated inventory
+and whitespace checks pass. Native and shifted D-spec S fields/arrays and C
+constants share strict declaration validation; runtime arrays, CTDATA/ALT,
+continued keywords, inferred counts/layout constants, type byte vectors,
+comment/quote state, includes and source rejection paths are verified. Saved
+programs after source removal, native QWCRSVAL input/receivers and RETURN/LR/
+reclaim use actual CCSID 37/1208 jobs. Shared scalar integer INZ now rejects values
+outside the declared 1/2/4/8-byte signed range; exact limits and adjacent invalid
+values are covered for scalar/array definitions and free-scalar regressions.
+DIM arrays use native storage; non-array S definitions retain the existing scalar
+runtime. Full scalar byte/overflow behavior, native fixed DS/procedure/local and
+calculation forms, continued names/literals, additional types/keywords,
+pre-runtime and DS-subfield CTDATA, full ABI and independent native-system golden/
+scale acceptance remain open. Full-suite runtime is 7m39s, not a performance
+target. Schema remains 31, command catalog 306 and checklist 36 complete / 70
+open. C09 remains partial. See docs/rpg-fixed-declarations.md.
+
+
+RPG native-scalar checkpoint (2026-10-17): supported free/traditional
+standalone scalars now own native bytes without becoming arrays. Integer widths,
+decimal truncation/precision, FLOAT(4), CHAR byte padding/truncation, byte %SUBST,
+opaque and ISO values use the DS/array codec. Conversion images and final
+cancellation checks preserve old bytes on failure. Allocation follows file
+binding and shares native bounds. Borrowed entries refresh/publish caller
+storage, enforce width/scale/CCSID, preserve same-cell and partial-range aliases,
+forward readonly metadata and detach with a byte snapshot on return/error.
+Outer receiver normalization precedes queue mutation; real queue rejection and
+alias cases preserve entries and receivers. Native API views retain scoped
+lifetimes and opaque identities. All 1672 expanded RPG/CL/queue checks pass,
+including 54 new cases beyond 3821. The filler regression now proves a real
+filler-like scalar stays independent of anonymous DS bytes rather than assuming
+scalars lack element metadata. Saved-source removal, QWCRSVAL, CL aliases on
+return/error and RETURN/LR/reclaim use actual CCSID 37/1208 jobs. Locked restore
+and zero-warning/error Release build pass; full-suite and RPGSCALAR display PTY
+verification are running. Legacy/imported-field storage, full expression typing/
+precision/extenders, additional types/CCSID modes, fixed DS/procedure/local/
+calculation forms, pre-runtime arrays, full ABI and independent native golden/
+scale acceptance remain open. C09 remains partial; checklist stays 36 complete /
+70 open. See docs/rpg-native-scalars.md.
+
+
+Native-scalar cleanup follow-up (2026-10-17): a borrowed semantic entry
+snapshot was passing through write-cancellation validation during detachment.
+Caller reads/snapshots now use pure byte conversion, while native mutation retains
+its pre-publication cancellation checks. A regression changes a caller cell,
+cancels execution, then verifies the detached value and later caller isolation.
+All 1673 expanded RPG/CL/queue checks pass, including 55 new cases beyond 3821.
+Release build is zero-warning/error. The first full suite was interrupted for
+this correction; the final full-suite and terminal reruns are active. C09 remains
+partial; see docs/rpg-native-scalars.md.
+
+
+Final RPG native-scalar verification (2026-10-17): all 3876 tests pass,
+zero failures/skips, including 55 new cases beyond 3821. All 1673 expanded RPG/CL/
+queue checks pass. Locked restore, zero-warning/error Release solution build,
+display PTY with CRTBNDRPG/CALL RPGSCALAR on both screen sizes, generated inventory
+and whitespace checks pass. Supported free/traditional scalars now use native
+bytes with scalar metadata, signed integer bounds, decimal truncation/precision,
+FLOAT(4), CHAR CCSID/byte operations, opaque and ISO values. Private conversion
+images and cancellation checks preserve prior storage. Allocation follows file
+binding and shares native bounds. Borrowed entries retain live same-cell/partial-
+range aliases, caller layout/CCSID validation, readonly metadata and opaque
+identities. Outer receiver validation and API alias checks preserve real queued
+entries and all receivers. Return/error/cancellation detach the latest caller
+bytes; reads/snapshots remain available after cancellation while mutation checks
+remain enforced. Saved-source removal, QWCRSVAL, CL aliases on return/error and
+RETURN/LR/reclaim run in actual CCSID 37/1208 jobs. The filler regression now
+checks actual scalar/filler independence. Legacy/imported-field storage, complete
+expression typing/precision/extenders, additional types/CCSID modes, fixed DS/
+procedure/local/calculation forms, pre-runtime arrays, full ABI and independent
+native-system golden/scale acceptance remain open. Full-suite runtime is 8m19s,
+not a performance target. Schema remains 31, command catalog 306 and checklist
+36 complete / 70 open. C09 remains partial. See docs/rpg-native-scalars.md.
+
+
+RPG native C-spec checkpoint (2026-10-18): actual column-6 calculations now
+use ten-column operations, physical factors/results/HI-LO-EQ and continued
+extended factor 2. Supported arithmetic flags inspect stored native results;
+COMP uses unsigned job-CCSID bytes with blank padding. DO pretests/defaults,
+conditioned blocks, structured control, subroutines, arrays, inline definitions,
+ordered named/inline CALL parameters and native entry borrowing use the shared
+runtime. Declarative lists inside unexecuted subroutines survive extraction;
+repeated arguments preserve aliases. CALL(E)/CALLP(E)/LO precede MONITOR for
+called-program errors. Native file columns expose the existing declared file
+services and correct SETLL/SETGT end flags. Unsupported cycle/control groups,
+special indicators, opcode/extender and file-result-DS forms reject explicitly.
+Locked restore, zero-warning/error Release build, RPGNATCAL terminal compilation/
+execution at 24x80 and display fixtures at 24x80/27x132 pass; all 1761 expanded RPG/CL/queue checks pass, including
+88 new native calculation cases beyond 3876. Full-suite verification is pending.
+The generated inventory separates native and older opcode layouts. Complete
+cycle/remaining opcode semantics, native DS/procedure/local specs, complete
+expression/collation/ABI and independent native golden/scale acceptance remain
+open. C09 remains partial; schema 31, catalog 306 and checklist 36 complete / 70
+open are unchanged. See docs/rpg-fixed-calculations.md.
+
+
+Native C-spec DO follow-up (2026-10-18): IBM's DO execution steps require
+reading the limit after counter initialization and again after each increment.
+The native path now does so rather than caching it. Five additional checks
+cover shrinking/growing limits, an aliased counter/limit, a changing increment
+and a native DO with a free-form body/ending. All 93 native calculation checks
+pass, including matching-key SETLL EQ and SETGT end assertions in actual CCSID
+37/1208 jobs. Release build is zero-warning/error. Earlier full runs were
+interrupted to strengthen file assertions and correct the dynamic DO limit;
+final expanded regression, full-suite and terminal verification are pending.
+C09 remains partial; see docs/rpg-fixed-calculations.md.
+
+
+Final RPG native C-spec verification (2026-10-18): all 3969 tests pass,
+zero failures/skips, including 93 new cases beyond 3876. All 1766 expanded
+RPG/CL/queue checks and all 93 native calculation checks pass. Locked restore,
+zero-warning/error Release solution build, expanded display PTY, generated
+inventory and whitespace checks pass. RPGNATCAL compiles/runs through the
+terminal at 24x80; display fixtures also exercise 27x132. Native calculations
+use physical ten-column operations, factor/result/indicator positions and
+continued extended factor 2. Arithmetic flags use stored native results; COMP
+uses unsigned job-byte ordering. DO initializes before reading an aliased
+limit and rereads limits/increments each iteration, including mixed fixed/free
+endings. Matching-key SETLL EQ and SETGT end are verified in both actual job
+CCSIDs. Declarative lists survive subroutine extraction; ordered inline/named
+CALL parameters retain typed aliases and semantic writeback. Saved-source
+removal, QWCRSVAL, CL return/error aliases, retained RETURN/LR/reclaim, native
+file flags and E/error precedence are covered in CCSID 37/1208 jobs. Unsupported
+cycle/control/indicator, opcode/extender and file-result-DS forms reject
+explicitly. Native and older opcode inventories are separate. Complete cycle/
+remaining opcode semantics, native DS/procedure/local specs, complete expression/
+collation/ABI and independent native golden/scale acceptance remain open.
+Full-suite runtime is 7m13s, not a performance target. Schema remains 31,
+command catalog 306 and checklist 36 complete / 70 open. C09 remains partial.
+See docs/rpg-fixed-calculations.md.
+
+
+RPG native array-search checkpoint (2026-10-18): traditional LOOKUP now
+implements exact/nearest suffix searches, duplicate boundaries, shared result
+indicators and captured writable-index publication. Non-float comparisons use
+exact signed coefficients through 29 digits; character comparisons use job
+bytes. %LOOKUPNE adds sequential scalar/keyed DS searches. LOOKUP global
+FOUND/EQUAL and SETLL per-file EQUAL remain independent; array searches preserve
+EOF/error/numeric status. Global column-limited DCL-S/C/F/DS declarations now
+share the native declaration pipeline and can precede native C calculations.
+Physical code/sequence/comment columns, declaration order and unsupported split
+literals reject explicitly. All 104 new targeted and all 1870 expanded RPG/CL/
+queue checks pass. Saved-source removal, CTDATA/ALT descriptions, CL aliases on
+return/error, RETURN/LR/reclaim, file/global status and native DS/file source
+forms run in actual CCSID 37/1208 jobs. Locked restore, zero-warning/error Release
+build and RPGLOOKUP terminal compilation/execution pass. Full-suite verification
+is pending. The opcode-specific IBM rule sets a missed writable index to 1;
+conflicting overview text says 0, so native-system validation remains required.
+Tables, broader collation/type/ABI/native specifications and independent native
+golden/scale acceptance remain open. C09 remains partial; schema 31, catalog 306
+and checklist 36 complete / 70 open are unchanged. See docs/rpg-array-search.md.
+
+
+Native array-search verification follow-up (2026-10-18): all 104 targeted
+checks pass after strengthening file-status coverage to preserve EOF, ERROR and
+status 1211 across LOOKUP. All 1870 expanded checks pass. The first full run
+found a timing-sensitive queue delete/recreate fixture: Task.Run plus a fixed
+150ms delay did not establish an existing receive wait. The fixture now uses
+a dedicated receiver, observes its blocked state, bounds cleanup with cancellation,
+and checks CPF9801, changed queue identity and retained replacement data. Queue
+runtime identity checks are unchanged. All 145 targeted RPG/queue checks and the
+final display PTY pass; Release build is zero-warning/error. The final full-suite
+rerun is active. C09 remains partial; see docs/rpg-array-search.md.
+
+
+Final RPG native array-search verification (2026-10-18): all 4073 tests
+pass, zero failures/skips, including 104 new cases beyond 3969. All 1870 expanded
+RPG/CL/queue checks and 145 final targeted RPG/queue checks pass. Locked restore,
+zero-warning/error Release solution build, expanded display PTY, generated
+inventory and whitespace checks pass. RPGLOOKUP compiles/runs at 24x80; display
+fixtures also cover 27x132. Native LOOKUP now supports exact/nearest suffixes,
+duplicate boundaries, shared indicators, captured writable indexes, native byte
+comparison, figurative values and exact non-float coefficients through 29 digits.
+%LOOKUPNE searches scalar/keyed DS arrays sequentially without changing search
+status. LOOKUP global FOUND/EQUAL and SETLL per-file EQUAL remain independent;
+EOF, ERROR and status 1211 survive a successful array search. Column-limited
+DCL-S/C/F/DS declarations share the native pipeline and can precede C-specs.
+Saved-source removal, CTDATA/ALT descriptions, CL entry aliases on return/error,
+RETURN/LR/reclaim and DS/file forms run in actual CCSID 37/1208 jobs. Failed index
+conversion, outer rejection and cancellation preserve index/flags. The first
+full run exposed a delay-based queue delete/recreate fixture; it now observes
+a dedicated blocked receiver and verifies CPF9801, replacement identity and
+retained data. Queue runtime identity checks are unchanged. The opcode-specific
+IBM rule sets a missed writable index to 1; conflicting overview text says 0,
+so independent native-system validation remains required. Tables, broader
+collation/type/ABI/native specifications and native golden/scale acceptance
+remain open. Full-suite runtime is 7m16s, not a performance target. Schema stays
+31, catalog 306 and checklist 36 complete / 70 open. C09 remains partial.
+See docs/rpg-array-search.md.
+
+
+RPG table/reference-call checkpoint (2026-10-18): global TAB-prefixed DIM
+fields now own native tables and expose one current scalar. CTDATA/ALT/inferred
+loading, paired native LOOKUP and six TLOOKUP built-ins select matching ordinals;
+misses preserve selection. Scalar mutation, layout queries and captured API
+arguments use the selected element. Unprototyped stored CL/RPG calls now receive
+live caller cells, retaining aliases and writes on callee errors. CL entry
+binding validates type/width/scale/CCSID and forwards original storage metadata.
+Legacy semantic scalars and ordinary-program prototype coercion/copy remain
+supported separately from strict APIs. All 81 new targeted checks and both
+related compatibility regressions pass. Locked restore and zero-warning/error
+Release build pass. Earlier expanded testing found those two old call contracts;
+all 2469 expanded RPG/CL/queue checks and final RPGTABLE/display terminal
+acceptance pass. Full-suite verification is pending. Table-entry/array/
+procedure ABI, pre-runtime loading, full prototype/binding/service programs,
+broader types/collation and independent native golden/scale acceptance remain
+open. C09 remains partial; schema 31, catalog 306 and checklist 36 complete / 70
+open. See docs/rpg-tables.md.
+
+
+Final RPG table/reference-call verification (2026-10-18): all 4154 tests
+pass, zero failures/skips, including 81 new cases beyond 4073. All 2469 expanded
+RPG/CL/queue checks and 83 final targeted checks pass. Locked restore,
+zero-warning/error Release build, final RPGTABLE/display PTY, generated inventory,
+local documentation links and whitespace checks pass. RPGTABLE compiles/runs at
+24x80; general display fixtures also cover 27x132. Table searches select paired
+ordinals, preserve selections on misses and keep built-in search flags unchanged.
+Current elements support scalar updates and captured native API references.
+Stored unprototyped CL/RPG calls preserve aliases and writes after callee errors;
+CL reference binding checks type/length/scale/CCSID before execution and retains
+raw character buffers. Existing semantic scalar and ordinary-program prototype
+coercion/copy contracts remain supported; strict API guards remain unchanged.
+Saved-source removal, CTDATA/ALT, RETURN/LR/reclaim, native one-byte integer
+aliases and QWCRSVAL receivers run in actual CCSID 37/1208 jobs. Full-suite runtime
+is 7m21s, not a performance target. Pre-runtime loading, native table-entry/array/
+procedure ABI, complete prototypes/binding/service programs, broader types/
+collation/native specifications and independent native golden/scale acceptance
+remain open. C09 stays partial; schema 31, catalog 306 and checklist 36 complete /
+70 open are unchanged. See docs/rpg-tables.md.
+
+
+Native fixed-DS checkpoint (2026-10-18): traditional DS headers/subfields
+now enter the shared native byte engine. From/To byte positions, packed PACKEVEN,
+default zoned subfields, fillers, overlays, arrays, LIKEDS, OCCURS and feedback
+bindings preserve source locations. Saved-source removal, QWCRSVAL receivers,
+INFDS/PSDS, retained occurrences and live CL aliases run in CCSID 37/1208 jobs.
+Terminal acceptance exposed arithmetic validation that only resolved standalone
+fields; numeric DS layouts now use the shared lookup resolver, and DO loops write indexed
+cells. All 325 final targeted checks and final RPGFIXDS/display terminal acceptance
+pass. An earlier expanded run passed 2549 checks before the arithmetic/counter
+correction; full-suite verification of the latest build is pending. Locked restore
+and zero-warning/error Release build pass. External/data-area/
+nested/local DS, PR/PI, wider types/formats and complete native entry/procedure
+ABI and independent native golden/scale acceptance remain open. C09 stays
+partial; schema 31, catalog 306 and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-fixed-structures.md.
+
+
+Final native fixed-DS verification (2026-10-18): all 4252 tests pass, zero
+failures/skips, including 98 new cases beyond 4154 (84 unit and 14 saved-program
+integration cases). All 325 final targeted checks pass; the full run includes
+2567 RPG/CL/queue checks. The earlier expanded run passed 2549 checks before the
+arithmetic/counter correction. Locked restore, zero-warning/error Release build,
+final RPGFIXDS/display PTY, generated inventory, documentation links and whitespace
+checks pass. RPGFIXDS compiles/runs at 24x80; general display fixtures also cover
+27x132. Native DS definitions preserve physical columns, implicit boundaries,
+source maps, byte positions, packed PACKEVEN/default zoning, overlays, fillers,
+arrays, LIKEDS, occurrences and feedback bindings. Native arithmetic and XFOOT
+resolve DS numeric views; DO loops write indexed DS/standalone counter cells and
+retain private unnamed counters. Failed conversion preserves overlapping bytes.
+Saved-source removal, native QWCRSVAL receivers, INFDS/PSDS, RETURN/LR/reclaim and
+live CL aliases on return/error run in actual CCSID 37/1208 jobs. Terminal testing
+found and verified the arithmetic-layout correction. Full-suite runtime is
+7m13s, not a performance target. External/data-area/nested/local DS, DS-subfield
+CTDATA, PR/PI, wider formats/types, full native entry/array/procedure ABI and
+independent native golden/scale acceptance remain open. Free-form CALLP(E) remains
+unsupported; native C-spec CALLP(E) is covered. C09 stays partial; schema 31,
+catalog 306 and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-fixed-structures.md.
+
+
+Native program-signature checkpoint (2026-10-18): native PR/main PI and free
+DCL-PR/DCL-PI now support scalar EXTPGM references. Private formal metadata stays
+outside runtime variables. Native layouts, aliases, captured addresses, count
+checks and retained PI rebinding share the native engine. Free/native CALLP(E)
+preserves argument-processing statuses and handles final-call errors as 202;
+cancellation still escapes. External process aliases reject before startup, and
+all returned reference values normalize before writeback. Saved CL/RPG/API and
+complete scalar byte images run in CCSID 37/1208 jobs. First full testing exposed
+legacy untyped null-return void acknowledgments; that convention is preserved
+separately from typed unresolved-target semantics. Native calls also bypass the
+old PLIST shortcut and malformed known-native calls reject with source locations.
+All 304 final targeted checks, locked restore, zero-warning/error Release build
+and final RPGSIG/RPGSIGUP display terminal acceptance pass. All 2714 final
+expanded RPG/CL/queue/external checks pass, including 128 new cases (99 unit,
+21 saved-program and 8 external-process cases). Full-suite verification is pending. The obsolete CALLP(E) rejection fixture now checks
+unsupported CALLB(E), preserving original-source assertions. A keyed-argument
+fixture now preserves original status 105 during preparation, retaining its
+rejection/message/no-target assertions and adding free/native E coverage.
+CONST/VALUE/OPTIONS, wider reference compatibility,
+arrays/DS/table entry ABI, local/bound procedures and complete ILE/native golden/
+scale acceptance remain open. C09 stays partial; schema 31, catalog 306 and
+checklist 36 complete / 70 open are unchanged. See docs/rpg-program-signatures.md.
+
+
+Final native program-signature verification (2026-10-18): all 4380 tests
+pass, zero failures/skips, including 128 new cases beyond 4252 (99 unit,
+21 saved-program and 8 external-process cases). All 304 targeted checks and
+2714 final expanded RPG/CL/queue/external checks pass. Locked restore,
+zero-warning/error Release build, final RPGSIG/RPGSIGUP display PTY, generated
+inventory, documentation links and whitespace checks pass. RPGSIG/RPGSIGUP run
+at 24x80; general display fixtures also cover 27x132. Native D-spec PR/main PI
+and free DCL-PR/DCL-PI now describe scalar EXTPGM references. Formal metadata
+stays outside runtime variables; PI cells retain native layouts, aliases,
+captured addresses and activation rebinding. Source removal, CL/RPG/API calls,
+complete scalar byte images, PSDS counts and retained calls run at actual CCSID
+37/1208. Free/native CALLP(E) handles final target failures as 202 while argument
+processing retains 102/105/121 and cancellation escapes. Native calls bypass
+PLIST-name shortcuts and malformed known-native calls reject at source locations.
+External process aliases reject before startup; all returned reference values
+normalize before assignment, including valid writes with reported failures.
+Verification retained legacy untyped null-return void acknowledgments, replaced
+an obsolete CALLP(E) rejection fixture with unsupported CALLB(E), and updated
+keyed-selection expectations to original status 105 while preserving rejection,
+message and no-target assertions. Full-suite runtime is 7m39s, not a performance
+target. CONST/VALUE/OPTIONS, wider compatibility, native array/DS/table entry ABI,
+local/bound procedures, modules/service programs/binding and independent native
+golden/scale acceptance remain open. C09 stays partial; schema 31, catalog 306
+and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-program-signatures.md.
+
+
+Native CONST/prefix checkpoint (2026-10-18): native scalar PR/main PI
+parameters now accept CONST. Matching native fields remain live read-only aliases;
+literals, expressions and different formats use private formal-width images before
+dispatch. Native character prefixes expose formal byte ranges and preserve parent
+tails through nested calls. Compile/runtime/API guards prevent readonly writes;
+process responses may echo unchanged CONST values while validating all values
+before mutable output assignment. Source removal, queue input/receiver rejection,
+live PI aliases, numeric copies and nested prefixes run at CCSID 37/1208. All
+241 targeted checks, locked restore, zero-warning/error Release build and final
+RPGCONST/RPGCSTUP terminal acceptance pass. The expanded run passed 3165 of
+3169 checks; four waiting/process checks failed, then all eight cases in their
+focused rerun passed. The full Release suite now passes all 4439 tests with
+zero failures/skips in 7m25s. The net 59 new cases comprise 43 scalar/guard/codec
+cases, 12 saved-program cases and four external-process cases; two existing
+CONST-rejection cases now reject malformed CONST(7). Generated inventory, local
+document links and whitespace checks pass. No performance target is claimed.
+VALUE/OPTIONS, array/DS/table entry ABI, local/bound procedures, wider modes and
+independent native golden/scale acceptance remain open. C09 stays partial;
+schema 31, catalog 306 and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-const-parameters.md.
+
+
+Native optional-parameter checkpoint (2026-10-18): native scalar PR/main PI
+and free DCL-PR/DCL-PI accept trailing OPTIONS(*NOPASS), including CONST. Calls
+preserve actual counts through RPG, CL variables/typed constants, native APIs
+and external processes. %PASSED tests optional presence; %PARMNUM now returns
+real PI positions and works in declaration constants. AND/OR short-circuit
+before absent values, invalid indexes or arithmetic. Retained activations
+recompute presence, and absent storage/forwarding fails with emulator status
+105 before dispatch. Invalid modes, nontrailing optionals, mismatched named PI,
+invalid builtin operands and wrong counts retain source diagnostics. All 261
+targeted checks, locked restore, zero-warning/error Release build and final
+RPGOPTION/RPGOPTUP terminal acceptance pass. All 4509 solution tests pass with zero failures/skips
+in 7m33s. The 70 new cases comprise 57 unit, 10 saved-program and three
+external-process cases; three obsolete native NOPASS rejection fixtures now
+reject unsupported *OMIT modes. Generated inventory, local document links and
+whitespace checks pass. No performance target is claimed.
+Other OPTIONS modes (*OMIT/*VARSIZE etc.), %OMITTED, VALUE, native array/DS/table
+entry ABI, local/bound procedures, modules/service programs/binding, wider modes
+and independent native golden/scale acceptance remain open. C09 stays partial;
+schema 31, catalog 306 and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-optional-parameters.md.
+
+
+Native omitted-argument checkpoint (2026-10-18): scalar native PR/main PI
+and free DCL-PR/DCL-PI accept OPTIONS(*OMIT), including CONST and combined
+*NOPASS. Explicit omissions occupy parameter positions without storage;
+%PARMS/PSDS include them, %PASSED is false and %OMITTED is true. Retained
+activations recompute present/omitted/unpassed states. Scoped descriptors
+preserve null semantic values, no buffer/range, non-aliasing and expiration;
+external protocols 1/2 encode null slots and reject altered omission responses
+before mutable writeback. Native API storage checks preserve queue entries and
+other outputs on rejection. Both native column origins, C-spec CALLP, maximum
+255-position omissions, nested saved-program forwarding and CCSID 37/1208
+states pass. All 312 targeted checks, locked restore, zero-warning/error Release
+build and final RPGOMIT/RPGOMITUP terminal acceptance pass. All 4573 solution tests pass with zero
+failures/skips in 7m43s wall time. The 64 new cases comprise 50 unit, 10
+saved-program and four external-process cases. Obsolete native *OMIT rejection
+fixtures now reject duplicate *OMIT options. Generated inventory, local links
+and whitespace checks pass. No performance target is claimed. Other OPTIONS modes, VALUE, native array/DS/table entry ABI,
+local/bound procedures, modules/service programs/binding, CL receiver-side
+optional/omitted entry handling, additional API pointer contracts, wider modes
+and independent native golden/scale acceptance remain open. C09 stays partial;
+schema 31, catalog 306 and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-omitted-parameters.md.
+
+
+Native local-procedure checkpoint (2026-10-18): P-spec B/E and DCL-PROC/END-PROC
+now define same-unit native procedures. Explicit/automatic scalar PR/PI bind
+CALLP/implicit/expression calls with VALUE copies, CONST/live references,
+NOPASS/OMIT and native scalar returns. Separate invocation storage supports
+recursion and automatic locals/arrays/structures; scalar/array STATIC values
+persist with the module and reset on activation reclaim. Global names resolve
+in the module, preserving shared buffers, indicators, file positions, table
+selections and occurrences. PSDS main counts remain distinct from local %PARMS;
+local PSSR can return/recover, must use blank ENDSR operands and abnormally ends
+on fallthrough. Native procedure I/O against INFSR files and local files/PSDS
+reject. Cancellation and borrowed-cell expiry preserve cleanup. Limits cover
+128 frames, 64 MiB declared invocation images and 16 MiB retained STATIC banks.
+All 377 targeted checks, locked restore, zero-warning/error Release build and
+final RPGPROC terminal acceptance pass. All 4643 solution tests pass with zero
+failures/skips in 7m30s wall time. The 70 new checks comprise 58 unit, nine
+saved-program/integration and three external-process cases; no existing cases
+were removed. Generated inventory, document links and whitespace checks pass.
+No performance target is claimed. Cross-unit
+modules/service programs/binding, aggregate/foreign ABI, procedure pointers,
+further storage/CCSID modes, full cycle/exception/activation semantics and
+independent native golden/scale acceptance remain open. C09 stays partial;
+schema 31, catalog 306 and checklist 36 complete / 70 open are unchanged.
+See docs/rpg-local-procedures.md.
+
+
+Native aggregate-parameter checkpoint (2026-10-18): native/free PR/PI now
+accept fixed DIM arrays and LIKEDS structures/structure arrays through program
+and same-unit procedure calls. Byte-backed references preserve element/subfield
+aliases, formal prefixes and caller tails through nested calls. CONST aliases
+remain live; local VALUE copies are private; numeric array conversions use the
+formal codec and CONST/VALUE SUBARR inputs use selected private images. Native
+column origins, readonly/source guards, named PR/PI layouts, NOPASS/OMIT
+presence and pre-dispatch short-array rejection retain existing bounds.
+Aggregate call layouts remain separate from fixed LOOKUP validation, preserving
+its whole-structure-array rejection. Bulk reads refresh one image and bulk
+assignment validates and publishes one complete image, avoiding a full refetch
+per element. CL character storage/constants, plain host arrays, real queue API
+buffers and external protocol-2 response/overlap checks are covered. All 602
+targeted checks, locked restore, zero-warning/error Release build and RPGAGG
+terminal acceptance pass. All 4716 solution tests pass with zero failures/skips
+in 7m40s wall time. The 73 new checks comprise 60 unit, ten
+saved-program/integration and three external-process cases; no cases were
+removed. Two obsolete native fixed-DIM rejection fixtures now reject
+unsupported DIM(*VAR). Generated inventory, document links and whitespace
+checks pass. No performance target is claimed. Aggregate returns, variable-size
+or dynamic dimensions, general table entry ABI, nested structures, foreign ABI,
+procedure pointers, modules/service programs/cross-unit binding and independent
+native golden/scale acceptance remain open. C09 stays partial; schema 31,
+catalog 306 and checklist 36 complete / 70 open are unchanged. See
+docs/rpg-aggregate-parameters.md.
+
+
+Native return-value checkpoint (2026-10-18): traditional/free procedure PR/PI
+now support fixed DIM arrays, LIKEDS structures/structure arrays and RTNPARM.
+RETURN uses assignment conversions: scalars broadcast, missing array elements
+receive native defaults and surplus elements are ignored. Detached results
+preserve earlier return values and caller receiver tails, compose through array
+expressions and feed CONST parameters/API inputs. Named/automatic prototypes
+retain matching return layouts and modes; native column origins and LIKEDS
+header keyword order are covered. Template lookup is deferred from file
+discovery to declaration binding. RTNPARM includes its hidden first slot in
+%PARMS and runtime/declaration %PARMNUM while preserving optional/omitted
+explicit bindings and main PSDS counts. It permits 254 explicit parameters
+within the existing 255-position bound. Return images are admitted under the 64
+MiB invocation budget before entering a frame. Conversion/fallthrough errors,
+scalar receiver rejection, cancellation and cleanup preserve caller receivers.
+Whole-structure CLEAR now validates and publishes through borrowed bindings,
+including structure-array prefixes and outer-normalizer rejection. All 555
+targeted checks, locked restore, zero-warning/error Release build and RPGRETURN
+terminal acceptance pass. All 4789 solution tests pass with zero failures/skips
+in 7m38s wall time. The 73 new cases comprise 63 unit, eight
+saved-program/integration and two real external-process cases; no cases were
+removed. Generated inventory, document links and whitespace checks pass. No
+performance target is claimed. Additional return types/formats, LIKE/LIKEREC,
+RETURN precision extenders, variable-size/dynamic layouts, table entry ABI,
+nested structures, procedure pointers, foreign ABI, module/service-program
+binding and independent native golden/scale acceptance remain open. C09 stays
+partial; schema 31, catalog 306 and checklist 36 complete / 70 open are
+unchanged. See docs/rpg-return-values.md.
+
+
+Native variable-size checkpoint (2026-10-18): native/free PR/PI now accept
+OPTIONS(*VARSIZE) for reference character/LIKEDS storage and native arrays,
+including CONST, NOPASS and OMIT combinations. Declared sizes remain distinct
+from actual capacity and character-array stride; the IBM search pattern runs at
+CCSID 37/1208. Bounded ProgramArgumentMemory views retain live aliases, backing
+capacity through fixed prefixes, readonly status, byte-range validation and
+scope expiry. Partial reads/writes, numeric SUBARR and short-array RHS
+assignment preserve other bytes/elements; out-of-actual access reports 105
+before mutation and declared index violations retain 121. Byte-buffer character
+comparison blank-pads shorter operands and substring addresses evaluate once.
+Entry detachment owns its byte snapshots without retaining expired cells.
+Actual backing capacities count toward the existing 1 MiB call/entry limit
+before dispatch. Scalar/array rank, mutable numeric layouts and named PR/PI
+passing modes remain checked. CL variables/explicit character constants,
+retained rebinding, unprototyped readonly API rejection, real queue buffers,
+external actual-byte transfer, complete response validation and process alias
+rejection are covered. All 812 targeted checks, locked restore,
+zero-warning/error Release build and RPGVARSIZE terminal acceptance pass. All
+4841 solution tests pass with zero failures/skips in 7m36s wall time. The 52
+new cases comprise 41 unit/core-memory, eight saved-program/integration and
+three external-process cases; no cases were removed. Generated inventory, local
+links and whitespace checks pass. No performance target is claimed. VARYING,
+graphic/UCS-2 types, dynamic arrays, other OPTIONS modes, operational
+descriptors, CL receiver-side variable layouts, general table entry ABI,
+procedure pointers/foreign ABI, module/service-program binding and independent
+native golden/scale acceptance remain open. C09 stays partial; schema 31,
+catalog 306 and checklist 36 complete / 70 open remain unchanged. See
+docs/rpg-variable-parameters.md.
+
+Native parameter-options checkpoint (2026-10-18): native/free PR/PI now accept
+OPTIONS(*EXACT), *TRIM and *RIGHTADJ for the supported native types. Exact
+references check lengths, precision, array dimensions/order and common LIKEDS
+origins; CONST/VALUE conversions must fit their numeric positions and
+character widths. Related structure return metadata and local shadowed
+definitions retain type identity. Character transformations use private byte
+images, preserve caller storage and apply to each array element; *EXACT checks
+the trimmed value before truncation. UTF-8 byte lengths and opaque null bytes
+are covered. Explicit PR caller options need not repeat on PI; PR/PI array
+order must agree. Optional/omitted/RTNPARM positions, writable output
+receivers with invalid input bytes, readonly lifetime checks and 1 MiB
+temporary admission retain their rules. Known incompatible declarations reject
+during compilation; remaining argument failures report 105 through MONITOR
+before target dispatch. Saved programs run after source removal at CCSID
+37/1208, including real queue bytes. External processes verify transformed
+inputs, unchanged readonly echoes, atomic response rejection and no launch on
+invalid exact values. A loaded full run exposed a queue fixture that blocked
+pool workers before producers could run; concurrent queue workers now use
+dedicated threads, a shared cancellation deadline and complete cleanup.
+Production queue/session behavior is unchanged. The first full run passed
+4911/4913 cases with queue/socket timing failures; all four disconnect/ENDJOB
+variants and the corrected queue test pass in the expanded focused rerun. All
+798 focused checks, locked restore, zero-warning/error Release build and
+RPGOPTIONS terminal acceptance pass. All 4913 solution tests pass with zero
+failures/skips in 7m45s wall time. The 72 new cases comprise 61 unit, eight
+saved-program/integration and three external-process cases; no cases were
+removed. Generated inventory, local documentation links and whitespace checks
+pass. Pointer/STRING/CONVERT/ NULLIND modes, varying/graphic/UCS-2 types,
+LIKE/LIKEREC ancestry, nondefault date/time formats, enumeration/object
+interfaces, foreign ABI and cross-unit module/service-program binding remain
+open. Independent IBM-system golden and scale acceptance remain open; no
+performance target is claimed. C09 remains partial; schema 31, catalog 306 and
+checklist 36 complete / 70 open are unchanged. See
+docs/rpg-parameter-options.md.
+
+Native LIKE checkpoint (2026-10-18): native/free standalone fields, subfields,
+PR/PI parameters and returns now accept LIKE of available supported native
+types and returning prototypes. Kind, length, scale and opaque/text mode are
+inherited; initialization, dimension/order, passing and storage flags remain
+explicit. Character and numeric signed adjustments retain native bounds and
+integer digit widths. Fixed forms use signed Length columns with blank type/
+decimal columns at both origins; structure-relative OVERLAY/*NEXT mappings
+remain intact. CHAR CCSID(*DFT) can select job text after opaque inheritance.
+LIKE chains retain definition identities through local/global scopes,
+LIKEDS-cloned subfields, array elements and declared return metadata. EXACT
+requires related types plus existing layout/precision/dimension/order checks;
+unrelated declarations reject during compilation and untyped values fail 105
+before dispatch. Resolved character modes support CONST/VALUE transformations
+and compatible VARSIZE interfaces. Unsupported varying/date-time attributes
+cannot silently become fixed/default types. Source-removal/retained PI
+rebinding, real queue bytes, related subfield returns, failed program
+creation, process readonly echoes/atomic rejection and no-launch errors are
+covered. All 1115 focused checks, locked restore, zero-warning/error Release
+build and RPGLIKE terminal acceptance pass. All 4977 solution tests pass with
+zero failures/skips in 7m51s wall time, including 64 new cases: 53 unit, eight
+saved-program/integration and three external-process cases. No cases were
+removed. Generated inventory, documentation links and whitespace checks pass.
+Forward references/unavailable implicit prototypes, LIKE(*EXT)/object/
+enumeration forms, varying/graphic/UCS-2/pointer types, nondefault date/time
+formats, LIKEREC lineage, foreign ABI, cross-unit modules/service programs and
+independent native-system golden/scale acceptance remain open. No performance
+target is claimed. C09 remains partial; schema 31, catalog 306 and checklist
+36 complete / 70 open are unchanged. See docs/rpg-like-declarations.md.
+
+Native forward-type checkpoint (2026-10-18): LIKE now resolves later native
+fields, subfields, PI parameters and explicit/implicit return types without
+reordering storage, initializers or overlays. Lazy cached metadata uses stable
+source-definition identities across module/procedure scopes, retaining EXACT
+ancestry through preview and final binding. Later local fields/structures and
+constant widths shadow globals; original case normalization applies in both
+phases. Return types can use later local declarations and constants available
+at their own definitions, including prior PI parameter numbers/RTNPARM
+offsets. Forward members, anonymous structures, LIKEDS-copied fields and final
+INFDS widths are covered. Preview omits initializers and never calls a
+procedure to obtain a value. Ordinary forward value references remain
+unsupported. Missing/ void types, cycles across types/constants/implicit
+returns and more than 64 active dependencies report source/include diagnostics
+before object creation; cancellation and existing declaration/storage limits
+remain enforced. Compiler lookup callbacks detach on success and failure. All
+1154 focused checks, locked restore, zero-warning/error Release build and
+RPGFORWARD terminal acceptance pass. All 5026 solution tests pass with zero
+failures/skips in 7m49s wall time. The 49 new cases comprise 38 unit, eight
+saved-program integration and three external-process cases; none were removed.
+Source-removal, real queue bytes, cyclic include rejection, process readonly
+echoes/atomic writeback and no launch on invalid exact types are verified.
+Generated inventory, local documentation links and whitespace checks pass.
+General forward value expressions, implicit calculation-result types, forward
+LIKEDS structure binding, external/object/ enumeration forms,
+varying/graphic/UCS-2/pointer types, nondefault date/time formats, LIKEREC,
+foreign ABI and cross-unit module/service-program binding remain open.
+Independent native golden/scale acceptance remains open; no performance target
+is claimed. C09 remains partial; schema 31, catalog 306 and checklist 36
+complete / 70 open are unchanged. See docs/rpg-forward-declarations.md.
+
+Native forward-LIKEDS checkpoint (2026-10-18): structure declarations, PR/PI
+parameters and returns now accept later named native templates. Metadata-only
+and initialized definition images resolve separately; INZ(*LIKEDS) inherits
+subfield initialization and blank/default treatment without sharing runtime
+storage. Plain LIKEDS and argument-free INZ retain their distinct behaviors;
+CLEAR still applies type defaults. DIM/OCCURS stay explicit on the copy while
+subfield arrays, fillers, positions and overlays survive copying. Stable
+structure ancestry tokens preserve EXACT across preview and final binding;
+independently defined equal layouts remain unrelated. Later local templates
+and constants shadow globals without changing imported global copied layouts.
+Forward chains propagate final INFDS extents independent of source order,
+including interface layouts. Status/indicator parameter restrictions and
+explicit feedback-size validation remain enforced. Missing/non-structure
+parents, cycles, depth and existing storage limits retain source/include
+locations, and compiler callbacks detach on every exit. All 1265 focused
+checks, locked restore, zero-warning/error Release build and RPGFWDDS terminal
+acceptance pass. All 5071 solution tests pass with zero failures/skips in
+7m56s wall time. The 45 new cases comprise 31 unit, 11 saved-program
+integration and three external-process cases; none were removed.
+Source-removal, retained PI rebinding, real queue bytes, inherited return
+defaults, reverse feedback chains, cyclic include rejection and process atomic
+writeback/no-launch errors are covered at the documented CCSIDs. A loaded
+verification run exposed a short-lived CPU fixture that could exit before live
+accounting sampled it; the fixture now waits for observed CPU/thread data and
+releases/drains its child with bounded cancellation. Production process
+accounting is unchanged. Generated inventory, local links and whitespace
+checks pass. Nested/external/LIKEREC structures, TEMPLATE storage suppression,
+general forward value expressions, broader native types/formats, foreign ABI
+and module/service-program binding remain open. Independent native
+golden/scale acceptance remains open; no performance target is claimed. C09
+stays partial; schema 31, catalog 306 and checklist 36 complete / 70 open
+remain unchanged. See docs/rpg-forward-structures.md.
+
+RPG data-template checkpoint (2026-10-18): standalone fields and native data structures
+now accept argument-free TEMPLATE in free declarations and both supported traditional
+D-spec origins. Templates retain layouts, initializers and exact-type ancestry without
+allocating runtime slots, arrays, structures or occurrences. LIKE/LIKEDS copies and
+PR/PI/return layouts use ordinary storage under existing limits; template attributes do
+not leak onto copies. Forward lookup, local shadowing and inherited INZ(*LIKEDS) remain
+supported. Runtime %SIZE/%ELEM use declared metadata with constant subscripts;
+declaration-only %LEN/%DECPOS are supported, with floating-point %DECPOS rejected. Data
+access, calls, traditional PLIST/KLIST operands and INFDS/INDDS/SFILE runtime bindings
+reject template storage, with status-105 guards on direct runtime access. Literal
+prefixes, exponents, special values, labels and qualified member names retain their
+proper meaning, including whitespace around qualification. Templates do not consume
+allocation-dependent storage/invocation budgets: tests describe 1,073,676,289-byte
+scalar arrays and 34,358,689,792-byte structure arrays without allocating them.
+Component limits and a 256-visible-template bound remain enforced. Saved programs remove
+source and exercise real queue buffers, inherited local returns, large metadata and
+include diagnostics at CCSIDs 37/1208. Process tests verify valid/malformed response
+atomicity and rejection before launch. All 5122 solution tests pass with zero
+failures/skips in 7m39s, including 51 new cases: 39 unit, nine saved-program integration
+and three external-process cases. All 779 final focused checks, locked restore, a
+zero-warning/error Release build and expanded terminal acceptance with RPGTMPL pass.
+RPGTMPL runs at 24x80; general display acceptance also covers 27x132. Generated
+inventory, local links and whitespace checks pass. File TEMPLATE/LIKEFILE, complete
+CTDATA template behavior, nested/external/LIKEREC layouts, broader types and ILE
+binding, and independent native golden/scale acceptance remain open. C09 stays partial;
+schema 31, catalog 306 and checklist 36 complete / 70 open remain unchanged. See
+docs/rpg-templates.md.
+
+DISK record-structure checkpoint (2026-10-18): LIKEREC now defines qualified native
+structures from declared DISK records with default/*INPUT, *OUTPUT, *ALL and packed
+key-order *KEY layouts. RENAME/PREFIX, original record positions, both supported
+traditional D-spec origins, TEMPLATE/LIKEDS inheritance, forward type metadata and exact
+ancestry are supported. PR/PI parameters and returns accept record layouts, including
+fixed DIM, CONST/VALUE and RTNPARM. CHAIN/READ/READP/READE/READPE and WRITE/UPDATE
+accept checked result structures or indexed array elements in free and native fixed
+calculations. Origins and extract modes must match; unrelated equal-sized buffers, whole
+arrays, template receivers, readonly input and feedback-resized layouts reject before
+execution. Receiver addresses are captured once before cursor movement; misses/EOF
+preserve bytes. Input stages conversions before publishing, leaves imported scalar
+fields unchanged and releases update locks on conversion failure. Output snapshots and
+validates fields before file mutation. Metadata discovery is lazy and cached per file
+request, preserving existing feedback/INFSR validation order; callbacks detach on
+success/failure. Saved programs restore layouts after source and a separate compile-time
+description file are removed. All 5167 solution tests pass with zero failures/skips in
+8m13s, including 45 new cases: 42 record/metadata/integration cases and three
+external-process cases. Historical calculation extensions retain their legacy record
+operands. All 1202 broad focused checks and 124 final record/display/legacy checks pass,
+as do locked restore, a zero-warning/error Release build and expanded RPGREC terminal
+compile/call acceptance. RPGREC runs at 24x80; general display acceptance also covers
+27x132. Process cases verify valid/malformed output atomicity and rejection before
+launch; source-removal and native record cases cover CCSIDs 37/1208. Generated
+inventory, local links and whitespace checks pass. This supplies prerequisites required
+by file LIKEFILE; file TEMPLATE/LIKEFILE itself remains open, together with WORKSTN
+result structures, EXTNAME/nested/multi-format/null layouts, complete CHARCOUNT/CCSID
+behavior, broader ILE binding and independent native golden/scale acceptance. C09 stays
+partial; schema 31, catalog 306 and checklist 36 complete / 70 open remain unchanged.
+See docs/rpg-record-structures.md.

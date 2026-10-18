@@ -30,7 +30,7 @@ public static partial class RpgCompiler
             var feedback = keywords.Where(k => k.Name == "INFDS").ToArray();
             if (feedback.Length == 0) continue;
             var name = feedback[0].Arguments?.ToUpperInvariant(); var ds = program.FindDs(name ?? "");
-            if (feedback.Length != 1 || ds is not { NativeStorage: true, Anonymous: false, IsArray: false, ProgramStatus: false } ||
+            if (feedback.Length != 1 || ds is not { NativeStorage: true, IsTemplate: false, Anonymous: false, IsArray: false, ProgramStatus: false, IsMultipleOccurrence: false } ||
                 program.FileInformation.Any(f => f.Structure == ds.Name))
                 throw new RpgCompileException(declaration.Line, "INFDS requires a unique, named scalar native data structure for each file.");
             if (ds.ExplicitLength && ds.Length < 80) throw new RpgCompileException(ds.DeclarationLine, "An explicit INFDS LEN must be at least 80 bytes.");
@@ -41,19 +41,20 @@ public static partial class RpgCompiler
             declarations[i] = declaration with { Keywords = string.Join(' ', keywords.Where(k => k.Name != "INFDS")
                 .Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")"))) };
         }
-        foreach (var ds in program.DataStructures.Where(d => !d.ProgramStatus && d.Elements.Any(e => e.FeedbackKeyword is not null)))
+        foreach (var ds in program.DataStructures.Where(d => !program.GlobalStructures.Contains(d) && !d.ProgramStatus && d.Elements.Any(e => e.FeedbackKeyword is not null)))
             if (!program.FileInformation.Any(f => f.Structure == ds.Name))
                 throw new RpgCompileException(ds.Elements.First(e => e.FeedbackKeyword is not null).DeclarationLine,
                     "Reserved file feedback subfields require an INFDS binding.");
-        // LIKEDS definitions only reference earlier declarations, so propagate final INFDS lengths in source order.
-        foreach (var ds in program.DataStructures.Where(d => d.LikeDataStructure is not null))
+        // Resolve final feedback extents through template chains regardless of declaration order.
+        foreach (var ds in program.DataStructures.Where(d => !program.GlobalStructures.Contains(d) && d.LikeDataStructure is not null))
         {
-            ds.Length = Math.Max(program.FindDs(ds.LikeDataStructure!)!.Length,
-                program.FileInformation.Any(f => f.Structure == ds.Name) ? 80 : 0);
-            if ((long)ds.Length * ds.Dimension > 1048576)
-                throw new RpgCompileException(ds.DeclarationLine, "Native data structure storage exceeds 1 MiB after feedback binding.");
+            ds.Length = Math.Max(DeclarationStructureLength(program, ds),
+                ds.IndicatorDataStructure ? 99 : program.FileInformation.Any(f => f.Structure == ds.Name) ? 80 : 0);
         }
-        if (program.DataStructures.Where(d => d.NativeStorage).Sum(d => (long)d.Length * d.Dimension) > 16777216)
+        foreach (var ds in program.DataStructures.Where(d => d.NativeStorage && !d.IsTemplate))
+            if ((long)ds.Length * ds.StorageCount > 1048576)
+                throw new RpgCompileException(ds.DeclarationLine, "Native data structure storage exceeds 1 MiB after feedback binding.");
+        if (program.DataStructures.Where(d => d.NativeStorage && !d.IsTemplate).Sum(d => (long)d.Length * d.StorageCount) > 16777216)
             throw new RpgCompileException(1, "Native feedback storage exceeds 16 MiB per program.");
     }
 }

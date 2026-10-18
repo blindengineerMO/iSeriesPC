@@ -10,13 +10,15 @@ public sealed partial class RpgRuntimeContext
     private readonly HashSet<string> _externalCharacters;
     private RpgHost _host;
     internal int Ccsid => _host.Ccsid();
-    internal RpgWorkstationState WorkstationState { get; } = new();
-    internal RpgDiskState DiskState { get; } = new();
+    private readonly RpgWorkstationState _workstationState = new();
+    private readonly RpgDiskState _diskState = new();
+    internal RpgWorkstationState WorkstationState => GlobalContext?.WorkstationState ?? _workstationState;
+    internal RpgDiskState DiskState => GlobalContext?.DiskState ?? _diskState;
     public void CloseDiskFiles()
-    { try { DiskState.Dispose(); } finally { foreach (var file in _program.DiskFiles) RefreshFeedbackFlags(file.Request.Name); } }
+    { try { DiskState.Dispose(); } finally { foreach (var file in _program.DiskFiles.Where(f => !f.Request.IsTemplate)) RefreshFeedbackFlags(file.Request.Name); } }
     public void CloseWorkstations()
     { try { WorkstationState.Dispose(); } finally { foreach (var file in _program.Workstations) RefreshFeedbackFlags(file.Request.Name); } }
-    private sealed record FileStatus(bool Found, bool EndOfFile, bool Error);
+    private sealed record FileStatus(bool Found, bool EndOfFile, bool Error, bool Equal = false);
     private readonly Dictionary<string, FileStatus> _fileStatus = new(StringComparer.OrdinalIgnoreCase);
     private FileStatus _lastFileStatus = new(false, false, false);
     private readonly Dictionary<string, int> _numericFileStatus = new(StringComparer.OrdinalIgnoreCase);
@@ -36,25 +38,34 @@ public sealed partial class RpgRuntimeContext
     internal void SetFileStatus(string file, bool? found = null, bool? eof = null, bool error = false, bool clearFileEof = false)
     {
         var previous = _fileStatus.GetValueOrDefault(file, new(false, false, false));
-        _lastFileStatus = new(found ?? _lastFileStatus.Found, eof ?? _lastFileStatus.EndOfFile, error);
-        _fileStatus[file] = new(found ?? previous.Found, clearFileEof ? false : eof ?? previous.EndOfFile, error);
+        _lastFileStatus = new(found ?? _lastFileStatus.Found, eof ?? _lastFileStatus.EndOfFile, error, _lastFileStatus.Equal);
+        _fileStatus[file] = new(found ?? previous.Found, clearFileEof ? false : eof ?? previous.EndOfFile, error, previous.Equal);
         RefreshFeedbackFlags(file);
+    }
+    internal void SetEqualStatus(string file, bool equal)
+    {
+        _lastFileStatus = _lastFileStatus with { Equal = equal };
+        _fileStatus[file] = _fileStatus.GetValueOrDefault(file, new(false, false, false)) with { Equal = equal };
     }
     internal void RebindHost(RpgHost host) => _host = host;
     private readonly Dictionary<string, object?> _slots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Ipc.Core.Work.ProgramArgument> _references = new(StringComparer.OrdinalIgnoreCase);
-    internal Ipc.Core.Work.ProgramArgument? Reference(string name) => _references.GetValueOrDefault(name);
-    internal object? ReadApiScalar(string name) => _references.TryGetValue(name, out var reference)
+    internal Ipc.Core.Work.ProgramArgument? Reference(string name) => IsGlobalName(name) ? GlobalContext!.Reference(name) : _references.GetValueOrDefault(name);
+    internal object? ReadApiScalar(string name) => IsGlobalName(name) ? GlobalContext!.ReadApiScalar(name) : _references.TryGetValue(name, out var reference)
         ? _program.FindField(name)?.OpaqueBytes == true ? reference.ToBuffer() : reference.Value : _slots[name];
     internal void WriteApiScalar(string name, object? value)
     {
+        if (IsGlobalName(name)) { GlobalContext!.WriteApiScalar(name, value); return; }
         if (_references.TryGetValue(name, out var reference)) reference.Value = value;
         else _slots[name] = value;
     }
     internal void BindReference(string name, Ipc.Core.Work.ProgramArgument argument)
     {
         var field = _program.FindField(name) ?? throw new RpgRuntimeException($"Unknown entry field '{name}'.");
-        if (field.IsArray || field.IsDataStructure || field.Source == RpgFieldSource.Constant || _program.FindDsElement(name) is not null)
+        if (field.VariableSizeParameter) { BindVariableParameter(field, argument); return; }
+        if (field.NativeArray || field.ParameterStructure is not null) { BindNativeAggregate(field, argument); return; }
+        if (field.NativeScalar) { BindNativeScalar(field, argument); return; }
+        if (field.IsArray || field.IsTable || field.IsDataStructure || field.Source == RpgFieldSource.Constant || _program.FindDsElement(name) is not null)
             throw new RpgRuntimeException("Borrowed entry arguments currently require scalar fields.");
         var compatible = argument.Type switch {
             null => true,
@@ -75,26 +86,35 @@ public sealed partial class RpgRuntimeContext
         {
             foreach (var reference in _references)
             {
+                if (_nativeScalarBindings.TryGetValue(reference.Key, out var binding))
+                {
+                    TryNativeReference(new RpgFieldRef(reference.Key), out var view);
+                    if (binding.Memory is { } memory) { DetachNativeMemory(reference.Key, view, memory); continue; }
+                    binding.Read().CopyTo(view.Bytes, view.Offset); continue;
+                }
                 var value = _program.FindField(reference.Key)?.OpaqueBytes == true ? reference.Value.ToBuffer() : reference.Value.Value;
                 // Keep detached character storage semantic without interpreting raw API text as *BLANK keywords.
                 _slots[reference.Key] = value is Ipc.Core.Work.ProgramBuffer buffer && _program.FindField(reference.Key) is { Kind: RpgFieldKind.Character, OpaqueBytes: false }
                     ? buffer.ToText() : value;
             }
         }
-        finally { _references.Clear(); }
+        finally { _references.Clear(); _nativeScalarBindings.Clear(); _nativeEntryOwners.Clear(); }
     }
     private readonly Dictionary<string, object?[]> _arrays = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _dsStorage = new(StringComparer.OrdinalIgnoreCase);
 
-    public bool[] Indicators { get; } = new bool[100];
+    private readonly bool[] _indicators = new bool[100];
+    public bool[] Indicators => GlobalContext?.Indicators ?? _indicators;
     public bool IsCancelled { get; internal set; }
 
-    public RpgRuntimeContext(RpgProgram program, RpgHost host)
+    public RpgRuntimeContext(RpgProgram program, RpgHost host) : this(program, host, null) { }
+    internal RpgRuntimeContext(RpgProgram program, RpgHost host, RpgRuntimeContext? globals)
     {
+        GlobalContext = globals;
         _program = program;
         _externalCharacters = program.Workstations.SelectMany(w => w.Layout.Records).SelectMany(r => r.Fields)
             .Where(f => f.Kind == RpgFieldKind.Character && !f.Opaque).Select(f => f.Name)
-            .Concat(program.DiskFiles.SelectMany(f => f.Layout.Fields).Where(f => f.Kind == RpgFieldKind.Character).Select(f => f.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Concat(program.DiskFiles.Where(f => !f.Request.IsTemplate && !f.Request.Qualified).SelectMany(f => f.Layout.Fields).Where(f => f.Kind == RpgFieldKind.Character).Select(f => f.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _host = host;
         NativeCcsid = host.Ccsid();
         Initialize();
@@ -110,6 +130,8 @@ public sealed partial class RpgRuntimeContext
     {
         foreach (var field in _program.Fields)
         {
+            if (field.IsTemplate || _program.GlobalFields.Contains(field)) continue;
+            if (field.NativeArray || field.NativeScalar || field.IsTable || field.ParameterStructure is not null) continue;
             if (field.IsArray)
             {
                 var array = new object?[field.Dimension];
@@ -122,14 +144,13 @@ public sealed partial class RpgRuntimeContext
             }
             else
             {
-                _slots[field.Name] = field.Kind == RpgFieldKind.Indicator
-                    ? (ParseBoolean(field.InitialValue))
-                    : InitialValue(field);
+                _slots[field.Name] = InitialValue(field);
             }
         }
 
         foreach (var ds in _program.DataStructures)
         {
+            if (ds.IsTemplate || _program.GlobalStructures.Contains(ds)) continue;
             if (ds.NativeStorage) continue;
             for (var dim = 0; dim < ds.Dimension; dim++)
             {
@@ -142,6 +163,14 @@ public sealed partial class RpgRuntimeContext
 
     private object InitialValue(RpgField field)
     {
+        if (field.InitializationExpression is { } expression)
+        {
+            var value = RpgExpressionParser.Parse(expression).Eval(this)!;
+            if (field.Source == RpgFieldSource.Constant) return value;
+            if (field.OpaqueBytes) return value is Ipc.Core.Work.ProgramBuffer buffer ? buffer :
+                new Ipc.Core.Work.ProgramBuffer(Ipc.Core.Text.CodePage.FromCcsid(NativeCcsid).GetBytes(new string(' ', field.Length)), NativeCcsid);
+            return Coerce(field, value, literalCharacter: true)!;
+        }
         if (field.OpaqueBytes) return new Ipc.Core.Work.ProgramBuffer(field.InitialValue is { } hex && hex.StartsWith("X'", StringComparison.OrdinalIgnoreCase)
             ? Convert.FromHexString(hex[2..^1]) : Ipc.Core.Text.CodePage.FromCcsid(_host.Ccsid()).GetBytes(new string(' ', field.Length)), _host.Ccsid());
         var init = field.InitialValue;
@@ -174,6 +203,7 @@ public sealed partial class RpgRuntimeContext
 
     private void InitializeConstant(RpgField field, string value)
     {
+        if (field.InitializationExpression is not null) throw new RpgRuntimeException("Cannot rebind a compiled named constant.");
         _slots[field.Name] = field.Kind == RpgFieldKind.Character
             ? PadCharacter(value, field.Length)
             : ParseNumeric(value);
@@ -198,6 +228,7 @@ public sealed partial class RpgRuntimeContext
 
     public object? ReadValue(string name)
     {
+        if (IsGlobalName(name)) return GlobalContext!.ReadValue(name);
         if (TryNativeReference(new RpgFieldRef(name), out var native)) return ReadNative(native);
         var element = _program.FindDsElement(name);
         if (element is not null)
@@ -225,6 +256,7 @@ public sealed partial class RpgRuntimeContext
 
     private void WriteValue(string name, object? value, bool literalCharacter)
     {
+        if (IsGlobalName(name)) { GlobalContext!.WriteValue(name, value, literalCharacter); return; }
         if (TryNativeReference(new RpgFieldRef(name), out var native)) { WriteNative(native, value); return; }
         var element = _program.FindDsElement(name);
         if (element is not null)
@@ -254,7 +286,14 @@ public sealed partial class RpgRuntimeContext
         => NormalizeFileValue(name, value);
     internal object? NormalizeFileValue(string name, object? value)
     {
+        if (IsGlobalName(name)) return GlobalContext!.NormalizeFileValue(name, value);
         var field = _program.FindField(name) ?? throw new RpgRuntimeException("Missing external field: " + name);
+        if (field.NativeScalar && TryNativeReference(new RpgFieldRef(name), out var native))
+        {
+            var input = field.Kind == RpgFieldKind.Character && !field.OpaqueBytes ? Coerce(field, value) : value;
+            var image = NormalizeNative(native, input);
+            return ReadNative(native with { Bytes = image, Offset = 0, Binding = null });
+        }
         var converted = Coerce(field, value);
         if (_references.TryGetValue(name, out var reference)) _ = reference.Normalize(converted);
         return converted;
@@ -262,6 +301,7 @@ public sealed partial class RpgRuntimeContext
 
     public object? ReadArrayValue(string name, long index)
     {
+        if (IsGlobalName(name)) return GlobalContext!.ReadArrayValue(name, index);
         if (TryNativeReference(new RpgFieldRef(name), out var native)) return ReadNative(NativeIndex(native, index));
         var element = _program.FindDsElement(name);
         if (element is not null)
@@ -288,6 +328,7 @@ public sealed partial class RpgRuntimeContext
 
     public void WriteArrayValue(string name, long index, object? value)
     {
+        if (IsGlobalName(name)) { GlobalContext!.WriteArrayValue(name, index, value); return; }
         if (TryNativeReference(new RpgFieldRef(name), out var native)) { WriteNative(NativeIndex(native, index), value); return; }
         var element = _program.FindDsElement(name);
         if (element is not null)
@@ -312,8 +353,12 @@ public sealed partial class RpgRuntimeContext
     }
 
     public void ClearValue(string name)
+        => ClearValue(name, false);
+
+    public void ClearValue(string name, bool allOccurrences)
     {
-        if (TryClearNative(name)) return;
+        if (TryClearNative(name, allOccurrences)) return;
+        if (allOccurrences) throw new RpgRuntimeException("CLEAR *ALL requires a multiple-occurrence data structure.");
         if (_program.FindField(name) is { OpaqueBytes: true } opaque)
         {
             WriteValue(opaque.Name, new Ipc.Core.Work.ProgramBuffer(Ipc.Core.Text.CodePage.FromCcsid(_host.Ccsid()).GetBytes(new string(' ', opaque.Length)), _host.Ccsid()));
@@ -365,7 +410,7 @@ public sealed partial class RpgRuntimeContext
     public static object ClearValueFor(RpgDsElement element) =>
         ClearValueFor(element.Kind);
 
-    public bool HasVariable(string name) => _slots.ContainsKey(name) || _arrays.ContainsKey(name);
+    public bool HasVariable(string name) => _slots.ContainsKey(name) || _arrays.ContainsKey(name) || _program.FindField(name) is { NativeScalar: true } or { NativeArray: true } or { IsTable: true };
 
     private static string PadCharacter(string value, int length)
     {
@@ -617,8 +662,21 @@ public sealed partial class RpgRuntimeContext
             return _fileStatus.GetValueOrDefault(file.Name, new(false, false, false));
         }
         var upper = name.ToUpperInvariant();
+        if (upper is "OPEN" or "EOF" or "FOUND" or "EQUAL" or "STATUS" && arguments.FirstOrDefault() is RpgFieldRef templateFile && RpgCompiler.TemplateFileSymbol(_program, templateFile.Name))
+            throw NativeFailure(105, "A TEMPLATE file has no runtime status.");
+        if (arguments.Any(a => RpgCompiler.TemplateReference(_program, a)))
+        {
+            if (upper is "SIZE" or "ELEM") return RpgCompiler.TemplateMetadata(_program, upper, arguments);
+            throw NativeFailure(105, "TEMPLATE definitions have no runtime value.");
+        }
         switch (upper)
         {
+            case "SUBARR": return ReadNative(NativeSlice(arguments));
+            case "XFOOT": return SumArray(arguments);
+            case "LOOKUP": case "LOOKUPLT": case "LOOKUPLE": case "LOOKUPGT": case "LOOKUPGE": case "LOOKUPNE":
+                return LookupArray(upper, arguments);
+            case "TLOOKUP": case "TLOOKUPLT": case "TLOOKUPLE": case "TLOOKUPGT": case "TLOOKUPGE": case "TLOOKUPNE":
+                return LookupTable(upper, arguments);
             case "SUBST":
             case "SUBSTR":
                 return EvalSubstring(arguments);
@@ -633,8 +691,12 @@ public sealed partial class RpgRuntimeContext
                 RequireArgCount(name, arguments, 1, 2);
                 var all = arguments.Count == 2;
                 if (all && (arguments[1] is not RpgFieldRef sizeAll || !sizeAll.Name.Equals("*ALL", StringComparison.OrdinalIgnoreCase))) throw new RpgRuntimeException("The second %SIZE argument must be *ALL.");
+                if (all && arguments[0] is RpgFieldRef tableSize && Program.FindField(tableSize.Name) is { IsTable: true })
+                    return TableStorage(tableSize.Name).Width;
                 if (TryNativeReference(arguments[0], out var nativeSize))
                 {
+                    if (all && nativeSize.Element is null && nativeSize.Structure.IsMultipleOccurrence)
+                        return nativeSize.Structure.Length * nativeSize.Structure.Occurrences;
                     if (all && !nativeSize.IsArray) throw new RpgRuntimeException("%SIZE(*ALL) requires an array.");
                     return nativeSize.UnitWidth * (all ? nativeSize.Count : 1);
                 }
@@ -644,6 +706,9 @@ public sealed partial class RpgRuntimeContext
                     : ValueLength(arguments[0].Eval(this));
             case "ELEM":
                 RequireArgCount(name, arguments, 1);
+                if (arguments[0] is RpgFieldRef tableCount && Program.FindField(tableCount.Name) is { IsTable: true } tableCountField) return tableCountField.Dimension;
+                if (arguments[0] is RpgFieldRef occurrenceName && Program.FindDs(occurrenceName.Name) is { IsMultipleOccurrence: true } occurrenceDs)
+                    return occurrenceDs.Occurrences;
                 if (TryNativeReference(arguments[0], out var nativeElements) && nativeElements.IsArray) return nativeElements.Count;
                 if (arguments[0] is RpgFieldRef array && Program.FindField(array.Name) is { IsArray: true } arrayField) return arrayField.Dimension;
                 throw new RpgRuntimeException("%ELEM requires an array.");
@@ -661,7 +726,7 @@ public sealed partial class RpgRuntimeContext
                 return decimal.Round(RpgValues.ToDecimal(arguments[0].Eval(this)), (int)RpgValues.ToLong(arguments[2].Eval(this)), MidpointRounding.AwayFromZero);
             case "INT":
                 RequireArgCount(name, arguments, 1);
-                return RpgValues.ToLong(arguments[0].Eval(this));
+                return ConvertInteger(arguments[0].Eval(this));
             case "CHAR":
                 RequireArgCount(name, arguments, 1);
                 return RpgValues.ToText(arguments[0].Eval(this));
@@ -684,6 +749,11 @@ public sealed partial class RpgRuntimeContext
                 throw new RpgRuntimeException("Unknown open-status file: " + openFile.Name);
             case "FOUND":
                 return Status().Found;
+            case "EQUAL":
+                if (arguments.Count > 0 && (arguments.Count != 1 || arguments[0] is not RpgFieldRef equalFile ||
+                    _program.Workstations.Any(f => f.Request.Name.Equals(equalFile.Name, StringComparison.OrdinalIgnoreCase))))
+                    throw NativeFailure(105, "%EQUAL requires a file that supports SETLL.");
+                return Status().Equal;
             case "EOF":
                 return Status().EndOfFile;
             case "ERROR":
@@ -692,10 +762,16 @@ public sealed partial class RpgRuntimeContext
                 if (arguments.Count == 0) return _numericStatus;
                 _ = Status();
                 return _numericFileStatus.GetValueOrDefault(((RpgFieldRef)arguments[0]).Name);
+            case "OCCUR":
+                return NativeOccurrence(OccurrenceStructure(arguments));
             case "PARMS":
                 RequireArgCount(name, arguments, 0); return ParameterCount;
             case "PARMNUM":
-                return 0;
+                return ParameterNumber(arguments);
+            case "PASSED":
+                return ParameterPresence(arguments, omitted: false);
+            case "OMITTED":
+                return ParameterPresence(arguments, omitted: true);
             default:
                 throw new RpgRuntimeException($"Unsupported built-in function '%{name}'.");
         }
@@ -704,9 +780,20 @@ public sealed partial class RpgRuntimeContext
     private object? EvalSubstring(IReadOnlyList<RpgExpr> arguments)
     {
         RequireArgCount("%SUBST", arguments, 2, 3);
-        if (TryNativeReference(arguments[0], out var substringArray) && substringArray.IsArray) throw new RpgRuntimeException("Array %SUBST requires an indexed element in the current subset.");
-        var value = TryNativeReference(arguments[0], out var native) && (native.Element is null || native.Element.Kind == RpgFieldKind.Character)
-            ? NativeBuffer(native) : arguments[0].Eval(this);
+        var isNative = TryNativeReference(arguments[0], out var memoryView);
+        if (isNative && memoryView.IsArray) throw new RpgRuntimeException("Array %SUBST requires an indexed element in the current subset.");
+        if (isNative && memoryView.Binding?.Memory is { } memory &&
+            !memoryView.IsArray && (memoryView.Element is null || memoryView.Element.Kind == RpgFieldKind.Character))
+        {
+            var from = RpgValues.ToLong(arguments[1].Eval(this));
+            var count = arguments.Count == 3 ? RpgValues.ToLong(arguments[2].Eval(this)) : memoryView.Width - from + 1;
+            if (from < 1 || from > memoryView.Width + 1 || count < 0 || count > memoryView.Width - from + 1) throw NativeFailure(100, "Substring exceeds the declared character size.");
+            EnsureNativeParameterAvailable(memoryView);
+            try { return memory.Read((int)from - 1, (int)count); }
+            catch (Ipc.Core.Messages.CpfException error) when (error.MessageId == "CPF3C3A") { throw NativeFailure(105, error.Message); }
+        }
+        var value = isNative && (memoryView.Element is null || memoryView.Element.Kind == RpgFieldKind.Character)
+            ? NativeBuffer(memoryView) : arguments[0].Eval(this);
         if (value is Ipc.Core.Work.ProgramBuffer buffer)
         {
             var from = RpgValues.ToLong(arguments[1].Eval(this));

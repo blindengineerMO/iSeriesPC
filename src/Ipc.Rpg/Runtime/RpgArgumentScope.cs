@@ -14,26 +14,32 @@ namespace Ipc.Rpg.Runtime;
 internal sealed class RpgArgumentScope : IDisposable
 {
     private bool _active = true;
+    private readonly List<RpgArgumentScope> _nestedScopes = new();
     internal IReadOnlyList<object?> Arguments { get; }
 
     internal RpgArgumentScope(RpgRuntimeContext context, IReadOnlyList<RpgExpr> expressions, IReadOnlyList<object?> values, int ccsid,
-        RpgPrototype? prototype = null, Func<int, RpgRuntimeContext.NativeView?>? capturedNative = null)
+        RpgPrototype? prototype = null, Func<int, RpgRuntimeContext.NativeView?>? capturedNative = null, bool allowUntyped = false,
+        Func<int, ProgramArgument?>? preparedArguments = null)
     {
         if (expressions.Count > 256 || values.Count != expressions.Count) throw Bad("Invalid RPG API argument count; at most 256 arguments are supported.");
         RpgField[]? formals = null;
         if (prototype is not null)
         {
-            if (context.Program.Prototypes.Count(candidate => candidate.Name.Equals(prototype.Name, StringComparison.OrdinalIgnoreCase)) != 1)
+            if (context.Program.VisiblePrototypes.Count(candidate => candidate.Name.Equals(prototype.Name, StringComparison.OrdinalIgnoreCase)) != 1)
                 throw Bad("Ambiguous RPG API prototype binding.");
-            if (prototype.Parameters.Count != expressions.Count || prototype.Parameters.Distinct(StringComparer.OrdinalIgnoreCase).Count() != prototype.Parameters.Count)
+            if (!prototype.AcceptsArgumentCount(expressions.Count) || prototype.Parameters.Distinct(StringComparer.OrdinalIgnoreCase).Count() != prototype.Parameters.Count)
                 throw Bad("RPG API prototype parameter count or declarations do not match the call.");
-            formals = prototype.Parameters.Select(name => {
+            if (prototype.NativeSignature && prototype.NativeParameters.Count != prototype.Parameters.Count)
+                throw Bad("Native prototype parameter metadata does not match the call.");
+            if (prototype.NativeSignature && prototype.Parameters.Count + (prototype.NativeReturnField?.ReturnByParameter == true ? 1 : 0) > 255)
+                throw Bad("Native signatures exceed 255 positions including RTNPARM.");
+            formals = prototype.NativeSignature ? prototype.NativeParameters.ToArray() : prototype.Parameters.Select(name => {
                 var matches = context.Program.Fields.Where(field => field.Name.Equals(name, StringComparison.OrdinalIgnoreCase)).ToArray();
                 return matches.Length == 1 ? matches[0] : throw Bad("Missing or ambiguous RPG API prototype field.");
             }).ToArray();
             foreach (var formal in formals)
             {
-                ValidateScalar(formal);
+                if (prototype.NativeSignature) ValidateNativeFormal(formal); else ValidateScalar(formal);
                 if (formal.Source == RpgFieldSource.Constant) throw Bad("A prototype formal cannot be a named constant.");
                 var keywords = prototype.ParameterKeywords.GetValueOrDefault(formal.Name, "").Trim();
                 if (keywords.Length > 0 && !keywords.Equals("PARM", StringComparison.OrdinalIgnoreCase))
@@ -42,7 +48,9 @@ internal sealed class RpgArgumentScope : IDisposable
         }
         var byField = new Dictionary<string, ProgramArgument>(StringComparer.OrdinalIgnoreCase);
         var byNative = new Dictionary<string, ProgramArgument>(StringComparer.Ordinal);
+        var byNativeEntry = new Dictionary<(ProgramArgument, RpgFieldKind, int, int, int, bool), ProgramArgument>();
         var byReference = new Dictionary<ProgramArgument, ProgramArgument>(ReferenceEqualityComparer.Instance);
+        var readOnlyReferences = new Dictionary<ProgramArgument, ProgramArgument>(ReferenceEqualityComparer.Instance);
         var arguments = new List<object?>(); long bytes = 0;
         var encoding = (Encoding)CodePage.FromCcsid(ccsid).Clone();
         encoding.EncoderFallback = EncoderFallback.ExceptionFallback;
@@ -51,8 +59,85 @@ internal sealed class RpgArgumentScope : IDisposable
         {
             var expression = expressions[index];
             var formal = formals?[index];
-            var native = capturedNative?.Invoke(index);
-            if (native is null && capturedNative is null) context.TryNativeReference(expression, out native);
+            if (preparedArguments?.Invoke(index) is { } prepared)
+            {
+                bytes += prepared.ToBuffer()?.Length ?? prepared.Length;
+                if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
+                if (prepared.IsReadOnly) arguments.Add(ReadOnly(prepared));
+                else arguments.Add(new ProgramArgument(() => { CheckActive(); return prepared.Value; }, value => { CheckActive(); prepared.Value = value; },
+                    value => { CheckActive(); return prepared.Normalize(value); }, prepared.Type, prepared.Length, prepared.Decimals,
+                    () => { CheckActive(); return prepared.ToBuffer(); }, prepared.Constant, prepared.Storage) { Shape = prepared.Shape,
+                        Memory = context.ArgumentMemory(prepared, formal!).Scoped(CheckActive) });
+                continue;
+            }
+            var copiedSubarray = RpgRuntimeContext.ContainsSubarray(expression);
+            var native = copiedSubarray ? null : capturedNative?.Invoke(index);
+            if (!copiedSubarray && native is null && capturedNative is null) context.TryNativeArgument(expression, out native);
+            if (formal?.VariableSizeParameter == true || prototype is null && native is not null && context.VariableTransport(native))
+            {
+                ProgramArgumentMemory memory;
+                if (native is not null)
+                {
+                    if (formal is not null && !RpgRuntimeContext.MatchingVariable(native, formal)) throw Bad("Incompatible *VARSIZE reference layout.");
+                    memory = context.NativeMemory(native);
+                }
+                else
+                {
+                    var nested = new RpgArgumentScope(context, [expression], [values[index]], ccsid); _nestedScopes.Add(nested);
+                    if (nested.Arguments[0] is not ProgramArgument legacy) throw Bad("*VARSIZE mutable arguments require variables.");
+                    memory = context.ArgumentMemory(legacy, formal!);
+                }
+                if (memory.Capacity < 1 || memory.Ccsid != ccsid) throw Bad("Invalid *VARSIZE argument capacity or CCSID.");
+                memory = memory.Scoped(CheckActive, formal?.ReadOnlyParameter == true);
+                bytes += memory.Capacity; if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
+                ProgramBuffer Buffer() { CheckActive(); return memory.Read(0, memory.Capacity); }
+                object? Normalize(object? value)
+                {
+                    CheckActive();
+                    if (value is not ProgramBuffer buffer || buffer.Length != memory.Capacity || buffer.Ccsid != ccsid) throw Bad("Invalid variable-size returned buffer.");
+                    if (!memory.IsReadOnly) memory.Validate(0, buffer);
+                    return new ProgramBuffer(buffer.ToArray(), ccsid);
+                }
+                arguments.Add(new ProgramArgument(() => Buffer(), value => memory.Write(0, (ProgramBuffer)value!), Normalize,
+                    "*CHAR", memory.Capacity, 0, Buffer, null, memory.Storage)
+                    { IsReadOnly = memory.IsReadOnly, Memory = memory, Shape = memory.Shape });
+                continue;
+            }
+            if (prototype?.NativeSignature == true && formal is not null && RpgRuntimeContext.AggregateParameter(formal))
+            {
+                if (native is null || !RpgRuntimeContext.MatchingAggregate(native, formal)) throw Bad("Aggregate actual layout differs from its prototype.");
+                native = context.AggregatePrefix(native, formal);
+                if (context.NativeCcsid != ccsid) throw Bad("Aggregate CCSIDs differ.");
+                bytes += context.NativeMemory(native).Capacity;
+                if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
+                var key = "AGG:" + native.Identity + ":" + RpgRuntimeContext.ParameterShape(formal);
+                if (!byNative.TryGetValue(key, out var aggregate))
+                {
+                    object? NormalizeAggregate(object? value)
+                    {
+                        CheckActive();
+                        if (value is not ProgramBuffer buffer || buffer.Ccsid != ccsid || buffer.Length != native.Width) throw Bad("Invalid aggregate returned buffer.");
+                        var data = buffer.ToArray();
+                        if (native.Binding?.Reference.IsReadOnly != true && !native.Structure.ReadOnlyParameter && native.Element?.ReadOnlyParameter != true)
+                            native.Binding?.Validate(data);
+                        return new ProgramBuffer(data, ccsid);
+                    }
+                    aggregate = new(() => { CheckActive(); return context.NativeBuffer(native); },
+                        value => { CheckActive(); RpgRuntimeContext.WriteNativeBytes(native, ((ProgramBuffer)value!).ToArray()); }, NormalizeAggregate,
+                        "*CHAR", native.Width, 0, () => { CheckActive(); return context.NativeBuffer(native); }, null, context.NativeStorageRange(native))
+                        { Shape = RpgRuntimeContext.ParameterShape(formal), IsReadOnly = native.Binding?.Reference.IsReadOnly == true || native.Structure.ReadOnlyParameter || native.Element?.ReadOnlyParameter == true,
+                            Memory = context.NativeMemory(native).Scoped(CheckActive) };
+                    byNative.Add(key, aggregate);
+                }
+                arguments.Add(formal.ReadOnlyParameter ? ReadOnly(aggregate) : aggregate); continue;
+            }
+            if (prototype?.NativeSignature == true && native is { Element.Kind: RpgFieldKind.Character, IsArray: false } && formal?.Kind == RpgFieldKind.Character &&
+                !RpgRuntimeContext.AggregateParameter(formal) &&
+                native.Element.OpaqueBytes == formal.OpaqueBytes && native.Width >= formal.Length)
+                native = context.NativeCharacterPrefix(native, formal.Length);
+            if (prototype?.NativeSignature == true && native is null &&
+                (expression is not RpgFieldRef actual || context.Program.FindField(actual.Name) is not { Source: not RpgFieldSource.Constant }))
+                throw Bad("A native writable reference parameter requires a variable; literals and expressions require CONST or VALUE.");
             if (native is not null)
             {
                 if (context.NativeCcsid != ccsid) throw Bad("Native structure CCSID differs from the current call; explicit conversion is required.");
@@ -61,17 +146,22 @@ internal sealed class RpgArgumentScope : IDisposable
                 var raw = element is null || native.IsArray || element.OpaqueBytes;
                 var kind = raw ? RpgFieldKind.Character : element!.Kind;
                 var precision = kind is RpgFieldKind.Packed or RpgFieldKind.Zoned ? element!.Length : native.Width;
+                var decimals = raw ? 0 : element?.Decimals ?? 0;
                 if (formal is not null && (formal.Kind != kind || formal.OpaqueBytes != raw ||
-                    formal.Length != (kind == RpgFieldKind.Integer ? element!.Length : precision) || formal.Decimals != (element?.Decimals ?? 0)))
+                    formal.Length != (kind == RpgFieldKind.Integer ? element!.Length : precision) || formal.Decimals != decimals))
                     throw Bad("Native actual field differs from its scalar prototype.");
-                bytes += native.Width;
+                bytes += context.NativeMemory(native).Capacity;
                 if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
-                if (!byNative.TryGetValue(native.Identity, out var reference))
+                var entry = native.Binding?.Reference;
+                var entryKey = (entry!, kind, native.Width, precision, decimals, raw);
+                if (!byNative.TryGetValue(native.Identity, out var reference) &&
+                    (entry is null || !byNativeEntry.TryGetValue(entryKey, out reference)))
                 {
                     object? NormalizeNative(object? value)
                     {
                         CheckActive();
-                        try { return new ProgramBuffer(context.NormalizeNative(native, value, strict: true), ccsid); }
+                        try { return new ProgramBuffer(native.Element?.ReadOnlyParameter == true || native.Structure.ReadOnlyParameter || native.Binding?.Reference.IsReadOnly == true
+                            ? context.NormalizeArgumentImage(native, value, strict: true) : context.NormalizeNative(native, value, strict: true), ccsid); }
                         catch (RpgRuntimeException error) { throw Bad(error.Message); }
                     }
                     var type = kind switch { RpgFieldKind.Character => "*CHAR", RpgFieldKind.Packed => "*DEC", RpgFieldKind.Zoned => "*ZONED",
@@ -79,10 +169,13 @@ internal sealed class RpgArgumentScope : IDisposable
                         RpgFieldKind.Date => "*DATE", RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", _ => throw Bad("Unsupported native argument type.") };
                     reference = new(() => { CheckActive(); return raw ? context.NativeBuffer(native) : context.ReadNative(native); },
                         value => { CheckActive(); RpgRuntimeContext.WriteNativeBytes(native, ((ProgramBuffer)value!).ToArray()); }, NormalizeNative,
-                        type, precision, element?.Decimals ?? 0, () => { CheckActive(); return context.NativeBuffer(native); }, constant: null, storage: context.NativeStorageRange(native));
+                        type, precision, decimals, () => { CheckActive(); return context.NativeBuffer(native); }, constant: entry?.Constant, storage: context.NativeStorageRange(native))
+                        { IsReadOnly = entry?.IsReadOnly == true || native.Element?.ReadOnlyParameter == true || native.Structure.ReadOnlyParameter,
+                            Memory = context.NativeMemory(native).Scoped(CheckActive) };
                     byNative.Add(native.Identity, reference);
+                    if (entry is not null) byNativeEntry.Add(entryKey, reference);
                 }
-                arguments.Add(reference); continue;
+                arguments.Add(formal?.ReadOnlyParameter == true ? ReadOnly(reference) : reference); continue;
             }
             if (expression is not RpgFieldRef fieldRef)
             {
@@ -98,6 +191,19 @@ internal sealed class RpgArgumentScope : IDisposable
                     throw Bad("Ambiguous RPG API actual field declaration.");
                 if (field is null || context.Program.FindDsElement(fieldRef.Name) is not null)
                     throw Bad("RPG API arguments require scalar fields; arrays and data structures are not supported.");
+                if (allowUntyped && !field.NativeScalar && !field.NativeArray && !field.IsTable && !field.IsArray && !field.IsDataStructure &&
+                    field.Source != RpgFieldSource.Constant && field.Kind is not (RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Decimal or RpgFieldKind.Integer))
+                {
+                    var original = context.Reference(field.Name);
+                    if (!byField.TryGetValue(field.Name, out var untyped) && (original is null || !byReference.TryGetValue(original, out untyped)))
+                    {
+                        object? NormalizeUntyped(object? value) { CheckActive(); return context.NormalizeFileValue(field.Name, value); }
+                        untyped = new(() => { CheckActive(); return context.ReadValue(field.Name); },
+                            value => { CheckActive(); context.WriteValue(field.Name, value); }, NormalizeUntyped, constant: original?.Constant);
+                        byField.Add(field.Name, untyped); if (original is not null) byReference.Add(original, untyped);
+                    }
+                    bytes += Math.Max(field.Length, 16); arguments.Add(untyped); continue;
+                }
                 ValidateScalar(field);
                 bytes += StorageLength(formal ?? field);
                 if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
@@ -201,7 +307,20 @@ internal sealed class RpgArgumentScope : IDisposable
             }
             if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
         }
+        if (formals is not null)
+            for (var index = 0; index < arguments.Count; index++)
+                if (formals[index].ReadOnlyParameter && arguments[index] is ProgramArgument { IsReadOnly: false } argument) arguments[index] = ReadOnly(argument);
         Arguments = arguments.AsReadOnly();
+
+        ProgramArgument ReadOnly(ProgramArgument argument)
+        {
+            if (readOnlyReferences.TryGetValue(argument, out var existing)) return existing;
+            var scoped = new ProgramArgument(() => { CheckActive(); return argument.Value; }, _ => { CheckActive(); throw Bad("CONST argument cannot be changed."); },
+                value => { CheckActive(); return argument.NormalizeReturnedValue(value); }, argument.Type, argument.Length, argument.Decimals,
+                () => { CheckActive(); return argument.ToBuffer() ?? (argument.IsOmitted ? null : throw Bad("CONST argument requires native bytes.")); }, argument.Constant, argument.Storage)
+                { IsReadOnly = true, IsOmitted = argument.IsOmitted, Shape = argument.Shape, Memory = argument.Memory?.Scoped(CheckActive, readOnly: true) };
+            readOnlyReferences.Add(argument, scoped); return scoped;
+        }
 
         byte[] Encode(string text)
         {
@@ -272,8 +391,25 @@ internal sealed class RpgArgumentScope : IDisposable
         if (field.Length is < 1 or > 1048576 || field.Kind is not (RpgFieldKind.Character or RpgFieldKind.Integer) &&
             (field.Length > 28 || field.Decimals < 0 || field.Decimals > field.Length)) throw Bad("Unsupported RPG API field dimensions.");
     }
+    internal static void ValidateNativeFormal(RpgField field)
+    {
+        var valid = !field.Varying && field.Kind switch
+        {
+            RpgFieldKind.Character => field.Length >= 1 && field.Length <= (field.IsDataStructure ? 1048576 : 32767) && field.Decimals == 0,
+            RpgFieldKind.Packed or RpgFieldKind.Zoned => field.Length is >= 1 and <= 29 && field.Decimals >= 0 && field.Decimals <= Math.Min(field.Length, 28),
+            RpgFieldKind.Integer => field.Length is 3 or 5 or 10 or 20 && field.Decimals == 0,
+            RpgFieldKind.Float => field.Length is 4 or 8 && field.Decimals == 0,
+            RpgFieldKind.Indicator => field.Length == 1 && field.Decimals == 0,
+            RpgFieldKind.Date => field.Length == 10 && field.Decimals == 0,
+            RpgFieldKind.Time => field.Length == 8 && field.Decimals == 0,
+            RpgFieldKind.Timestamp => field.Length == 26 && field.Decimals == 0,
+            _ => false
+        };
+        if (!valid || field.IsArray && field.Dimension is < 1 or > 32767 || (long)RpgRuntimeContext.ParameterUnitBytes(field) * (field.IsArray ? field.Dimension : 1) > 1048576)
+            throw Bad("Unsupported native program parameter layout or aggregate dimensions.");
+    }
     private void CheckActive() => ObjectDisposedException.ThrowIf(!_active, this);
     private static decimal Power10(int digits) { var result = 1m; for (var i = 0; i < digits; i++) result *= 10; return result; }
     private static CpfException Bad(string message) => new("CPF3C3A", message);
-    public void Dispose() => _active = false;
+    public void Dispose() { _active = false; foreach (var nested in _nestedScopes) nested.Dispose(); }
 }

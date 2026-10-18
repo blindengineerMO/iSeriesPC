@@ -72,6 +72,248 @@ if (system is not null)
                 "eval NAME = 'START';\neval AMOUNT = 1.25;\nexfmt ENTRY;\nif NAME <> 'ALICE' or AMOUNT <> 2.5 or not *in06;\n" +
                 "sndpgmmsg 'RPG INPUT:' + NAME + ':' + %char(AMOUNT) + ':' + %char(*in06);\nseton LR;\nreturn;\nendif;\n" +
                 "eval NAME = 'SENT';\nwrite ENTRY;\neval NAME = 'AFTER';\nread RPGFORM;\nif *in03 and NAME = 'AFTER';\nsndpgmmsg 'RPG DISPLAY ACCEPTED';\nendif;\nseton LR;", null);
+            new DisplayFileStore(system.Connections).Create("QGPL", "INDFORM",
+                FixtureController.Dds(keywords: "INDARA CA03(03) CF06(06)") + FixtureController.Dds("ENTRY", record: true) +
+                FixtureController.Dds(row: 1, column: 2, keywords: "'Compiled INDDS display'") +
+                FixtureController.Dds(row: 2, column: 2, keywords: "'LOCAL INDDS ACTIVE'", indicators: " 21") +
+                FixtureController.Dds("NAME", 10, row: 4, column: 2, usage: 'B'));
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGINDDS", """
+                **free
+                dcl-c NUM_FORMATS 2;
+                dcl-c KEEP_VALUE 'KEEP';
+                dcl-f FORM workstn extdesc('QGPL/INDFORM') extfile(*extdesc) indds(KEYS);
+                dcl-ds KEYS qualified occurs(NUM_FORMATS);
+                  DONE ind pos(3);
+                  ACCEPT ind pos(6);
+                  SHOW ind pos(21);
+                end-ds;
+                eval %occur(KEYS)=2;
+                eval KEYS.SHOW=*on;
+                eval NAME='START';
+                exfmt ENTRY;
+                if not KEYS.ACCEPT or *in06 or NAME<>'ALICE';
+                  sndpgmmsg 'INDDS CF FAILED';
+                  seton LR;
+                  return;
+                endif;
+                eval NAME=KEEP_VALUE;
+                eval %occur(KEYS)=1;
+                exfmt ENTRY;
+                if KEYS.DONE and not *in03 and NAME='KEEP';
+                  eval %occur(KEYS)=2;
+                  if KEYS.ACCEPT and not KEYS.DONE;
+                    sndpgmmsg 'RPG INDDS ACCEPTED';
+                  endif;
+                endif;
+                seton LR;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGARRAYS", """
+                **free
+                dcl-c COUNT 3;
+                dcl-s VALUES int(5) dim(COUNT) ascend inz(2);
+                dcl-s INFO int(10) dim(32);
+                dcl-s NAMES char(10) dim(COUNT);
+                dcl-s ERROR char(4) ccsid(*hex) inz(X'00000000');
+                eval VALUES=VALUES+1;
+                eval VALUES(%int(1.9))=7;
+                eval NAMES(1)='QCCSID';
+                eval NAMES(2)='QSECURITY';
+                eval NAMES(3)='QPWDLVL';
+                callp QWCRSVAL(INFO:%size(INFO:*all):COUNT:NAMES:ERROR);
+                if VALUES(1)=7 and VALUES(2)=3 and VALUES(3)=3 and INFO(1)=COUNT and INFO(9)=37 and INFO(19)=3;
+                  sorta VALUES;
+                  if %lookup(7:VALUES)=3 and %xfoot(VALUES)=13;
+                    eval %subarr(VALUES:2:2)=1;
+                    if %xfoot(VALUES)=5;
+                      sndpgmmsg 'RPG ARRAYS ACCEPTED';
+                    endif;
+                  endif;
+                endif;
+                seton LR;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGKEYARR", """
+                **free
+                dcl-ds ITEMS qualified dim(3) inz;
+                  NAME char(1);
+                  RANK int(5);
+                end-ds;
+                eval ITEMS(1).NAME='B';
+                eval ITEMS(1).RANK=2;
+                eval ITEMS(2).NAME='A';
+                eval ITEMS(2).RANK=2;
+                eval ITEMS(3).NAME='C';
+                eval ITEMS(3).RANK=1;
+                sorta ITEMS %fields(RANK:NAME);
+                if ITEMS(1).NAME='C' and ITEMS(1).RANK=1 and ITEMS(2).NAME='A' and %lookup('B':ITEMS(*).NAME)=3;
+                  sorta(d) %subarr(ITEMS(*).NAME:2:2);
+                  if ITEMS(1).NAME='C' and ITEMS(2).NAME='B' and ITEMS(3).NAME='A' and ITEMS(3).RANK=2;
+                    sndpgmmsg 'RPG KEYED ARRAYS ACCEPTED';
+                  endif;
+                endif;
+                seton LR;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGCTDATA", """
+                **free
+                dcl-s NAMES char(7) dim(*ctdata);
+                dcl-c COUNT %elem(NAMES);
+                dcl-s VALUES packed(5:2) dim(COUNT) ctdata perrcd(2) extfmt(L);
+                dcl-s TEXT char(13) dim(1) ctdata;
+                if COUNT=2 and NAMES(2)='SECOND' and %xfoot(VALUES)=2.5 and TEXT(1)='/COPY MISSING';
+                  sndpgmmsg 'RPG CTDATA ACCEPTED';
+                endif;
+                seton LR;
+                **CTDATA NAMES
+                FIRST
+                SECOND
+                **CTDATA TEXT
+                /COPY MISSING
+                **CTDATA VALUES
+                +00125+00125
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGALTARR", """
+                **free
+                dcl-s MAIN char(2) dim(2) ctdata perrcd(2);
+                dcl-s OTHER packed(3:1) dim(2) alt(MAIN) extfmt(L);
+                sorta MAIN;
+                if MAIN(1)='AA' and MAIN(2)='BB' and OTHER(1)=1 and OTHER(2)=2 and %xfoot(OTHER)=3;
+                  sndpgmmsg 'RPG ALT ARRAYS ACCEPTED';
+                endif;
+                seton LR;
+                **CTDATA MAIN
+                BB+010AA+020
+                """, null);
+            static string TraditionalDefinition(string name = "", string definition = "", string length = "", char type = ' ', string decimals = "", string keywords = "") =>
+                "     D" + name.PadRight(15) + "  " + definition.PadRight(2) + new string(' ', 7) + length.PadLeft(7) + type + decimals.PadLeft(2) + " " + keywords + "\n";
+            static string TraditionalSubfield(string name, string from, string to, char type = ' ', string decimals = "", string keywords = "")
+            {
+                var text = TraditionalDefinition(name, length: to, type: type, decimals: decimals, keywords: keywords).ToCharArray();
+                from.PadLeft(7).CopyTo(0, text, 25, 7); return new string(text);
+            }
+            static string NativeCalculation(string operation, string factor1 = "", string factor2 = "", string result = "", string hi = "", string lo = "", string eq = "", string? expression = null)
+            {
+                var text = Enumerable.Repeat(' ', 80).ToArray(); text[5] = 'C';
+                void Put(int column, string value) => value.CopyTo(0, text, column - 1, value.Length);
+                Put(12, factor1); Put(26, operation);
+                if (expression is not null) Put(36, expression);
+                else { Put(36, factor2); Put(50, result); Put(71, hi); Put(73, lo); Put(75, eq); }
+                return new string(text).TrimEnd() + "\n";
+            }
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGNATCAL",
+                TraditionalDefinition("ARR", "S", "3", 'P', "0", "DIM(3) CTDATA") + TraditionalDefinition("I", "S", "5", 'I', "0") +
+                TraditionalDefinition("TOTAL", "S", "5", 'P', "0") + NativeCalculation("DO", "1", "3", "I") + NativeCalculation("ADD", factor2: "1", result: "ARR") +
+                NativeCalculation("ENDDO") + NativeCalculation("SORTA(D)", expression: "ARR") + NativeCalculation("XFOOT", factor2: "ARR", result: "TOTAL", hi: "11", eq: "13") +
+                NativeCalculation("IF", expression: "TOTAL=15 and *IN11 and not *IN13") + NativeCalculation("DSPLY", factor1: "'NATIVE C OK'") +
+                NativeCalculation("ENDIF") + NativeCalculation("SETON", eq: "LR") + "**CTDATA ARR\n001\n002\n003\n", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGLOOKUP",
+                "       dcl-c COUNT 3;\n       dcl-ds DS qualified;\n       ARR packed(3:1) dim(COUNT) ascend inz(0);\n" +
+                "       I int(5) inz(1);\n       KEY packed(3:0) inz(20);\n       end-ds;\n" +
+                NativeCalculation("EVAL", expression: "DS.ARR(1)=1.0") + NativeCalculation("EVAL", expression: "DS.ARR(2)=2.0") +
+                NativeCalculation("EVAL", expression: "DS.ARR(3)=3.0") + NativeCalculation("LOOKUP", "DS.KEY", "DS.ARR(DS.I)", hi: "11", eq: "12") +
+                NativeCalculation("IF", expression: "DS.I=2 and %equal and %found and") + NativeCalculation("", expression: "%lookupne(2:DS.ARR)=1") +
+                NativeCalculation("LOOKUP", "99", "DS.ARR(DS.I)", eq: "12") + NativeCalculation("IF", expression: "DS.I=1 and not %found and not %equal") +
+                NativeCalculation("DSPLY", factor1: "'LOOKUP OK'") + NativeCalculation("ENDIF") + NativeCalculation("ENDIF") + NativeCalculation("SETON", eq: "LR"), null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGPROC",
+                "**free\ndcl-s N int(3) inz(7);\ndcl-s RESULT int(20);\ndcl-s ONE int(10);\ndcl-s TWO int(10);\neval RESULT=FACT(N);\neval ONE=NEXT();\neval TWO=NEXT();\nTOUCH(N);\n" +
+                "if RESULT=5040 and N=8 and ONE=1 and TWO=2;\nsndpgmmsg 'PROCEDURES OK';\nendif;\nseton LR;\n" +
+                "dcl-proc FACT;\ndcl-pi *n int(20);\nN int(3) value;\nend-pi;\nif N<=1;\nreturn 1;\nendif;\nreturn N*FACT(N-1);\nend-proc;\n" +
+                "dcl-proc NEXT;\ndcl-pi *n int(10) end-pi;\ndcl-s N int(10) static inz(0);\neval N=N+1;\nreturn N;\nend-proc;\n" +
+                "dcl-proc TOUCH;\ndcl-pi *n;\nN int(3);\nend-pi;\neval N=N+1;\nreturn;\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGAGG",
+                "**free\ndcl-ds ROWS qualified dim(3);\nTEXT char(3);\nN int(3);\nend-ds;\ndcl-s ARR int(3) dim(3) inz(7);\ndcl-s RESULT int(3);\neval ROWS(2).TEXT='ABC';\neval ROWS(2).N=7;\neval ROWS(3).TEXT='END';\neval RESULT=CHANGE(ROWS:ROWS:ARR:ARR(2));\n" +
+                "if ROWS(2).TEXT='XYZ' and ROWS(2).N=9 and ROWS(3).TEXT='END' and RESULT=7 and ARR(2)=20 and ARR(3)=7;\nsndpgmmsg 'AGGREGATES OK';\nendif;\nseton LR;\n" +
+                "dcl-proc CHANGE;\ndcl-pi *n int(3);\nCOPY likeds(ROWS) dim(2) value;\nOUT likeds(ROWS) dim(2);\nA int(3) dim(2);\nN int(3);\nend-pi;\neval OUT(2).TEXT='XYZ';\neval OUT(2).N=9;\neval A(2)=10;\neval N=N+A(2);\nreturn COPY(2).N;\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGRETURN",
+                "**free\ndcl-ds ITEM qualified;\nTEXT char(3);\nN int(3);\nend-ds;\ndcl-s ARR int(3) dim(4) inz(9);\ndcl-s COUNT int(3);\neval ARR=BUILD(7);\neval ITEM=MAKE();\neval COUNT=GETCOUNT();\n" +
+                "if ARR(1)=7 and ARR(2)=7 and ARR(3)=0 and ARR(4)=9 and ITEM.TEXT='ABC' and ITEM.N=7 and COUNT=1;\nsndpgmmsg 'RETURNS OK';\nendif;\nseton LR;\n" +
+                "dcl-proc BUILD;\ndcl-pi *n int(3) dim(3) rtnparm;\nN int(3) value;\nend-pi;\ndcl-s LOCAL int(3) dim(2);\neval LOCAL=N;\nreturn LOCAL;\nend-proc;\n" +
+                "dcl-proc MAKE;\ndcl-pi *n likeds(ITEM) rtnparm end-pi;\ndcl-ds LOCAL likeds(ITEM);\neval LOCAL.TEXT='ABC';\neval LOCAL.N=7;\nreturn LOCAL;\nend-proc;\n" +
+                "dcl-proc GETCOUNT;\ndcl-pi *n int(3) rtnparm end-pi;\nreturn %parms();\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGTMPL",
+                "**free\ndcl-s WIDE char(32767) dim(32767) template;\ndcl-ds COPY likeds(ROOT) inz(*likeds);\ndcl-ds ROOT qualified template inz;\nX int(3) inz(7);\nend-ds;\ndcl-s N int(20);\neval N=%size(WIDE:*all);\nif COPY.X=7 and N=1073676289 and %size(ROOT)=1;\nsndpgmmsg 'TEMPLATE OK';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGFWDDS",
+                "**free\ndcl-ds COPY likeds(ROOT) inz(*likeds);\ndcl-pr GET int(3);\nP likeds(ROOT) const options(*exact);\nend-pr;\ndcl-ds ROOT qualified inz;\nX int(3) inz(7);\nend-ds;\ndcl-s N int(3);\neval N=GET(COPY);\nif N=7 and ROOT.X=7;\nsndpgmmsg 'FORWARD DS OK';\nendif;\nseton LR;\n" +
+                "dcl-proc GET;\ndcl-pi *n int(3);\nP likeds(ROOT) const;\nend-pi;\nreturn P.X;\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGFORWARD",
+                "**free\ndcl-s A like(MAKE);\neval A=MAKE();\nif A='ABCDEF' and %size(A)=6;\nsndpgmmsg 'FORWARD OK';\nendif;\nseton LR;\n" +
+                "dcl-proc MAKE;\ndcl-pi *n like(ROOT) rtnparm end-pi;\ndcl-c WIDTH 6;\ndcl-s ROOT char(WIDTH);\nreturn 'ABCDEF';\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGLIKE",
+                "**free\ndcl-s ROOT char(4);\ndcl-s A like(ROOT:+4) inz('AB');\ndcl-s OUT like(ROOT);\ncallp GET(A);\nif OUT='  AB' and A='AB' and %size(A)=8;\nsndpgmmsg 'LIKE OK';\nendif;\nseton LR;\n" +
+                "dcl-proc GET;\ndcl-pi *n;\nP like(ROOT) const options(*trim:*rightadj:*exact);\nend-pi;\neval OUT=P;\nreturn;\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGOPTIONS",
+                "**free\ndcl-s A char(8) inz('AB');\ndcl-s OUT char(4);\ndcl-s N int(3);\ncallp GET(A);\nmonitor;\ncallp GET('ABCDE');\non-error 105;\neval N=1;\nendmon;\nif OUT='  AB' and A='AB' and N=1;\nsndpgmmsg 'OPTIONS OK';\nendif;\nseton LR;\n" +
+                "dcl-proc GET;\ndcl-pi *n;\nP char(4) const options(*trim:*rightadj:*exact);\nend-pi;\neval OUT=P;\nreturn;\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGVARSIZE",
+                "**free\ndcl-s TEXT char(4) inz('ABCD');\ndcl-s A char(1) dim(7) inz('A');\ndcl-s N int(3);\neval A(5)='*';\ncallp CHANGE(TEXT);\neval N=SEARCH(A);\nif TEXT='AXYD' and N=5;\nsndpgmmsg 'VARSIZE OK';\nendif;\nseton LR;\n" +
+                "dcl-proc CHANGE;\ndcl-pi *n;\nP char(100) options(*varsize);\nend-pi;\neval %subst(P:2:2)='XY';\nreturn;\nend-proc;\n" +
+                "dcl-proc SEARCH;\ndcl-pi *n int(3) rtnparm;\nP char(50) dim(100) const options(*varsize);\nend-pi;\ndcl-s I int(3);\nfor I=1 to 7;\nif %subst(P(I):1:1)='*';\nreturn I;\nendif;\nendfor;\nreturn 0;\nend-proc;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGOMITUP",
+                TraditionalDefinition(definition: "PI") + TraditionalDefinition("N", length: "3", type: 'I', decimals: "0") +
+                TraditionalDefinition("TEXT", length: "4", keywords: "CONST OPTIONS(*OMIT:*NOPASS)") +
+                "**free\nif %passed(TEXT) and TEXT='ABCD';\neval N=N+10;\nendif;\nif %omitted(TEXT);\neval N=N+2;\nendif;\nif not %passed(TEXT) and not %omitted(TEXT);\neval N=N+1;\nendif;\nreturn;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGOMIT",
+                TraditionalDefinition("RUN", "PR", keywords: "EXTPGM('RPGOMITUP')") + TraditionalDefinition("N", length: "3", type: 'I', decimals: "0") +
+                TraditionalDefinition("TEXT", length: "4", keywords: "CONST OPTIONS(*NOPASS:*OMIT)") +
+                "**free\ndcl-s N int(3) inz(0);\ncallp RUN(N:'ABCD');\ncallp RUN(N:*omit);\ncallp RUN(N);\ncallp RUN(N:'ABCD');\nif N=23;\nsndpgmmsg 'OMITTED OK';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGOPTUP",
+                TraditionalDefinition(definition: "PI") + TraditionalDefinition("N", length: "3", type: 'I', decimals: "0") +
+                TraditionalDefinition("TEXT", length: "4", keywords: "CONST OPTIONS(*NOPASS)") +
+                "**free\nif %passed(TEXT) and TEXT='ABCD';\neval N=N+10;\nendif;\nif not %passed(TEXT) or TEXT='';\neval N=N+1;\nendif;\nreturn;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGOPTION",
+                TraditionalDefinition("RUN", "PR", keywords: "EXTPGM('RPGOPTUP')") + TraditionalDefinition("N", length: "3", type: 'I', decimals: "0") +
+                TraditionalDefinition("TEXT", length: "4", keywords: "CONST OPTIONS(*NOPASS)") +
+                "**free\ndcl-s N int(3) inz(0);\ncallp RUN(N:'ABCD');\ncallp RUN(N);\ncallp RUN(N:'ABCD');\nif N=21;\nsndpgmmsg 'OPTIONAL OK';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGCSTUP",
+                TraditionalDefinition(definition: "PI") + TraditionalDefinition("INPUT", length: "5", type: 'P', decimals: "1", keywords: "CONST") +
+                TraditionalDefinition("TEXT", length: "2") + "**free\nif INPUT=42.1;\neval TEXT='XY';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGCONST",
+                TraditionalDefinition("RUN", "PR", keywords: "EXTPGM('RPGCSTUP')") + TraditionalDefinition("INPUT", length: "5", type: 'P', decimals: "1", keywords: "CONST") +
+                TraditionalDefinition("TEXT", length: "2") + "**free\ndcl-s N zoned(7:3) inz(42.125);\ndcl-s TEXT char(6) inz('ABCDEF');\n" +
+                "callp(e) RUN(N:TEXT);\nif N=42.125 and TEXT='XYCDEF' and not %error();\nsndpgmmsg 'CONST OK';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGSIGUP",
+                TraditionalDefinition(definition: "PI") + TraditionalDefinition("A", length: "3", type: 'I', decimals: "0") +
+                TraditionalDefinition("B", length: "3", type: 'I', decimals: "0") +
+                "**free\neval A=A+1;\neval B=A+B;\neval A=1/0;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGSIG",
+                TraditionalDefinition("RUN", "PR", keywords: "EXTPGM('RPGSIGUP')") + TraditionalDefinition("DOC", length: "3", type: 'I', decimals: "0") +
+                TraditionalDefinition("DOC", length: "3", type: 'I', decimals: "0") + TraditionalDefinition("N", "S", "3", 'I', "0", "INZ(7)") +
+                "**free\ncallp(e) RUN(N:N);\nif N=16 and %error() and %status()=202;\nsndpgmmsg 'SIGNATURE OK';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGFIXDS",
+                TraditionalDefinition("DATA", "DS", "16", keywords: "QUALIFIED INZ") +
+                TraditionalSubfield("N", "1", "3", 'P', "0", "PACKEVEN INZ(1234)") +
+                TraditionalSubfield("I", "4", "7", 'I', "0", "INZ(7)") + TraditionalDefinition("TEXT", length: "4", keywords: "INZ('ABCD')") +
+                TraditionalDefinition("PART", length: "2", keywords: "OVERLAY(TEXT:2)") +
+                NativeCalculation("EVAL", expression: "DATA.PART='xy'") + NativeCalculation("ADD", factor2: "1", result: "DATA.I") +
+                NativeCalculation("IF", expression: "DATA.N=1234 and DATA.I=8 and DATA.TEXT='AxyD'") +
+                NativeCalculation("DSPLY", factor1: "'FIXED DS OK'") + NativeCalculation("ENDIF") + NativeCalculation("SETON", eq: "LR"), null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGTABLE",
+                TraditionalDefinition("TABNUM", "S", "3", 'P', "0", "DIM(3) CTDATA ASCEND") + TraditionalDefinition("TABTXT", "S", "2", 'A', keywords: "DIM(3) ALT(TABNUM)") +
+                NativeCalculation("LOOKUP", "2", "TABNUM", "TABTXT", eq: "11") + NativeCalculation("IF", expression: "%found and %equal and TABTXT='BB'") +
+                NativeCalculation("EVAL", expression: "*IN12=%tlookupne(2:TABNUM:TABTXT)") + NativeCalculation("IF", expression: "*IN12 and TABNUM=1 and TABTXT='AA'") +
+                NativeCalculation("LOOKUP", "9", "TABNUM", "TABTXT", eq: "11") + NativeCalculation("IF", expression: "not %found and not %equal and TABNUM=1") +
+                NativeCalculation("DSPLY", factor1: "'TABLE OK'") + NativeCalculation("ENDIF") + NativeCalculation("ENDIF") + NativeCalculation("ENDIF") +
+                NativeCalculation("SETON", eq: "LR") + "**CTDATA TABNUM\n001AA\n002BB\n003CC\n", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGSCALAR", """
+                **free
+                dcl-s BYTE int(3) inz(127);
+                dcl-s MONEY packed(5:2);
+                dcl-s CHECKED ind;
+                eval MONEY=-12.349;
+                monitor;
+                  eval BYTE=128;
+                on-error 103;
+                  eval CHECKED=*on;
+                endmon;
+                if CHECKED and BYTE=127 and MONEY=-12.34;
+                  sndpgmmsg 'RPG NATIVE SCALARS ACCEPTED';
+                endif;
+                seton LR;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGFIXARR",
+                TraditionalDefinition("MAIN", "S", "2", keywords: "DIM(2) PERRCD(2)") + TraditionalDefinition(keywords: "CTDATA") +
+                TraditionalDefinition("OTHER", "S", "3", 'P', "1", "DIM(2) ALT(MAIN) EXTFMT(L)") +
+                TraditionalDefinition("COUNT", "C", keywords: "%ELEM(MAIN)") +
+                "/free\nsorta MAIN;\nif COUNT=2 and MAIN(1)='AA' and MAIN(2)='BB' and OTHER(1)=1 and OTHER(2)=2 and %xfoot(OTHER)=3;\n" +
+                "sndpgmmsg 'RPG FIXED ARRAYS ACCEPTED';\nendif;\nseton LR;\n/end-free\n**CTDATA MAIN\nBB+010AA+020\n", null);
             new DisplayFileStore(system.Connections).Create("QGPL", "RPGROWS",
                 FixtureController.Dds(keywords: "CA03(03)") + FixtureController.Dds("ROWS", record: true, keywords: "SFL") +
                 FixtureController.Dds("VALUE", 10, row: 4, column: 2, usage: 'B') + FixtureController.Dds("SECRET", 4, usage: 'H') +
@@ -472,12 +714,13 @@ sealed class FixtureController : ISessionController
         for (var i = 0; i < status.Length; i++) Buffer.Set(10, i + 2, status[i]);
         return new("Editing");
     }
-    internal static string Dds(string name = "", int length = 0, int row = 0, int column = 0, char type = 'A', char usage = 'O', int? decimals = null, bool record = false, string keywords = "")
+    internal static string Dds(string name = "", int length = 0, int row = 0, int column = 0, char type = 'A', char usage = 'O', int? decimals = null, bool record = false, string keywords = "", string indicators = "")
     {
         var line = new string(' ', 44).ToCharArray(); line[5] = 'A'; if (record) line[16] = 'R'; name.CopyTo(0, line, 18, name.Length);
         if (!record && name.Length > 0) { length.ToString().PadLeft(5).CopyTo(0, line, 29, 5); line[34] = type; line[37] = usage; }
         if (decimals is { } n) n.ToString().PadLeft(2).CopyTo(0, line, 35, 2);
         if (row > 0) row.ToString().PadLeft(3).CopyTo(0, line, 38, 3); if (column > 0) column.ToString().PadLeft(3).CopyTo(0, line, 41, 3);
+        indicators.CopyTo(0, line, 7, indicators.Length);
         return new string(line) + keywords + "\n";
     }
 }

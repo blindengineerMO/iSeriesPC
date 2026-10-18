@@ -881,7 +881,7 @@ public sealed partial class CommandService
         RebindWorkstation = RebindRpgWorkstation,
         RetainWorkstations = _job is not null && _system.JobRuntime.Groups(_job.Key) is not null,
         LibraryResolver = (_, fileName) => FindFileLibrary(fileName),
-        TypedProgramCaller = CallExternalProgram,
+        ProgramDispatcher = CallExternalProgram,
         SendMessage = message => _messages.AppendLine(message),
         Display = text => _messages.AppendLine(text),
         ReceiveMessage = () => null,
@@ -902,7 +902,7 @@ public sealed partial class CommandService
     }
 
     private RpgExternalCallResult? CallExternalProgram(string library, string name, IReadOnlyList<object?> parameters,
-        Func<IReadOnlyList<object?>>? borrowArguments)
+        Func<IReadOnlyList<object?>>? borrowArguments, Func<IReadOnlyList<object?>?>? borrowProgramArguments)
     {
         try
         {
@@ -918,15 +918,28 @@ public sealed partial class CommandService
             }
             if (loaded.External is not null)
             {
+                var references = borrowProgramArguments?.Invoke();
+                if (references is not null)
+                    for (var i = 0; i < references.Count; i++)
+                        for (var j = i + 1; j < references.Count; j++)
+                            if (Ipc.Core.Work.ProgramArgument.Overlaps(references[i], references[j]))
+                                return new RpgExternalCallResult { Success = false, Message = "External process calls require an alias-capable protocol for overlapping RPG arguments." };
                 using var scope = EnterProgram(loaded.External);
                 var result = _system.ExternalPrograms.Execute(loaded.External, parameters, _cancellationToken);
                 if (result.Message.Length > 0) _messages.AppendLine(result.Message);
+                if (references is not null)
+                {
+                    var prepared = result.Parameters.Select((value, index) => value is not null && references[index] is Ipc.Core.Work.ProgramArgument cell ? cell.NormalizeReturnedValue(value) : value).ToArray();
+                    for (var index = 0; index < prepared.Length; index++)
+                        if (prepared[index] is not null && references[index] is Ipc.Core.Work.ProgramArgument { IsReadOnly: false } cell) cell.Value = prepared[index];
+                    return new RpgExternalCallResult { Success = result.Success, Message = result.Message, UpdatedParameters = Array.Empty<object?>() };
+                }
                 return new RpgExternalCallResult { Success = result.Success, Message = result.Message, UpdatedParameters = result.Parameters };
             }
             if (loaded.Rpg is not null)
             {
                 using var scope = EnterProgram(loaded.Rpg);
-                RunRpg(loaded.Rpg, parameters);
+                RunRpg(loaded.Rpg, BindRpgConstants(loaded.Rpg, borrowProgramArguments?.Invoke() ?? parameters));
                 return new RpgExternalCallResult
                 {
                     Success = true,
@@ -936,13 +949,14 @@ public sealed partial class CommandService
 
             if (loaded.Cl is not null)
             {
-                var invocation = _interpreter.RunWithArguments(loaded.Cl, parameters);
+                var borrowed = borrowProgramArguments?.Invoke();
+                var invocation = _interpreter.RunWithArguments(loaded.Cl, borrowed ?? parameters);
                 var result = invocation.Result;
                 return new RpgExternalCallResult
                 {
                     Success = result.Outcome != CommandOutcome.Error,
                     Message = result.IsError ? result.Message : _messages.ToString().Trim(),
-                    UpdatedParameters = invocation.Parameters,
+                    UpdatedParameters = borrowed is null ? invocation.Parameters : Array.Empty<object?>(),
                 };
             }
 
@@ -998,7 +1012,7 @@ public sealed partial class CommandService
                         rpg = expanded is not null
                             ? RpgCompiler.Compile(lib, name, expanded, _cancellationToken, resolver, diskResolver)
                             : RpgCompiler.Compile(lib, name, source, _cancellationToken, resolver, diskResolver);
-                        if (diskBindings is not null && diskBindings.Files.Count != rpg.DiskFiles.Count) throw new InvalidDataException("Unused compiled RPG disk bindings.");
+                        diskBindings?.Verify(rpg);
                         if (bindings is not null && bindings.Files.Count != rpg.Workstations.Count) throw new InvalidDataException("Unused compiled RPG workstation bindings.");
                     }
                     catch (Exception error) when (error is InvalidDataException or RpgCompileException)

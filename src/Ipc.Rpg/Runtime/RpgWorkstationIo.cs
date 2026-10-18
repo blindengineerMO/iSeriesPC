@@ -68,21 +68,23 @@ public sealed partial class RpgInterpreter
         }
         var fields = (format?.Fields ?? binding.Layout.Records.SelectMany(r => r.Fields).DistinctBy(f => f.Name).ToArray())
             .ToDictionary(f => f.Name, f => context.ReadValue(f.Name), StringComparer.Ordinal);
+        var indicators = context.WorkstationIndicators(binding.Request.Name);
         List<(string Name, object? Value)>? updates = null;
+        Action? publishIndicators = null;
         void Prepare(RpgWorkstationResult result)
         {
             updates = new();
             foreach (var (field, value) in result.Values) updates.Add((field, context.NormalizeWorkstationValue(field, value)));
             if (result.RelativeRecord is { } number && subfile is not null)
                 updates.Add((subfile.RelativeRecord, context.NormalizeWorkstationValue(subfile.RelativeRecord, number)));
-            if (result.Indicators.Any(p => p.Key is < 1 or > 99)) throw new RpgRuntimeException("Invalid workstation response indicator.");
+            publishIndicators = context.PrepareWorkstationIndicators(indicators, result.Indicators);
         }
         try
         {
-            var result = FileIo(binding.Request.Name, () => file.Transfer(operation, format?.Name ?? "", fields, context.Indicators, rrn, Prepare));
+            var result = FileIo(binding.Request.Name, () => file.Transfer(operation, format?.Name ?? "", fields, indicators.Values, rrn, Prepare));
             if (updates is null) Prepare(result);
             foreach (var update in updates!) context.WriteValue(update.Name, update.Value);
-            foreach (var indicator in result.Indicators) context.Indicators[indicator.Key] = indicator.Value;
+            publishIndicators!();
             context.SetFileStatus(binding.Request.Name, operation == RpgWorkstationOperation.Chain ? result.Found : null,
                 operation is RpgWorkstationOperation.Read or RpgWorkstationOperation.ReadChanged || operation == RpgWorkstationOperation.Write && format?.Subfile == true ? result.EndOfFile : null,
                 clearFileEof: operation == RpgWorkstationOperation.Chain && result.Found);

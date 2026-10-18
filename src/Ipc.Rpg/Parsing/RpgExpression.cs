@@ -20,7 +20,13 @@ public sealed class RpgLiteral : RpgExpr
 public sealed class RpgHexLiteral(byte[] bytes) : RpgExpr
 {
     private readonly byte[] _bytes = bytes.ToArray();
+    internal byte[] ToArray() => _bytes.ToArray();
     public override object? Eval(RpgRuntimeContext ctx) => new Ipc.Core.Work.ProgramBuffer(_bytes, ctx.Ccsid);
+}
+
+public sealed class RpgOmittedArgument : RpgExpr
+{
+    public override object? Eval(RpgRuntimeContext ctx) => throw new RpgRuntimeException("*OMIT is only valid as a native prototyped argument with OPTIONS(*OMIT).") { StatusCode = 105 };
 }
 
 public sealed class RpgFieldRef : RpgExpr
@@ -97,6 +103,12 @@ public sealed class RpgBinary : RpgExpr
     public override object? Eval(RpgRuntimeContext ctx)
     {
         var left = Lhs.Eval(ctx);
+        if (Op is "AND" or "OR")
+        {
+            if (left is object?[]) throw new RpgRuntimeException("Whole-array logical expressions require an indexed element.");
+            var truth = RpgValues.ToBool(left);
+            if (Op == "AND" && !truth || Op == "OR" && truth) return truth;
+        }
         var right = Rhs.Eval(ctx);
         if (left is object?[] || right is object?[])
         {
@@ -167,7 +179,8 @@ public sealed class RpgIndexedRef : RpgExpr
 
     public long Index { get; }
 
-    public override object? Eval(RpgRuntimeContext ctx) => ctx.ReadArrayValue(Name, Index);
+    public override object? Eval(RpgRuntimeContext ctx) => ctx.Program.FindPrototype(Name) is { NativeProcedure: true }
+        ? ctx.CallNativeFunction(Name, [new RpgLiteral((decimal)Index)]) : ctx.ReadArrayValue(Name, Index);
 }
 
 public sealed class RpgDynamicIndexRef : RpgExpr
@@ -178,7 +191,15 @@ public sealed class RpgDynamicIndexRef : RpgExpr
 
     public RpgExpr Index { get; }
 
-    public override object? Eval(RpgRuntimeContext ctx) => ctx.ReadArrayValue(Name, RpgValues.ToLong(Index.Eval(ctx)));
+    public override object? Eval(RpgRuntimeContext ctx) => ctx.Program.FindPrototype(Name) is { NativeProcedure: true }
+        ? ctx.CallNativeFunction(Name, [Index]) : ctx.ReadDynamicIndex(this);
+}
+
+public sealed class RpgProcedureExpression(string name, IReadOnlyList<RpgExpr> arguments) : RpgExpr
+{
+    public string Name { get; } = name;
+    public IReadOnlyList<RpgExpr> Arguments { get; } = arguments;
+    public override object? Eval(RpgRuntimeContext ctx) => ctx.CallNativeFunction(Name, Arguments);
 }
 
 public sealed class RpgMemberRef(RpgExpr target, string name) : RpgExpr
@@ -193,6 +214,12 @@ public sealed class RpgElementRef(RpgExpr target, RpgExpr index) : RpgExpr
     public RpgExpr Target { get; } = target;
     public RpgExpr Index { get; } = index;
     public override object? Eval(RpgRuntimeContext ctx) => ctx.ReadNativeReference(this);
+}
+
+public sealed class RpgAllElementsRef(RpgExpr target) : RpgExpr
+{
+    public RpgExpr Target { get; } = target;
+    public override object? Eval(RpgRuntimeContext ctx) => throw new RpgRuntimeException("A (*) data structure key requires SORTA or %LOOKUP.") { StatusCode = 105 };
 }
 
 public sealed class RpgExpressionParser
@@ -452,6 +479,7 @@ public sealed class RpgExpressionParser
             else if (Peek() == '(')
             {
                 if (++depth > 128) throw new RpgCompileException(0, "Qualified reference nesting exceeds 128 levels.");
+                if (ParseWildcard(target) is { } all) { target = all; continue; }
                 _position++;
                 var indexes = ParseArguments();
                 if (indexes.Count != 1) throw new RpgCompileException(0, "An array subscript requires one index.");
@@ -459,6 +487,17 @@ public sealed class RpgExpressionParser
             }
             else return target;
         }
+    }
+
+    private RpgExpr? ParseWildcard(RpgExpr target)
+    {
+        var saved = _position; _position++; SkipWhitespace();
+        if (Peek() == '*')
+        {
+            _position++; SkipWhitespace();
+            if (Peek() == ')') { _position++; return new RpgAllElementsRef(target); }
+        }
+        _position = saved; return null;
     }
 
     private string ReadIdentifier()
@@ -506,8 +545,11 @@ public sealed class RpgExpressionParser
 
         switch (upper)
         {
+            case "*OMIT":
+                return new RpgOmittedArgument();
             case "%EOF":
             case "%FOUND":
+            case "%EQUAL":
             case "%ERROR":
             case "%STATUS":
             case "%PARMS":
@@ -545,16 +587,10 @@ public sealed class RpgExpressionParser
 
         if (!AtEnd && Peek() == '(')
         {
+            if (ParseWildcard(new RpgFieldRef(name)) is { } all) return all;
             _position++;
-            var index = ParseExpression(0);
-            SkipWhitespace();
-            if (Peek() != ')')
-            {
-                throw new RpgCompileException(0, $"Expected ')' after index of '{name}'.");
-            }
-
-            _position++;
-            return new RpgDynamicIndexRef(name, index);
+            var arguments = ParseArguments();
+            return arguments.Count == 1 ? new RpgDynamicIndexRef(name, arguments[0]) : new RpgProcedureExpression(name, arguments);
         }
 
         return new RpgFieldRef(name);

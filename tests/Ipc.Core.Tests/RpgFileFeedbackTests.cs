@@ -165,7 +165,7 @@ public sealed partial class RpgDiskFileTests
         var profile = _system.Security.Profiles.Get("QSECOFR"); profile.Ccsid = ccsid; _system.Security.Profiles.Update(profile);
         Compile("**free\ndcl-f DATA keyed infds(F);\n" + Infds + "dcl-ds P psds qualified;\nS *status;\nNAME *proc;\nJOB char(10) pos(244);\nend-ds;\n" +
             "chain 20 DATA;\nif F.OP='CHAINF' and F.STATUS=0 and P.NAME='APP' and P.JOB='QDFTJOB';\nsndpgmmsg 'SAVED FEEDBACK';\nendif;\nseton LR;");
-        _files.RemoveMember("QGPL", "SOURCE", "APP"); using var session = Session();
+        _files.RemoveMember("QGPL", "SOURCE", "APP"); using var session = Session(ccsid); Assert.Equal(ccsid, session.Job.Ccsid);
         Ok(session.Execute("CALL QGPL/APP"), "SAVED FEEDBACK");
     }
     [Theory]

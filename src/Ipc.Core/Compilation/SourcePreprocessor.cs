@@ -29,7 +29,7 @@ public sealed class SourcePreprocessor
         var activeSources = new HashSet<string>(StringComparer.Ordinal);
         var symbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var output = new List<string>(); var locations = new List<SourceLocation>();
-        var inputBytes = 0; var outputBytes = 0; var mapSize = 0;
+        var inputBytes = 0; var outputBytes = 0; var mapSize = 0; var rpgData = false; var rpgQuoted = false;
         var origin = new SourceLocation(root.Identity, 1, 1, Array.Empty<string>());
         void Visit(SourceDocument requested, IReadOnlyList<string> stack, SourceLocation requestedAt)
         {
@@ -54,9 +54,11 @@ public sealed class SourcePreprocessor
             for (var index = 0; index < lines.Length; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var original = lines[index]; var startedInQuote = quote; var startedInComment = comment;
-                var lineComment = !comment && !quote && (original.TrimStart().StartsWith('*') || original.TrimStart().StartsWith("//", StringComparison.Ordinal));
-                var raw = rpg ? StripRpgLine(original) : lineComment ? original : StripComments(original, ref comment, ref quote); var text = raw.TrimStart();
+                var original = lines[index]; var startedInQuote = rpg ? rpgQuoted : quote; var startedInComment = comment;
+                if (rpg && enabled && !rpgQuoted && RpgSourcePreprocessor.IsDataBoundary(original)) rpgData = true;
+                var lineComment = !comment && !startedInQuote && (original.TrimStart().StartsWith('*') || original.TrimStart().StartsWith("//", StringComparison.Ordinal));
+                var raw = rpg ? rpgData ? original : RpgSourcePreprocessor.PrepareLine(original, ref rpgQuoted) : lineComment ? original : StripComments(original, ref comment, ref quote); var text = raw.TrimStart();
+                if (rpg && !enabled) rpgQuoted = false;
                 var location = new SourceLocation(document.Identity, index + 1, raw.Length - text.Length + 1, stack);
                 if (!startedInComment && comment) commentStart = location;
                 SourcePreprocessException Error(string message) => new(location, message);
@@ -68,7 +70,7 @@ public sealed class SourcePreprocessor
                     if (output.Count >= 50000 || outputBytes > 4194304 || mapSize > 4194304) throw Error("Expanded source or location map exceeds its bounded size.");
                     output.Add(raw); locations.Add(location);
                 }
-                if (startedInQuote || !text.StartsWith('/') || text.StartsWith("//", StringComparison.Ordinal))
+                if (rpgData || startedInQuote || !text.StartsWith('/') || text.StartsWith("//", StringComparison.Ordinal))
                 {
                     if (enabled) Emit();
                     continue;
@@ -142,27 +144,6 @@ public sealed class SourcePreprocessor
         return new(string.Join('\n', output), locations, sources);
     }
     private sealed record Conditional(bool ParentEnabled, bool Result, bool ElseSeen, SourceLocation Location);
-    private static string StripRpgLine(string line)
-    {
-        // Preserve columns while recognizing sequence-prefixed directives and fixed comments.
-        if (line.Length > 6 && line[6] == '*' && line[..6].All(c => c == ' ' || char.IsAsciiDigit(c))) return new string(' ', line.Length);
-        var result = line.ToCharArray();
-        if (line.Length > 6 && line[..6].All(c => c == ' ' || char.IsAsciiDigit(c)) && line[6..].TrimStart().StartsWith('/'))
-            Array.Fill(result, ' ', 0, 6);
-        var quoted = false;
-        for (var index = 0; index < line.Length; index++)
-        {
-            if (line[index] == '\'')
-            {
-                if (quoted && index + 1 < line.Length && line[index + 1] == '\'') index++;
-                else quoted = !quoted;
-            }
-            else if (quoted && line[index] == '\\' && index + 1 < line.Length) index++;
-            else if (!quoted && line[index] == '/' && index + 1 < line.Length && line[index + 1] == '/')
-            { Array.Fill(result, ' ', index, line.Length - index); break; }
-        }
-        return new string(result);
-    }
     private static string StripComments(string line, ref bool comment, ref bool quote)
     {
         var result = line.ToCharArray();

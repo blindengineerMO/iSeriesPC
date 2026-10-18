@@ -131,11 +131,29 @@ public sealed class DataQueueTests : IDisposable
     public async Task Waiting_receive_observes_a_producer_without_holding_a_transaction()
     {
         _queues.Create(_queue, 3);
-        var waiting = Task.Run(() => _queues.Receive(_queue, wait: TimeSpan.FromSeconds(5)));
-        await Task.Delay(100); Assert.False(waiting.IsCompleted);
-        _queues.Send(_queue, Bytes("FF00"));
-        var entry = await waiting.WaitAsync(TimeSpan.FromSeconds(3)); Assert.Equal("FF00", Convert.ToHexString(entry!.Data.ToArray()));
-        Assert.Equal(0, _queues.Inspect(_queue).Entries);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var started = new ManualResetEventSlim(); Thread? receiver = null;
+        // The receiver must not occupy a pool thread needed by the test's continuation.
+        var waiting = Task.Factory.StartNew(() =>
+        {
+            receiver = Thread.CurrentThread; started.Set();
+            return _queues.Receive(_queue, wait: Timeout.InfiniteTimeSpan, cancellationToken: stop.Token);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(SpinWait.SpinUntil(() => (receiver!.ThreadState & global::System.Threading.ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(10)));
+            Assert.False(waiting.IsCompleted);
+            _queues.Send(_queue, Bytes("FF00"), cancellationToken: stop.Token);
+            var entry = await waiting.WaitAsync(TimeSpan.FromSeconds(10)); Assert.Equal("FF00", Convert.ToHexString(entry!.Data.ToArray()));
+            Assert.Equal(0, _queues.Inspect(_queue).Entries);
+        }
+        finally
+        {
+            stop.Cancel();
+            try { await waiting.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (OperationCanceledException) { }
+        }
     }
 
     [Fact]
@@ -156,24 +174,59 @@ public sealed class DataQueueTests : IDisposable
     {
         _queues.Create(_queue, 4);
         using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-        var consumers = Enumerable.Range(0, 4).Select(_ => Task.Run(() => Enumerable.Range(0, 20).Select(_ =>
-            BitConverter.ToInt32(_queues.Receive(_queue, wait: TimeSpan.FromSeconds(10), cancellationToken: stop.Token)!.Data.ToArray())).ToArray())).ToArray();
-        var producers = Enumerable.Range(0, 4).Select(producer => Task.Run(() => {
+        // Blocking receivers must not occupy the pool needed by producers or socket tests.
+        var consumers = Enumerable.Range(0, 4).Select(_ => Task.Factory.StartNew(() => Enumerable.Range(0, 20).Select(_ =>
+            BitConverter.ToInt32(_queues.Receive(_queue, wait: Timeout.InfiniteTimeSpan, cancellationToken: stop.Token)!.Data.ToArray())).ToArray(),
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        var producers = Enumerable.Range(0, 4).Select(producer => Task.Factory.StartNew(() => {
             for (var index = 0; index < 20; index++) _queues.Send(_queue, new(BitConverter.GetBytes(producer * 20 + index), 37), cancellationToken: stop.Token);
-        })).ToArray();
-        await Task.WhenAll(producers); var results = (await Task.WhenAll(consumers)).SelectMany(values => values).Order().ToArray();
-        Assert.Equal(Enumerable.Range(0, 80), results); Assert.Equal(0, _queues.Inspect(_queue).Entries);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        var workers = producers.Cast<Task>().Concat(consumers).ToArray();
+        try
+        {
+            await Task.WhenAll(workers);
+            var results = consumers.SelectMany(consumer => consumer.Result).Order().ToArray();
+            Assert.Equal(Enumerable.Range(0, 80), results); Assert.Equal(0, _queues.Inspect(_queue).Entries);
+        }
+        finally
+        {
+            stop.Cancel();
+            try { await Task.WhenAll(workers); } catch { /* Observe cancelled/faulted workers on every exit. */ }
+        }
     }
 
     [Fact]
     public async Task A_waiter_rejects_a_deleted_and_recreated_queue()
     {
         _queues.Create(_queue, 1);
-        var waiting = Task.Run(() => _queues.Receive(_queue, wait: TimeSpan.FromSeconds(4)));
-        await Task.Delay(150);
-        _system.Objects.Delete("QGPL", "DATA", ObjectType.DataQueue); _queues.Create(_queue, 1); _queues.Send(_queue, Bytes("01"));
-        await Assert.ThrowsAsync<CpfException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(2)));
-        Assert.Equal(1, _queues.Inspect(_queue).Entries);
+        var originalIdentity = _queues.Inspect(_queue).Definition.Identity;
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var started = new ManualResetEventSlim(); Thread? receiver = null;
+        // Deletion must follow an actual receive wait, rather than a pool-scheduling delay.
+        var waiting = Task.Factory.StartNew(() =>
+        {
+            receiver = Thread.CurrentThread; started.Set();
+            return _queues.Receive(_queue, wait: Timeout.InfiniteTimeSpan, cancellationToken: stop.Token);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(SpinWait.SpinUntil(() => (receiver!.ThreadState & global::System.Threading.ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(10)));
+            Assert.False(waiting.IsCompleted);
+            _system.Objects.Delete("QGPL", "DATA", ObjectType.DataQueue); _queues.Create(_queue, 1); _queues.Send(_queue, Bytes("01"));
+            var error = await Assert.ThrowsAsync<CpfException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal("CPF9801", error.MessageId);
+            Assert.NotEqual(originalIdentity, _queues.Inspect(_queue).Definition.Identity);
+            Assert.Equal(1, _queues.Inspect(_queue).Entries);
+            Assert.Equal("01", Convert.ToHexString(_queues.Receive(_queue)!.Data.ToArray()));
+        }
+        finally
+        {
+            stop.Cancel();
+            try { await waiting.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (OperationCanceledException) { }
+            catch (CpfException) { }
+        }
     }
 
     [Fact]
@@ -198,11 +251,34 @@ public sealed class DataQueueTests : IDisposable
     [Fact]
     public async Task Authority_revocation_interrupts_an_existing_wait_without_consuming_data()
     {
-        _queues.Create(_queue, 1);
+        _queues.Create(_queue, 1, sequence: DataQueueSequence.Keyed, keyLength: 1);
+        _queues.Send(_queue, Bytes("FF"), Bytes("01"));
         _system.Security.Authority.Grant("QGPL", "DATA", ObjectType.DataQueue, "QUSER", Authorities.ChangeBits);
-        var waiting = Task.Run(() => { using var identity = OperationIdentity.Enter("QUSER"); return _queues.Receive(_queue, wait: TimeSpan.FromSeconds(4)); });
-        await Task.Delay(150); _system.Security.Authority.Grant("QGPL", "DATA", ObjectType.DataQueue, "QUSER", AuthorityBit.None);
-        await Assert.ThrowsAsync<CpfException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(2)));
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var started = new ManualResetEventSlim(); Thread? receiver = null;
+        // Revocation must happen while Receive is waiting, regardless of pool scheduling delays.
+        var waiting = Task.Factory.StartNew(() =>
+        {
+            receiver = Thread.CurrentThread; using var identity = OperationIdentity.Enter("QUSER"); started.Set();
+            return _queues.Receive(_queue, Bytes("02"), DataQueueKeyOrder.Equal, Timeout.InfiniteTimeSpan, cancellationToken: stop.Token);
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            Assert.True(started.Wait(TimeSpan.FromSeconds(10)));
+            Assert.True(SpinWait.SpinUntil(() => (receiver!.ThreadState & global::System.Threading.ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(10)));
+            Assert.False(waiting.IsCompleted);
+            _system.Security.Authority.Grant("QGPL", "DATA", ObjectType.DataQueue, "QUSER", AuthorityBit.None);
+            await Assert.ThrowsAsync<CpfException>(() => waiting.WaitAsync(TimeSpan.FromSeconds(10)));
+            Assert.Equal(1, _queues.Inspect(_queue).Entries);
+            Assert.Equal("FF", Convert.ToHexString(_queues.Receive(_queue, Bytes("01"), DataQueueKeyOrder.Equal)!.Data.ToArray()));
+        }
+        finally
+        {
+            stop.Cancel();
+            try { await waiting.WaitAsync(TimeSpan.FromSeconds(10)); }
+            catch (OperationCanceledException) { }
+            catch (CpfException) { }
+        }
     }
 
     [Fact]

@@ -126,7 +126,7 @@ public sealed class CryptoApi(SqliteConnectionFactory factory, int ccsid = 37, J
     }
     private ApiArguments.Output BinaryOutput(object? value)
     {
-        if (value is not ProgramArgument target || target.Constant is not null) throw Bad("CPF3C90", "Length output requires writable storage.");
+        if (value is not ProgramArgument target || target.Constant is not null || target.IsReadOnly) throw Bad("CPF3C90", "Length output requires writable storage.");
         if (target.Type == "*INT" && target.Length == 4) return new(target, target.ToBuffer() ?? new ProgramBuffer(new byte[4], ccsid));
         var output = _arguments.CharacterOutput(value); if (output.Buffer.Length < 4) throw ApiArguments.Bad("Length output requires BIN(4)."); return output;
     }

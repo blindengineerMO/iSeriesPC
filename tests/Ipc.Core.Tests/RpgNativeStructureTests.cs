@@ -186,7 +186,8 @@ public sealed partial class RpgNativeStructureTests
     public void Anonymous_fillers_and_DCL_SUBF_names_define_storage_without_exporting_filler_names()
     {
         var context = Run("dcl-s __ANON_DS_1 char(1);\ndcl-s __FILLER_1 char(1);\ndcl-ds *n;\n*n char(2) inz('AB');\n*n char(2) inz('CD');\nDCL-SUBF WRITE char(4) pos(1);\nend-ds;");
-        Assert.Equal("ABCD", context.ReadValue("WRITE")); Assert.Null(context.Program.FindDsElement("__FILLER_1"));
+        Assert.Equal("ABCD", context.ReadValue("WRITE")); Assert.Equal(" ", context.ReadValue("__FILLER_1"));
+        context.WriteValue("__FILLER_1", "X"); Assert.Equal("ABCD", context.ReadValue("WRITE"));
     }
     [Theory]
     [InlineData(37)]

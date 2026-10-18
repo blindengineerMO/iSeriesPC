@@ -29,7 +29,7 @@ public sealed class RpgCompilerDiagnosticsTests
     [InlineData("ROLBK;")]
     [InlineData("MONITOR(E);")]
     [InlineData("ENDMON(E);")]
-    [InlineData("CALLP(E) TARGET();")]
+    [InlineData("CALLB(E) TARGET();")]
     [InlineData("DATA = 'ignored';")]
     [InlineData("; visible after separator")]
     public void Unsupported_free_source_fails_at_the_original_included_line(string statement)

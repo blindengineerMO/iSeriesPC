@@ -44,6 +44,12 @@ public sealed partial class RpgInterpreter
             context.RecordStatus(code, error.FileError ? error.StatusFile ?? (IsFileOperation(statement.Opcode) ? StatusFile(statement) : null) : null,
                 errorExtender: error.FileError && statement.ErrorExtender);
         context.RecordFeedbackError(error);
+        if ((statement.NativeOperation == "CALL" || statement.Opcode == RpgOpcode.CallP) && !error.CallArgumentError && error.StatusCode == 202 && (statement.ErrorExtender || statement.Indicator1 != 0))
+        {
+            if (statement.Indicator1 != 0) context.Indicators[statement.Indicator1] = true;
+            if (statement.ErrorExtender) context.RecordStatus(202, errorExtender: true);
+            return true;
+        }
         if (!error.FileError || !IsFileOperation(statement.Opcode) || !DeclaredFile(statement)) return false;
         if (statement.Indicator2 != 0) { context.Indicators[statement.Indicator2] = true; return true; }
         return statement.ErrorExtender;

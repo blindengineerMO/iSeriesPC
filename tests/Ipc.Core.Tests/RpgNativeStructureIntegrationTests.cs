@@ -34,7 +34,8 @@ public sealed partial class RpgDiskFileTests
         var profile = _system.Security.Profiles.Get("QSECOFR"); profile.Ccsid = ccsid; _system.Security.Profiles.Update(profile);
         Compile(NativeStructureApiSource);
         _files.RemoveMember("QGPL", "SOURCE", "APP");
-        using var session = Session(); Ok(session.Execute("CALL QGPL/APP"), "NATIVE DS STORAGE ACCEPTED");
+        using var session = Session(ccsid); Assert.Equal(ccsid, session.Job.Ccsid);
+        Ok(session.Execute("CALL QGPL/APP"), "NATIVE DS STORAGE ACCEPTED");
     }
     [Fact]
     public void A_retained_activation_keeps_native_data_structure_fields_between_calls()

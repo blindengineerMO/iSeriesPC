@@ -35,7 +35,7 @@ public static partial class RpgCompiler
             var errorRoutine = routine.Name == "*PSSR" || routine.Procedure is null && program.FileErrorHandlers.Any(f => f.Routine == routine.Name);
             if (ending.Factor2 is { Length: > 0 } point)
             {
-                if (!errorRoutine || routine.Procedure is not null) throw new RpgCompileException(ending.LineNumber, "ENDSR return points require a main-procedure error subroutine.");
+                if (!errorRoutine || routine.Procedure is not null || program.IsNativeProcedure) throw new RpgCompileException(ending.LineNumber, "ENDSR return points require a main-procedure error subroutine.");
                 RpgExpr expression;
                 try { expression = RpgExpressionParser.Parse(point); }
                 catch (RpgCompileException error) { throw new RpgCompileException(ending.LineNumber, error.Message); }

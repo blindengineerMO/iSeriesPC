@@ -96,7 +96,8 @@ the file owners. Diagnostic truncation preserves complete encoded characters.
 Other PSDS fields, including dates/times, compiler/source attributes, extended
 source IDs, internal message workspace, XML/DATA counters and native job/system
 IDs, are not populated. [INFSR/*PSSR error subroutines](rpg-error-subroutines.md)
-now use this feedback with scoped dispatch and recovery. INDDS, POST and extended INFDS feedback,
+now use this feedback with scoped dispatch and recovery. [Scalar INDDS](rpg-indicator-structures.md)
+supports file-local WORKSTN indicator bytes. POST and extended INFDS feedback,
 native fixed D-spec layouts, complete RPG cycle/status semantics and independent
 native reference/scale acceptance remain open. C09/C11 therefore remain partial.
 

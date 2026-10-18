@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 namespace Ipc.Rpg.Model;
 
 public sealed record RpgDiskRequest(string Name, string DescriptionFile, string RuntimeFile, bool Keyed, bool UserOpen,
-    IReadOnlyList<RpgRecordRename> Renames, string Prefix = "", bool Update = false, bool Delete = false, bool Output = false, bool Input = true);
+    IReadOnlyList<RpgRecordRename> Renames, string Prefix = "", bool Update = false, bool Delete = false, bool Output = false, bool Input = true, bool IsTemplate = false, bool Qualified = false, string? LikeFile = null);
 public sealed record RpgDiskField(string External, string Name, RpgFieldKind Kind, int Length, int Decimals,
     int Ccsid, int KeySequence, bool Descending, int Position, int StorageLength);
 public sealed record RpgDiskLayout(string DescriptionFile, string Signature, string ExternalRecord, string Record,
@@ -15,7 +15,7 @@ public sealed record RpgDiskLayout(string DescriptionFile, string Signature, str
     public static string SignatureFor(string external, string record, int length, int version, IReadOnlyList<RpgDiskField> fields)
         => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { external, record, length, version, fields })));
 }
-public sealed record RpgDiskBinding(RpgDiskRequest Request, RpgDiskLayout Layout);
+public sealed record RpgDiskBinding(RpgDiskRequest Request, RpgDiskLayout Layout, string? Family = null);
 
 /// <summary>Source-bound external input layouts; restore never consults a live file.</summary>
 public sealed record RpgDiskBindings(int Version, string TextHash, IReadOnlyList<RpgDiskBinding> Files)
@@ -28,7 +28,8 @@ public sealed record RpgDiskBindings(int Version, string TextHash, IReadOnlyList
     public static string Serialize(RpgProgram program)
     {
         foreach (var file in program.DiskFiles) Validate(file);
-        var result = JsonSerializer.Serialize(new RpgDiskBindings(3, Hash(program.Source!.Text), program.DiskFiles), Json);
+        ValidateFamilies(program.DiskFiles);
+        var result = JsonSerializer.Serialize(new RpgDiskBindings(program.DiskFiles.Any(f => f.Request.IsTemplate || f.Request.Qualified || f.Request.LikeFile is not null) ? 4 : 3, Hash(program.Source!.Text), program.DiskFiles), Json);
         if (Encoding.UTF8.GetByteCount(result) > 1048576) throw Invalid();
         return result;
     }
@@ -46,13 +47,14 @@ public sealed record RpgDiskBindings(int Version, string TextHash, IReadOnlyList
                 else if (reader.TokenType == JsonTokenType.PropertyName && !objects.Peek().Add(reader.GetString()!)) throw Invalid();
             }
             var result = JsonSerializer.Deserialize<RpgDiskBindings>(json, Json) ?? throw Invalid();
-            if (result.Version is not (1 or 2 or 3) || result.TextHash != Hash(text) || result.Files is null || result.Files.Count > 16 ||
+            if (result.Version is not (1 or 2 or 3 or 4) || result.TextHash != Hash(text) || result.Files is null || result.Files.Count > 16 ||
                 result.Files.Any(f => f is null || f.Request is null) || result.Files.Select(f => f.Request.Name).Distinct().Count() != result.Files.Count) throw Invalid();
             foreach (var file in result.Files)
             {
                 Validate(file);
-                if (result.Version == 1 && (file.Request.Update || file.Request.Delete) || result.Version < 3 && (file.Request.Output || !file.Request.Input)) throw Invalid();
+                if (result.Version < 4 && (file.Request.IsTemplate || file.Request.Qualified || file.Request.LikeFile is not null || file.Family is not null) || result.Version == 1 && (file.Request.Update || file.Request.Delete) || result.Version < 3 && (file.Request.Output || !file.Request.Input)) throw Invalid();
             }
+            ValidateFamilies(result.Files);
             return result;
         }
         catch (Exception error) when (error is JsonException or ArgumentException) { throw Invalid(); }
@@ -63,17 +65,49 @@ public sealed record RpgDiskBindings(int Version, string TextHash, IReadOnlyList
         if (JsonSerializer.Serialize(file.Request, Json) != JsonSerializer.Serialize(request, Json)) throw Invalid();
         return file.Layout;
     }
+    public static string RecordName(RpgDiskRequest request, string record) => request.Qualified ? request.Name + "." + record : record;
+    public static string FamilyKey(RpgDiskBinding file) => file.Family ?? file.Request.Name + ":" + file.Layout.Signature;
+    private static void ValidateFamilies(IReadOnlyList<RpgDiskBinding> files)
+    {
+        if (files.Count > 16 || files.Select(f => f.Request.Name).Distinct().Count() != files.Count) throw Invalid();
+        foreach (var file in files)
+        {
+            if (file.Request.LikeFile is null) { if (file.Family is not null) throw Invalid(); continue; }
+            var seen = new HashSet<string>(StringComparer.Ordinal) { file.Request.Name }; var parent = file;
+            while (parent.Request.LikeFile is { } name)
+            {
+                if (!seen.Add(name) || files.SingleOrDefault(f => f.Request.Name == name) is not { } next) throw Invalid();
+                parent = next;
+            }
+            if (file.Family != FamilyKey(parent) || file.Request.DescriptionFile != parent.Request.DescriptionFile ||
+                file.Request.Keyed != parent.Request.Keyed || file.Request.Input != parent.Request.Input || file.Request.Output != parent.Request.Output ||
+                file.Request.Update != parent.Request.Update || file.Request.Delete != parent.Request.Delete || file.Request.Prefix != parent.Request.Prefix ||
+                !file.Request.Renames.SequenceEqual(parent.Request.Renames) || file.Layout.DescriptionFile != parent.Layout.DescriptionFile ||
+                file.Layout.ExternalRecord != parent.Layout.ExternalRecord || file.Layout.RecordLength != parent.Layout.RecordLength ||
+                file.Layout.BufferLayoutVersion != parent.Layout.BufferLayoutVersion || !file.Layout.Fields.SequenceEqual(parent.Layout.Fields)) throw Invalid();
+        }
+    }
+    public void Verify(RpgProgram program)
+    {
+        if (program.DiskFiles.Count != Files.Count) throw new InvalidDataException("Unused compiled RPG disk bindings.");
+        foreach (var file in program.DiskFiles)
+        {
+            var stored = Files.SingleOrDefault(f => f.Request.Name == file.Request.Name) ?? throw Invalid();
+            if (JsonSerializer.Serialize(stored, Json) != JsonSerializer.Serialize(file, Json)) throw Invalid();
+        }
+    }
     public static void Validate(RpgDiskBinding binding)
     {
         var request = binding.Request; var layout = binding.Layout;
-        if (request is null || request.Delete && !request.Update || request.Update && !request.Input || !request.Input && !request.Output ||
+        if (request is null || request.IsTemplate && request.UserOpen || request.LikeFile is not null && (!request.Qualified || !RpgWorkstationBindings.Name(request.LikeFile) || request.LikeFile == request.Name) ||
+            binding.Family is { Length: > 256 } || request.Delete && !request.Update || request.Update && !request.Input || !request.Input && !request.Output ||
             !RpgWorkstationBindings.Name(request.Name) || !RpgWorkstationBindings.FileName(request.DescriptionFile) || request.DescriptionFile.StartsWith("*CURLIB/", StringComparison.Ordinal) ||
             request.RuntimeFile != "*EXTDESC" && !RpgWorkstationBindings.FileName(request.RuntimeFile) || request.RuntimeFile?.StartsWith("*CURLIB/", StringComparison.Ordinal) == true ||
             request.Prefix is null || request.Prefix.Length > 64 || request.Prefix.Length > 0 && !RpgWorkstationBindings.Name(request.Prefix) ||
             request.Renames is null || request.Renames.Count > 1 || request.Renames.Any(r => r is null || !Ipc.Core.Objects.ObjectName.IsValid(r.External) || !RpgWorkstationBindings.Name(r.Name)) ||
             layout is null || !RpgWorkstationBindings.FileName(layout.DescriptionFile) || !layout.DescriptionFile.Contains('/') ||
-            !Ipc.Core.Objects.ObjectName.IsValid(layout.ExternalRecord) || !RpgWorkstationBindings.Name(layout.Record) ||
-            layout.Record != (request.Renames.SingleOrDefault()?.Name ?? layout.ExternalRecord) ||
+            !Ipc.Core.Objects.ObjectName.IsValid(layout.ExternalRecord) ||
+            layout.Record != RecordName(request, request.Renames.SingleOrDefault()?.Name ?? layout.ExternalRecord) ||
             request.Renames.Any(r => r.External != layout.ExternalRecord) || layout.RecordLength is < 1 or > 16777216 ||
             layout.BufferLayoutVersion is not (1 or 2) || layout.Fields is null || layout.Fields.Count is < 1 or > 1024) throw Invalid();
         if (layout.Fields.Any(f => f is null || !Ipc.Core.Objects.ObjectName.IsValid(f.External) || !RpgWorkstationBindings.Name(f.Name) || f.Name != request.Prefix + f.External ||

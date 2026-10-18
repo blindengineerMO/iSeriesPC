@@ -8,21 +8,50 @@ internal sealed class ClVariableCell(string value, ClVariableDefinition? definit
 {
     private string _value = value;
     private Ipc.Core.Work.ProgramBuffer? _raw;
-    internal Ipc.Core.Work.ProgramBuffer? RawBuffer => _raw;
+    private readonly Ipc.Core.Work.ProgramArgument? _reference;
+    private ClVariableCell(Ipc.Core.Work.ProgramArgument reference, ClVariableDefinition? expected, int codePage) : this("", expected, codePage)
+    {
+        _reference = reference;
+        if (expected is not null && reference.Type is not null &&
+            (reference.Type != expected.Type || reference.Length != expected.Length || reference.Decimals != expected.Decimals))
+            throw new ClRuntimeException("CL reference parameter type, length and scale must match its declaration.");
+        if ((reference.ToBuffer() ?? reference.Value as Ipc.Core.Work.ProgramBuffer) is { } buffer &&
+            (buffer.Ccsid != codePage || expected is not null && buffer.Length != expected.StorageLength))
+            throw new ClRuntimeException("CL reference parameter byte width or CCSID does not match its declaration.");
+    }
+    internal static ClVariableCell Reference(Ipc.Core.Work.ProgramArgument argument, ClVariableDefinition? expected, int ccsid) => new(argument, expected, ccsid);
+    internal Ipc.Core.Work.ProgramBuffer? RawBuffer => _reference is not null ? Definition?.Type == "*CHAR" ?
+        _reference.ToBuffer() ?? _reference.Value as Ipc.Core.Work.ProgramBuffer : null : _raw;
     internal ClVariableDefinition? Definition { get; } = definition;
-    internal string Value { get => _raw?.ToText() ?? _value; set { var assigned = Definition?.Assign(value, ccsid) ?? value; _value = assigned; _raw = null; } }
+    internal string Value
+    {
+        get
+        {
+            if (_reference is null) return _raw?.ToText() ?? _value;
+            var current = _reference.Value;
+            return current is Ipc.Core.Work.ProgramBuffer buffer ? Definition?.Decode(buffer) ?? buffer.ToText() :
+                Definition?.Assign(current ?? "", ccsid) ?? ClExpression.Text(current ?? "");
+        }
+        set
+        {
+            var assigned = Definition?.Assign(value, ccsid) ?? value;
+            if (_reference is not null) _reference.Value = Definition?.Type == "*CHAR" ? Definition.Encode(assigned, ccsid) : Definition?.Read(assigned) ?? assigned;
+            else { _value = assigned; _raw = null; }
+        }
+    }
     internal void AssignBuffer(Ipc.Core.Work.ProgramBuffer buffer)
     {
         if (Definition?.Type != "*CHAR" || buffer.Length != Definition.Length) throw new ClRuntimeException("CL character buffer length does not match its declaration.");
-        _raw = new(buffer.ToArray(), ccsid);
+        if (_reference is not null) _reference.Value = new Ipc.Core.Work.ProgramBuffer(buffer.ToArray(), ccsid);
+        else _raw = new(buffer.ToArray(), ccsid);
     }
-    internal Ipc.Core.Work.ProgramBuffer? ToBuffer() => _raw ?? Definition?.Encode(Value, ccsid);
+    internal Ipc.Core.Work.ProgramBuffer? ToBuffer() => _reference?.ToBuffer() ?? _raw ?? Definition?.Encode(Value, ccsid);
     internal object ResultValue()
     {
-        if (_raw is not null)
+        if (RawBuffer is { } raw)
         {
-            try { return _raw.ToText(); }
-            catch (Ipc.Core.Messages.CpfException) { return _raw; }
+            try { return raw.ToText(); }
+            catch (Ipc.Core.Messages.CpfException) { return raw; }
         }
         return Definition?.Read(Value) ?? Value;
     }
@@ -36,7 +65,7 @@ internal sealed class ClVariableCell(string value, ClVariableDefinition? definit
         return Definition is null ? updated is Ipc.Core.Work.ProgramBuffer raw ? raw.ToText() : ClExpression.Text(updated ?? "")
             : Definition.Read(updated is Ipc.Core.Work.ProgramBuffer buffer ? Definition.Decode(buffer) : Definition.Assign(updated ?? "", ccsid));
     }
-    internal Ipc.Core.Work.ProgramArgument Borrow() => new(
+    internal Ipc.Core.Work.ProgramArgument Borrow() => _reference ?? new(
         ResultValue,
         updated => { if (updated is Ipc.Core.Work.ProgramBuffer bytes) AssignBuffer(bytes); else Value = ClExpression.Text(updated ?? ""); },
         Normalize,

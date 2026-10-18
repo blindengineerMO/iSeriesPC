@@ -25,29 +25,70 @@ public static partial class RpgCompiler
     public static RpgProgram Compile(string library, string name, PreprocessedSource source, CancellationToken cancellationToken = default,
         Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
         Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
+        => CompileUnit(library, name, source, cancellationToken, workstationResolver, diskResolver);
+
+    private static RpgProgram CompileUnit(string library, string name, PreprocessedSource source, CancellationToken cancellationToken,
+        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver, Func<RpgDiskRequest, RpgDiskLayout>? diskResolver,
+        List<string>? preparedLines = null, RpgProgram? globals = null, string? procedureName = null, int procedureLine = 0,
+        ForwardDeclarationTypes? forwardTypes = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant(), Source = source };
-        var specificationLines = ReadSpecs(source.Text);
-
+        var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant(), Source = source, GlobalProgram = globals, NativeProcedureName = procedureName, NativeEntryLine = procedureLine };
+        if (globals is not null) ImportGlobalSymbols(program, globals);
         try
         {
+            var specificationLines = preparedLines ?? ReadSpecs(ExtractCompileTimeData(program, source, cancellationToken));
             var freeForm = specificationLines.Any(l =>
                 l.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase));
             program.IsFreeForm = freeForm;
-            var workstations = ParseWorkstationDeclarations(specificationLines, program, freeForm, cancellationToken);
+            var nativeProcedures = globals is null ? ExtractNativeProcedures(specificationLines, freeForm, cancellationToken) : [];
+            program.NativeProcedureNames.UnionWith(nativeProcedures.Select(p => p.Name));
+            forwardTypes ??= new(program, specificationLines, freeForm, cancellationToken);
+            forwardTypes.Attach(program);
+            foreach (var definition in nativeProcedures) forwardTypes.Child(definition.Name, definition.Lines);
+            diskResolver = CachedDiskResolver(diskResolver);
+            var workstations = ParseWorkstationDeclarations(specificationLines, program, freeForm, cancellationToken, diskResolver: diskResolver);
             ParseDeclarations(specificationLines, program, cancellationToken);
+            if (program.IsNativeProcedure && !program.HasNativeEntryInterface)
+            { program.HasNativeEntryInterface = true; program.NativeParameterLists.Add("/*ENTRY", Array.Empty<string>()); }
+            ValidateNativeProgramSignatures(program);
+            BindCompileTimeData(program, cancellationToken);
             ParseFileErrorHandlers(program, workstations);
+            ParseIndicatorBindings(program, workstations);
             BindFeedbackStructures(program, workstations);
             BindWorkstations(program, workstations.Where(d => !d.Disk).ToArray(), workstationResolver);
             BindDisks(program, workstations.Where(d => d.Disk).ToArray(), diskResolver);
-            program.FileSpecs.Clear(); program.FileSpecs.AddRange(workstations.Select(d => d.Name));
+            foreach (var field in program.Fields.Where(f => f.NativeScalar && !f.IsTemplate && !program.GlobalFields.Contains(f)))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                DeclareNativeStandalone(program, field, field.DeclarationLine);
+            }
+            ValidateIndicatorBindings(program);
+            program.FileSpecs.Clear(); program.FileSpecs.AddRange(workstations.Where(d => !d.Template).Select(d => d.Name));
+            foreach (var definition in nativeProcedures)
+            {
+                var body = CompileUnit(library, name, source, cancellationToken, workstationResolver, diskResolver, definition.Lines, program, definition.Name, definition.Line, forwardTypes.Child(definition.Name));
+                program.Subprocedures.Add(new() { Name = definition.Name, NativeBody = body, IsExport = definition.Export });
+            }
+            if (globals is null) LinkNativeProcedures(program);
             var keyDeclarations = ParseKeyDeclarations(specificationLines, program, freeForm, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             ParseStatements(specificationLines, program, freeForm, cancellationToken);
+            ValidateRecordIo(program);
+            ValidateTemplateUses(program, keyDeclarations.Lists);
+            ValidateNativeReturns(program);
+            ValidateProcedureExpressions(program);
+            ValidateNativeParameterLists(program);
+            ValidateNativeProgramCalls(program);
+            ValidateReadOnlyParameters(program);
+            ValidateParameterBuiltins(program);
+            foreach (var statement in program.MainStatements.Where(s => s.ClearAllOccurrences))
+                if (program.FindDs(statement.Result ?? "") is not { NativeStorage: true, IsMultipleOccurrence: true })
+                    throw new RpgCompileException(statement.LineNumber, "CLEAR *ALL requires a named multiple-occurrence data structure.");
             BindFileSearches(program, keyDeclarations.Lists, keyDeclarations.Scopes, cancellationToken);
             ValidateWorkstationStatements(program);
             ValidateDiskStatements(program);
+            ValidateProcedureFiles(program);
             foreach (var statement in program.MainStatements)
                 if (statement.LineNumber > 0 && statement.LineNumber <= source.Locations.Count)
                     statement.Location = source.Locations[statement.LineNumber - 1];
@@ -76,24 +117,16 @@ public static partial class RpgCompiler
         }
         catch (RpgCompileException error) when (error.Location is null && error.LineNumber > 0 && error.LineNumber <= source.Locations.Count)
         { throw new RpgCompileException(source.Locations[error.LineNumber - 1], error.Message); }
+        finally { forwardTypes?.Detach(); program.RecordLayoutsLookup = null; }
     }
 
     private static List<string> ReadSpecs(string source)
     {
         var lines = new List<string>();
-        var globalFree = source.Split('\n').Any(line => line.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase));
         foreach (var raw in source.Split('\n'))
         {
             var line = raw.TrimEnd('\r');
             if (string.IsNullOrWhiteSpace(line))
-            {
-                lines.Add(string.Empty);
-                continue;
-            }
-
-            if (line.TrimStart().StartsWith("*", StringComparison.Ordinal) &&
-                !line.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase) &&
-                !(globalFree && Regex.IsMatch(line.TrimStart(), @"\A\*[Nn](?:\s|\z)")))
             {
                 lines.Add(string.Empty);
                 continue;
@@ -412,6 +445,12 @@ public static partial class RpgCompiler
             var line = lines[index];
             if (string.IsNullOrWhiteSpace(line)) continue;
             var lineNumber = index + 1;
+            if (IsNativeCalculation(line))
+            {
+                if (globalFree || inFreeBlock) throw new RpgCompileException(lineNumber, "Native fixed calculations cannot appear inside a free region.");
+                if (Col(line, 7, 80).All(c => c == ' ')) continue;
+                program.MainStatements.Add(ParseNativeCalculation(lines, ref index, program, cancellationToken)); continue;
+            }
             var spec = Specification(line);
             var trimmed = line.TrimStart();
             if ((globalFree || inFreeBlock) && !FixedShape(line, spec)) spec = ' ';
@@ -497,6 +536,7 @@ public static partial class RpgCompiler
         var statement = new RpgStatement
         {
             Opcode = mapped,
+            ClearAllOccurrences = mapped == RpgOpcode.Clear && factor2.Equals("*ALL", StringComparison.OrdinalIgnoreCase),
             NoLock = noLock,
             ErrorExtender = errorExtender,
             Factor1 = factor1,
@@ -536,11 +576,20 @@ public static partial class RpgCompiler
         var space = text.IndexOfAny(new[] { ' ', '\t' });
         var opcode = (space >= 0 ? text[..space] : text).Trim().ToUpperInvariant();
         var operands = space >= 0 ? text[(space + 1)..].Trim() : string.Empty;
+        var callError = opcode == "CALLP(E)";
+        if (opcode.StartsWith("CALLP(", StringComparison.Ordinal) && !callError)
+            throw new RpgCompileException(lineNumber, "CALLP currently supports only the E extender.");
+        if (callError) opcode = "CALLP";
         var (noLock, errorExtender) = ParseFileExtenders(ref opcode, lineNumber);
         var mapped = MapFreeOpcode(opcode);
+        if (mapped == RpgOpcode.None && System.Text.RegularExpressions.Regex.Match(text, @"\A([A-Za-z_][A-Za-z0-9_]*)\s*\(.*\)\z") is { Success: true } implicitCall &&
+            (program.FindPrototype(implicitCall.Groups[1].Value) is { NativeProcedure: true } || program.NativeProcedureNames.Contains(implicitCall.Groups[1].Value) || program.GlobalProgram?.NativeProcedureNames.Contains(implicitCall.Groups[1].Value) == true))
+        { mapped = RpgOpcode.CallP; operands = text; }
         if (mapped == RpgOpcode.None) throw new RpgCompileException(lineNumber, "Unsupported free RPG operation " + (opcode.Length == 0 ? "(empty)" : opcode) + ".");
+        if (mapped == RpgOpcode.CallP && operands.Length == 0) throw new RpgCompileException(lineNumber, "CALLP requires a call target.");
         if (operands.Length > 0 && mapped is (RpgOpcode.Else or RpgOpcode.EndIf or RpgOpcode.Select or RpgOpcode.Other or RpgOpcode.EndSl or
-            RpgOpcode.EndDo or RpgOpcode.Iter or RpgOpcode.Leave or RpgOpcode.Retrn or RpgOpcode.Return or RpgOpcode.Monitor or RpgOpcode.EndMon))
+            RpgOpcode.EndDo or RpgOpcode.Iter or RpgOpcode.Leave or RpgOpcode.Retrn or RpgOpcode.Return or RpgOpcode.Monitor or RpgOpcode.EndMon) &&
+            !(mapped == RpgOpcode.Return && program.IsNativeProcedure && program.NativeReturnField is not null))
             throw new RpgCompileException(lineNumber, "Operands are unsupported for free RPG " + opcode + ".");
         if (operands.Length == 0 && mapped is (RpgOpcode.If or RpgOpcode.When or RpgOpcode.DoU or RpgOpcode.DoW or RpgOpcode.For))
             throw new RpgCompileException(lineNumber, "Free RPG " + opcode + " requires a condition or loop expression.");
@@ -549,17 +598,21 @@ public static partial class RpgCompiler
         {
             Opcode = mapped,
             NoLock = noLock,
-            ErrorExtender = errorExtender,
+            ErrorExtender = errorExtender || callError,
             Factor1 = null,
             Factor2 = null,
             Result = null,
             Value = operands.Length > 0 ? operands : null,
             IsFreeForm = true,
+            SortDescending = mapped == RpgOpcode.SortA ? opcode == "SORTA(D)" ? true : opcode == "SORTA(A)" ? false : null : null,
             LineNumber = lineNumber,
         };
 
         switch (statement.Opcode)
         {
+            case RpgOpcode.SortA:
+                ParseArraySort(program, statement, operands, lineNumber);
+                break;
             case RpgOpcode.Eval:
             case RpgOpcode.If:
             case RpgOpcode.When:
@@ -607,7 +660,7 @@ public static partial class RpgCompiler
             case RpgOpcode.Write:
             case RpgOpcode.ExFmt:
             case RpgOpcode.Update:
-                statement.Factor1 = operands;
+                if (!ParseRecordIo(operands, statement, program)) statement.Factor1 = operands;
                 break;
 
             case RpgOpcode.Call:
@@ -624,7 +677,7 @@ public static partial class RpgCompiler
             case RpgOpcode.Reade:
             case RpgOpcode.ReadP:
             case RpgOpcode.ReadPe:
-                ParseKeyFile(operands, statement, program);
+                if (!ParseRecordIo(operands, statement, program)) ParseKeyFile(operands, statement, program);
                 break;
 
             case RpgOpcode.Move:
@@ -640,6 +693,10 @@ public static partial class RpgCompiler
                 break;
 
             case RpgOpcode.Clear:
+                var clearAll = Regex.Match(operands, @"\A\*ALL\s+(.+)\z", RegexOptions.IgnoreCase);
+                statement.ClearAllOccurrences = clearAll.Success;
+                statement.Result = clearAll.Success ? clearAll.Groups[1].Value.Trim() : operands;
+                break;
             case RpgOpcode.RcvMsg:
                 statement.Result = operands;
                 break;
@@ -785,6 +842,9 @@ public static partial class RpgCompiler
         "MOVE" => RpgOpcode.Move,
         "MOVEL" => RpgOpcode.MoveL,
         "MOVA" => RpgOpcode.MoveA,
+        "SORTA" => RpgOpcode.SortA,
+        "SORTA(A)" => RpgOpcode.SortA,
+        "SORTA(D)" => RpgOpcode.SortA,
         "ZADD" => RpgOpcode.ZAdd,
         "ZSUB" => RpgOpcode.ZSub,
         "CLEAR" => RpgOpcode.Clear,

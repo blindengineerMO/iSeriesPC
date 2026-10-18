@@ -16,8 +16,13 @@ public sealed record RpgDisplayRecord(string External, string Name, IReadOnlyLis
     bool MessageSubfile, string? ControlFor, int Capacity = 0);
 public sealed record RpgWorkstationLayout(string DescriptionFile, string Signature, IReadOnlyList<RpgDisplayRecord> Records)
 {
+    // Null preserves version-one snapshots, whose record signature did not include INDARA.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? IndicatorArea { get; init; }
     public static string SignatureFor(IReadOnlyList<RpgDisplayRecord> records)
         => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(records)));
+    public static string SignatureFor(IReadOnlyList<RpgDisplayRecord> records, bool indicatorArea)
+        => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { records, indicatorArea })));
 }
 public sealed record RpgWorkstationBinding(RpgWorkstationRequest Request, RpgWorkstationLayout Layout);
 
@@ -29,7 +34,9 @@ public sealed record RpgWorkstationBindings(int Version, string TextHash, IReadO
     public static string Serialize(RpgProgram program)
     {
         foreach (var file in program.Workstations) Validate(file);
-        var json = JsonSerializer.Serialize(new RpgWorkstationBindings(1, Hash(program.Source!.Text), program.Workstations), Json);
+        var version = program.Workstations.Any(f => f.Layout.IndicatorArea is not null) ? 2 : 1;
+        if (version == 2 && program.Workstations.Any(f => f.Layout.IndicatorArea is null)) throw Invalid();
+        var json = JsonSerializer.Serialize(new RpgWorkstationBindings(version, Hash(program.Source!.Text), program.Workstations), Json);
         if (Encoding.UTF8.GetByteCount(json) > 1048576) throw Invalid();
         return json;
     }
@@ -47,9 +54,13 @@ public sealed record RpgWorkstationBindings(int Version, string TextHash, IReadO
                 else if (reader.TokenType == JsonTokenType.PropertyName && !objects.Peek().Add(reader.GetString()!)) throw Invalid();
             }
             var result = JsonSerializer.Deserialize<RpgWorkstationBindings>(json, Json) ?? throw Invalid();
-            if (result.Version != 1 || result.TextHash != Hash(text) || result.Files is null || result.Files.Count > 16 ||
+            if (result.Version is not (1 or 2) || result.TextHash != Hash(text) || result.Files is null || result.Files.Count > 16 ||
                 result.Files.Any(f => f is null || f.Request is null) || result.Files.Select(f => f.Request.Name).Distinct().Count() != result.Files.Count) throw Invalid();
-            foreach (var file in result.Files) Validate(file);
+            foreach (var file in result.Files)
+            {
+                Validate(file);
+                if (result.Version == 1 && file.Layout.IndicatorArea is not null || result.Version == 2 && file.Layout.IndicatorArea is null) throw Invalid();
+            }
             return result;
         }
         catch (Exception error) when (error is JsonException or ArgumentException) { throw Invalid(); }
@@ -83,7 +94,8 @@ public sealed record RpgWorkstationBindings(int Version, string TextHash, IReadO
             r.Subfile && r.Capacity < 1 || r.ControlFor is not null && !layout.Records.Any(s => s.Name == r.ControlFor && s.Subfile)) ||
             layout.Records.Select(r => r.Name).Distinct().Count() != layout.Records.Count || layout.Records.Select(r => r.External).Distinct().Count() != layout.Records.Count ||
             request.Subfiles.Any(s => !layout.Records.Any(r => r.Name == s.Record && r.Subfile)) ||
-            layout.Records.Any(r => r.Subfile && !request.Subfiles.Any(s => s.Record == r.Name)) || layout.Signature != RpgWorkstationLayout.SignatureFor(layout.Records)) throw Invalid();
+            layout.Records.Any(r => r.Subfile && !request.Subfiles.Any(s => s.Record == r.Name)) ||
+            layout.Signature != (layout.IndicatorArea is { } area ? RpgWorkstationLayout.SignatureFor(layout.Records, area) : RpgWorkstationLayout.SignatureFor(layout.Records))) throw Invalid();
     }
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
     private static InvalidDataException Invalid() => new("Invalid or stale compiled RPG workstation bindings.");

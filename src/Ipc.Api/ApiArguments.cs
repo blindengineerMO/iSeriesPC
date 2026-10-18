@@ -88,14 +88,14 @@ internal sealed class ApiArguments(int ccsid)
     }
     internal Output CharacterOutput(object? value)
     {
-        if (value is not ProgramArgument reference || reference.Constant is not null) throw new CpfException("CPF3C90", "API receiver requires writable storage.");
+        if (value is not ProgramArgument reference || reference.Constant is not null || reference.IsReadOnly) throw new CpfException("CPF3C90", "API receiver requires writable storage.");
         var buffer = Character(reference);
         if (reference.Length < 1 || reference.Length != buffer.Length) throw Bad("API receiver length does not match storage.");
         return new(reference, buffer);
     }
     internal ProgramArgument PackedOutput(object? value, int digits)
     {
-        if (value is not ProgramArgument reference || reference.Constant is not null) throw new CpfException("CPF3C90", "API receiver requires writable storage.");
+        if (value is not ProgramArgument reference || reference.Constant is not null || reference.IsReadOnly) throw new CpfException("CPF3C90", "API receiver requires writable storage.");
         if (reference.Type == "*DEC")
         {
             if (reference.Length != digits || reference.Decimals != 0) throw Bad("Invalid packed API receiver layout.");

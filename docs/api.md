@@ -499,3 +499,48 @@ contracts. The complete domain REST surface remains C16 work.
 
 The shared MFA and SSO endpoints, bearer authentication and Unix management protocol
 are documented in [MFA and sessions](mfa-sessions.md).
+
+
+[Native program signatures](rpg-program-signatures.md) now provide D-spec PR/PI
+and free DCL-PR/DCL-PI for scalar references through EXTPGM, including borrowed
+API receivers and exact-width native formats. Their formal metadata is separate
+from runtime fields; the older project prototype convention above remains
+supported. CONST/VALUE/OPTIONS and the complete native procedure/array ABI remain
+open. Free CALLP(E) now shares the final-call error path with native C-specs.
+
+
+[Native CONST parameters](rpg-const-parameters.md) now provide typed read-only
+reference inputs and converted literal/expression temporaries. Native receivers
+reject readonly storage before output preparation; queue rejection preserves
+entries and other outputs. Character prefixes retain native byte ranges and
+caller tails. Legacy project prototype options keep their separate contract.
+
+[Optional native parameters](rpg-optional-parameters.md) now let a native
+prototype describe required API inputs followed by OPTIONS(*NOPASS) formals.
+Only the supplied prefix reaches the adapter; its native count/group validation
+still applies. %PASSED/%PARMS guards and %PARMNUM identify native main PI inputs,
+and forwarding an unpassed receiver fails with status 105 before API dispatch.
+
+[Omitted native arguments](rpg-omitted-parameters.md) now preserve *OMIT positions
+through native program prototypes and main interfaces. API adapters retain their
+own storage requirements: omitted buffers/numbers/receivers reject, with queue
+input/output tests preserving entries and other outputs. A prototype's *OMIT
+option does not make every API argument nullable; additional per-API nullable
+pointer contracts remain open.
+
+[Native local procedures](rpg-local-procedures.md) can now call native API adapters
+with automatic local receivers and CONST/VALUE inputs while sharing module
+globals. Real queue tests verify local send/receive and borrowed-cell lifetimes;
+external-process tests cover local output validation and valid error writeback.
+[Native aggregate parameters](rpg-aggregate-parameters.md) also provide fixed
+array/LIKEDS byte receivers through program and local procedure interfaces.
+[Array and structure return values](rpg-return-values.md) can supply compatible
+CONST API inputs through local procedures. Cross-unit binding, further return
+layouts and foreign ABI remain open.
+[Exact and adjusted RPG parameters](rpg-parameter-options.md) validate supported
+actual types and prepare private trimmed/right-adjusted character images before
+native dispatch. Readonly echoes and atomic output validation retain their ABI.
+
+[Variable-size RPG references](rpg-variable-parameters.md) expose actual byte
+capacities through scoped memory views; readonly status, alias identity and
+complete response validation remain enforced across native API/process calls.

@@ -17,6 +17,11 @@ public sealed partial class RpgRuntimeContext
 
     private void InitializeFeedback()
     {
+        if (GlobalContext is not null)
+        {
+            foreach (var pair in GlobalContext._fileFeedback) _fileFeedback.Add(pair.Key, pair.Value);
+            _programFeedback = GlobalContext._programFeedback; return;
+        }
         foreach (var name in _program.FileSpecs)
         {
             var binding = _program.FileInformation.SingleOrDefault(f => f.File == name);
@@ -24,7 +29,7 @@ public sealed partial class RpgRuntimeContext
             _fileFeedback.Add(name, bytes);
             FeedbackText(bytes, 0, 8, name); FeedbackText(bytes, 8, 2, "00"); FeedbackNumber(bytes, 10, 5, 0);
         }
-        var psds = _program.DataStructures.SingleOrDefault(d => d.ProgramStatus);
+        var psds = _program.DataStructures.SingleOrDefault(d => d.ProgramStatus && !d.IsTemplate && !_program.GlobalStructures.Contains(d));
         if (psds is null) return;
         _programFeedback = _nativeStructures[psds.Name];
         FeedbackText(_programFeedback, 0, 10, _program.Name);
@@ -41,7 +46,7 @@ public sealed partial class RpgRuntimeContext
     {
         if (parameterCount is < 0 or > 999) throw new RpgRuntimeException("RPG entry parameter count exceeds 999.") { StatusCode = 103 };
         ParameterCount = parameterCount; _feedbackStatement = null; _feedbackRoutine = "*INIT"; _feedbackCallTarget = null;
-        if (_programFeedback is { } bytes) FeedbackNumber(bytes, 36, 3, parameterCount);
+        if (!_program.IsNativeProcedure && _programFeedback is { } bytes) FeedbackNumber(bytes, 36, 3, parameterCount);
     }
     internal void SetFeedbackOperation(RpgStatement statement, string routine, bool preserveCallTarget = false)
     {

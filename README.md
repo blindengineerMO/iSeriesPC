@@ -17,7 +17,7 @@ The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
 Latest [completion checkpoint](docs/completion-progress.md): 36/106 checklist items
-complete, 3173 tests passing, and real sign-on/display PTY acceptance passing.
+complete, 5167 tests passing, and real sign-on/display PTY acceptance passing.
 The C11 [journal foundation](docs/journals.md) now supplies durable receivers,
 rotation, entry display, atomic PF/source capture, and forward/reverse recovery
 with native partial-error policies. Audit hooks, save/restore and
@@ -59,6 +59,53 @@ Extended feedback areas, nested structures and full entry/prototype ABI remain o
 [RPG error subroutines](docs/rpg-error-subroutines.md) now dispatch INFSR and
 procedure-local *PSSR with monitor precedence, RETURN/GOTO recovery and *CANCL
 cleanup. Native cycle restart points and general ILE exception handling remain open.
+[Indicator data structures](docs/rpg-indicator-structures.md) now give WORKSTN
+files local or explicitly shared 99-byte indicator banks. Saved bindings track
+DDS INDARA while retaining version-one compatibility.
+[Native fixed DS definitions](docs/rpg-fixed-structures.md) now support From/To
+byte layouts, PACKEVEN, overlays, arrays, occurrences and feedback. Native
+arithmetic resolves numeric DS views, and DO loops write indexed counter cells.
+[Native program signatures](docs/rpg-program-signatures.md) now support PR/main PI
+and free DCL-PR/DCL-PI with live scalar references. Free CALLP(E) handles final
+call errors while preserving argument-processing statuses. External process
+responses validate all returned cells before writeback.
+[CONST parameters and character prefixes](docs/rpg-const-parameters.md) add live
+read-only aliases, converted temporary values and formal-width prefix writes
+that preserve caller tails through nested calls.
+[Optional native parameters](docs/rpg-optional-parameters.md) add OPTIONS(*NOPASS),
+%PASSED, real %PARMNUM positions and short-circuit guards across stored RPG, CL,
+system API and external-process calls.
+[Omitted native arguments](docs/rpg-omitted-parameters.md) add OPTIONS(*OMIT),
+%OMITTED, distinct presence states and checked null slots in external requests.
+[Native local procedures](docs/rpg-local-procedures.md) add P/DCL-PROC, linked
+scalar interfaces and returns, VALUE copies, recursion, automatic/STATIC locals
+and shared module storage and file positions.
+[Native aggregate parameters](docs/rpg-aggregate-parameters.md) add fixed arrays
+and LIKEDS structure interfaces, live element/subfield aliases, CONST inputs,
+private VALUE copies and formal prefixes that preserve caller tails.
+[Native array and structure returns](docs/rpg-return-values.md) add detached
+results, default array tails and RTNPARM parameter positions/counts.
+[DISK file definitions](docs/rpg-file-definitions.md) add metadata-only templates,
+LIKEFILE copies, qualified records and checked saved file families.
+[Record structures](docs/rpg-record-structures.md) add DISK LIKEREC layouts,
+checked result buffers, key structures and native parameter/return interfaces.
+[Data templates](docs/rpg-templates.md) retain layouts and defaults without
+allocating runtime storage, with checked metadata-only uses.
+[Forward LIKEDS templates](docs/rpg-forward-structures.md) add later structure
+layouts and inherited initialization for copies, interfaces and returns.
+[Forward native types](docs/rpg-forward-declarations.md) resolve later declarations
+and implicit returns, with scoped constants, cycle checks and exact ancestry.
+[Native LIKE declarations](docs/rpg-like-declarations.md) inherit supported
+types and signed length adjustments, with type ancestry for exact calls.
+[Exact and adjusted parameters](docs/rpg-parameter-options.md) add native
+OPTIONS(*EXACT:*TRIM:*RIGHTADJ), checked conversions and related LIKEDS types.
+
+[Variable-size references](docs/rpg-variable-parameters.md) add OPTIONS(*VARSIZE),
+actual character-array strides and checked byte ranges across calls and APIs.
+[Native RPG tables](docs/rpg-tables.md) now support CTDATA/ALT loading, paired
+LOOKUP, six %TLOOKUP variants and current-element scalar/API access. Unprototyped
+stored CL/RPG calls preserve live parameter aliases and writes on callee errors.
+Pre-runtime table loading and complete native entry/procedure ABI remain open.
 APY/RMV
 validates committed cycles and reports incomplete ending ranges.
 Native commitment commands, isolation and pending/rollback/interleaved cycle

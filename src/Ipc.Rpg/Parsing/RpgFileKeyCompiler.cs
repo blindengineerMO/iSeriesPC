@@ -149,7 +149,7 @@ public static partial class RpgCompiler
         ScanKeyText(text, statement.LineNumber, (index, depth, c) => { if (depth == 0 && char.IsWhiteSpace(c)) split = index; });
         var file = split < 0 ? text : text[(split + 1)..].Trim();
         var key = split < 0 ? null : text[..split].Trim();
-        if (!KeyName(file)) throw new RpgCompileException(statement.LineNumber, "A single file or record-format name is required.");
+        if (!KeyName(file) && !program.DiskFiles.Any(f => f.Layout.Record.Equals(file, StringComparison.OrdinalIgnoreCase))) throw new RpgCompileException(statement.LineNumber, "A single file or record-format name is required.");
         if (statement.Opcode is RpgOpcode.Read or RpgOpcode.ReadP or RpgOpcode.ReadC && key is not null)
         {
             var workstation = program.Workstations.Any(binding => binding.Request.Name.Equals(key, StringComparison.OrdinalIgnoreCase) ||

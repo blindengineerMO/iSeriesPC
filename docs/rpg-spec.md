@@ -18,7 +18,7 @@ and display-file runtime described in §12.
 
 1. **Preprocess** — expand the bounded [RPG directive grammar](source-preprocessing.md#rpg-directives)
    and retain original source snapshots and include locations.
-2. **ReadSpecs** — preserve physical line positions while masking blanks and `*` comments (except `**free` and free-form `*N` declarations).
+2. **Extract data / ReadSpecs** — bind trailing CTDATA records separately from code while preserving physical source positions and prepared comments.
 3. **Free-form detection** — true if any line starts with `**free`; repeated/malformed markers fail.
 4. **ParseDeclarations** — collect supported fixed F/D specs, free DCL-F/DCL-S/DCL-DS declarations,
    external display/database input fields, and data structures. WORKSTN compilation requires a display resolver;
@@ -248,13 +248,14 @@ main stream, and subprocedures are P-spec blocks re-parented into `Subprocedures
   `/IF`/`/ELSEIF`/`/ELSE`/`/ENDIF`, and listing-only `/TITLE`/`/EJECT`/`/SPACE`.
   Member/stream resolution, bounds, unsupported syntax, compiled snapshots and
   original diagnostics are specified in [source preprocessing](source-preprocessing.md#rpg-directives).
-- The emulator's column layout uses result field width 11 in the 48–58
+- The older project column layout uses result field width 11 in the 48–58
   band; the length column 53–58 overlaps the result band and is only meaningful when the result is
   blank.
-- WORKSTN F specs additionally accept IBM's native column-6 layout. This does not
-  extend native fixed D/C column coverage; native F specs can use `/FREE` calculations.
-- Fixed specifications require the six leading sequence/blank columns and their
-  D/P/C layout. Free text such as `dsply DATA` and `callp PRIVATE()` is not a fixed
+- Native column-6 WORKSTN F, standalone/DS D and supported C specifications have
+  separate parsers. See the traditional definition/calculation contracts below;
+  complete native DS/procedure/cycle specifications remain open.
+- Older project fixed specifications require six leading sequence/blank columns
+  and their D/P/C layout. Free text such as `dsply DATA` and `callp PRIVATE()` is not a fixed
   specification merely because column 7 contains D or P. Leading `*` comment lines
   remain an extension unless they start `**free`; `//` comments are also supported.
 - Bit fields initialize to blanks (`0x20`) in the emulation's ASCII representation; `BITON` ORs
@@ -521,9 +522,11 @@ arrays and LIKEDS. INT/packed/zoned/float and default ISO datetime fields share
 live byte images; uninitialized numeric storage remains blank and can raise 907.
 Borrowed API receivers support structures and typed subfields with range-aware
 alias protection. See [the native structure contract](rpg-native-structures.md).
-The historical fixed D-spec text overlays remain a separate extension. Nested
-structures, native fixed D/C, full entry/prototype ABI, extended feedback and
-INDDS population remain open.
+[Native fixed DS definitions](rpg-fixed-structures.md) now use the same byte
+engine. The historical project D-spec text overlays remain a separate extension.
+Nested/external structures, complete native procedure/cycle forms, full
+entry/prototype ABI and extended feedback remain open. Multiple-occurrence structures and indicator banks are described
+in [the occurrence contract](rpg-occurrences.md).
 
 ## 18. Native feedback structures
 
@@ -534,7 +537,7 @@ Feedback uses the same native bytes as ordinary fields and overlays. E/ER and
 MONITOR handlers see the updated feedback; EXSR preserves original error details
 and CALL failures identify the caller line and called target. See
 [the feedback contract](rpg-feedback-structures.md) for populated fields and
-limits. Extended INFDS/PSDS areas, INDDS, INFSR/*PSSR, native fixed D-specs and
+limits. Extended INFDS/PSDS areas, native fixed feedback D-specs and
 complete cycle/error semantics remain open.
 
 ## 19. Error subroutines
@@ -545,3 +548,352 @@ six-byte main ENDSR return points and *CANCL cancellation are supported.
 Abnormal exit closes retained file owners and discards failed activation state.
 See [the error-subroutine contract](rpg-error-subroutines.md) for scope, bounds,
 source diagnostics and native cycle/ILE requirements that remain open.
+
+## 20. File-local indicator structures
+
+INDDS now binds a named native structure, optionally OCCURS, to a WORKSTN file with DDS
+INDARA. Default storage contains 99 character-zero bytes; named fields, arrays,
+overlays and borrowed API views share that storage. Conditioning and response
+flags remain separate from global *IN, and files may explicitly share a bank.
+Version-two saved bindings include INDARA in their signature while version-one
+snapshots remain readable. See [the indicator contract](rpg-indicator-structures.md)
+for initialization, validation, lifetime and remaining native/PRINTER scope.
+
+## 21. Multiple-occurrence structures
+
+OCCURS allocates independent native byte images selected with EVAL %OCCUR.
+Subfields, value images, CLEAR and %KDS use the active occurrence; CLEAR *ALL
+clears all images and selects occurrence 1. %SIZE(*ALL) and whole-structure native
+API parameters include all occurrences. Invalid selection reports status 122.
+RETURN retains selection and storage, while LR/reclaim create fresh state.
+See [the occurrence contract](rpg-occurrences.md) for bounds, parameter addresses,
+INDDS exchange, verification and remaining declaration/fixed/ABI requirements.
+
+## 22. Named constants and declaration evaluation
+
+DCL-C supports direct and CONST forms with inferred literal types. Earlier
+constants and pure ABS/LEN/SIZE/ELEM built-ins supply dimensions, native
+LEN/DIM/OCCURS/POS/OVERLAY and INZ. Layout queries include final INFDS/INDDS sizes
+and LIKEDS chains. Compiled constants remain immutable, and invalid definitions
+retain include locations. ELEM now correctly returns a multiple-occurrence
+structure's occurrence count. See [the declaration contract](rpg-declaration-constants.md)
+for exact functions, bounds, evidence and remaining forward/fixed/array/ABI work.
+
+## 23. Standalone runtime arrays
+
+DCL-S DIM now allocates native contiguous element storage with typed defaults and
+INZ, whole-array assignment/arithmetic, layout queries and borrowed API buffers.
+Native indexes enforce non-float zero-decimal values; INT truncates numeric and
+character fractions. Scaled whole-array API buffers expose raw CHAR metadata
+with zero decimal positions. See [the standalone array contract](rpg-standalone-arrays.md)
+for lifetimes, bounds, verification and remaining array/ABI requirements.
+
+## 24. Array sorting, search, totals and slices
+
+Free SORTA supports declared ASCEND/DESCEND sequences and compatible A/D
+extenders. Character order follows native CCSID bytes; overlay keys move whole
+base records. Five %LOOKUP variants implement sequence/range/duplicate rules,
+%XFOOT totals numeric arrays and expressions, and %SUBARR supplies bounded EVAL,
+sort and total operands. Subarray call arguments use detached copies. See
+[the array operation contract](rpg-array-operations.md) for status codes,
+verification and remaining fixed/keyed/ABI/native acceptance requirements.
+
+## 25. Keyed data structure arrays
+
+SORTA now accepts DS(*).KEY, explicitly indexed scalar-array subfields and
+DS %FIELDS lists. Selected %SUBARR ranges preserve other records, and complete
+DS bytes move together. Exact %LOOKUP searches keyed DS arrays sequentially;
+relative variants are rejected. Keyed forms do not create ordinary array values
+or writable API references. See [the keyed array contract](rpg-keyed-arrays.md)
+for direction, source/type/range checks, verification and remaining nested,
+collation, fixed/ABI and independent native acceptance requirements.
+
+## 26. Standalone compile-time arrays
+
+CTDATA/PERRCD and numeric EXTFMT(S/L/R) load trailing named or declaration-order
+records into native standalone arrays. DIM(*CTDATA) infers a fixed dimension for
+later layout constants. Data bypasses comments/directives, preserves source
+origins and saved snapshots, and retains normal RETURN/LR/reclaim storage rules.
+See [the compile-time array contract](rpg-compile-time-arrays.md) for values,
+bounds, sequence/CCSID checks and remaining fixed/DS/pre-runtime scope.
+
+## 27. Alternating compile-time arrays
+
+ALT(main) loads paired main/alternate source entries into independent native
+arrays. Either declaration order is supported; PERRCD on the main counts pairs,
+and each member has its own type, width, EXTFMT and sequence. Both can infer
+matching dimensions from the main section. SORTA and CLEAR affect only their
+selected array. See [the alternating array contract](rpg-alternating-arrays.md)
+for source/layout rules, saved-program lifecycle, byte vectors and remaining
+unequal-dimension, fixed/DS, pre-runtime and native acceptance scope.
+
+## 28. Traditional standalone definitions
+
+Native D-spec columns now declare standalone S fields/arrays and C constants,
+with the existing shifted-column convention also accepted. Type/default inference,
+right-justified length/decimals, keyword continuations, CTDATA/ALT and inferred
+counts enter the shared strict declaration pipeline. Fixed comments and commentary
+columns cannot change quote/data state. See the
+[traditional definition contract](rpg-fixed-declarations.md) for column layout,
+type bytes, saved-program/API evidence and remaining external DS/procedure,
+calculation, continued-literal/name and wider ABI/native acceptance requirements.
+
+## 29. Native standalone scalars
+
+Free and supported traditional standalone scalars now own native bytes while
+retaining scalar identity. Integer width, decimal scale, float precision,
+character CCSID/byte assignment, byte %SUBST and atomic conversion use the DS/
+array codec. Borrowed entry fields retain live aliases and caller ranges,
+readonly metadata and receiver prevalidation, then detach on return/error.
+See [the scalar storage contract](rpg-native-scalars.md) for byte vectors,
+queue/CL/API and saved-program evidence, bounds and remaining type/ABI work.
+
+## 30. Traditional calculation specifications
+
+Native C in column 6 now uses the ten-column operation field and physical
+factor/result/indicator positions. Supported arithmetic, COMP, indicators,
+extended expressions/continuations, structured loops, subroutines, CALL lists,
+entry parameters and declared file operations enter the shared runtime.
+Stored-result flags, job-byte COMP, DO pretests, dynamic program names and
+ordered/aliased parameters have explicit coverage. See
+[the traditional calculation contract](rpg-fixed-calculations.md) for columns,
+operations, API/CL/file evidence and remaining cycle/opcode/ILE/native acceptance.
+
+## 31. Native array searches and column-limited declarations
+
+Native LOOKUP now supports exact/nearest array searches, result indicators,
+captured starting-index writeback, native byte comparison and non-float numeric
+coefficients. %LOOKUPNE searches scalar/keyed DS arrays sequentially. LOOKUP
+and SETLL supply independent global/per-file %FOUND/%EQUAL state. Column-limited
+global DCL-S/C/F/DS declarations can precede native calculations. See
+[the array search contract](rpg-array-search.md) for physical columns, duplicate
+rules, index-on-miss reference conflict, source/API/CL evidence and remaining
+table-entry/collation/ABI/native acceptance requirements. C09 remains partial.
+
+## 32. Native tables and stored-program reference calls
+
+Global TAB-named DIM fields now own tables and expose one current scalar
+element. CTDATA/ALT loading, paired native LOOKUP and six %TLOOKUP variants
+share native storage/search rules. Scalar mutation, layout queries and API
+borrowing use the selected element; failed searches preserve selection.
+Stored CL/RPG calls now receive available reference cells, preserving live
+aliases and writes on errors. See [the table contract](rpg-tables.md) for source,
+selection/lifetime rules, exact layout validation and remaining native/ILE/ABI
+acceptance requirements. C09 remains partial.
+
+
+## 33. Native fixed data structures
+
+Traditional D-spec DS headers and subfields now share native byte storage with
+free DCL-DS. From/To entries supply byte positions, packed fields support
+PACKEVEN, and blank numeric subfield types infer zoned storage. Named/anonymous
+structures, fillers, continuations, overlays, arrays, LIKEDS, OCCURS and feedback
+bindings retain source positions and activation behavior. See
+[the fixed structure contract](rpg-fixed-structures.md) for columns, bounds,
+API/CL/file/terminal evidence and remaining external DS/procedure/ABI/native
+acceptance requirements. C09 remains partial.
+
+
+## 34. Native program signatures and CALLP(E)
+
+Traditional PR/main PI and free DCL-PR/DCL-PI now describe global scalar program
+references through EXTPGM. Formal metadata stays outside runtime variables;
+PI fields bind exact native layouts, aliases and captured addresses. Free and
+native CALLP(E) handle final-call errors while preserving argument-processing
+statuses for MONITOR. External process aliases reject before execution and
+returned cells are normalized before writeback. See
+[the program signature contract](rpg-program-signatures.md) for source forms,
+legacy compatibility, scalar ABI, error stages, bounds and remaining parameter
+modes/ILE/native acceptance requirements. C09 remains partial.
+
+
+## 35. CONST parameters and native character references
+
+Native program signatures now support scalar CONST on PR/main PI. Exact native
+variables retain live read-only aliases; literals, expressions and different
+formats use private formal-width images prepared before dispatch. Native character
+references may address a prefix of a longer actual while preserving caller tails.
+Compile/runtime/API guards protect readonly storage, and external responses can
+echo unchanged CONST values without writing them. See
+[the CONST/reference contract](rpg-const-parameters.md) for conversion/error rules,
+byte ranges, saved CL/RPG/API/process/terminal evidence and remaining parameter
+modes/ILE/native acceptance requirements. C09 remains partial.
+
+## 36. Optional native parameters and short-circuit guards
+
+Native PR/main PI and free DCL-PR/DCL-PI now accept OPTIONS(*NOPASS) on trailing
+scalar parameters, including CONST. Calls preserve actual counts through RPG,
+CL, APIs and external processes; missing required or excess actuals reject.
+%PASSED tests optional native PI presence, %PARMNUM returns real one-based PI
+positions (including declaration constants), and %PARMS/PSDS retain actual counts.
+AND/OR skip the right operand once their result is known. Retained activations
+recompute presence; unpassed storage access/forwarding diagnoses emulator status
+105 before target dispatch. See [optional parameters](rpg-optional-parameters.md)
+for source rules, IBM reference sections and finite diagnostics. Other OPTIONS,
+VALUE, native aggregate entry ABI, local/bound procedures and independent native
+reference/scale acceptance remain open; C09 is partial.
+
+## 37. Omitted native arguments
+
+Native scalar signatures accept OPTIONS(*OMIT), optionally combined with
+*NOPASS. *OMIT occupies one call position without allocating storage. %PARMS
+and PSDS include the slot; %PASSED is false and %OMITTED is true. An absent
+trailing parameter makes both presence built-ins false. Scoped omission
+descriptors, retained PI rebinding, explicit nested forwarding, no-alias storage
+rules and external JSON null response validation preserve this distinction.
+At runtime, omitted storage access diagnoses emulator status 105; native API
+adapters retain their checked storage rules. See [omitted arguments](rpg-omitted-parameters.md)
+for source forms, IBM semantics, bounds, saved/process/terminal evidence and
+remaining aggregate/local/ILE/API-pointer/native-acceptance requirements.
+C09 remains partial.
+
+## 38. Native local procedures, VALUE and scalar returns
+
+P-spec B/E and DCL-PROC/END-PROC now define local compilation-unit procedures.
+Explicit/automatic scalar PR/PI signatures bind local calls and expressions,
+including VALUE copies, live references, CONST, NOPASS and OMIT. Independent
+invocations support recursion, automatic local arrays/structures and retained
+scalar/array STATIC storage; module globals, tables, occurrences, indicators and
+file positions remain shared. Local PSDS/files and use of INFSR files reject.
+Scalar RETURN values use the native codec; local PSSR can recover or return,
+while abnormal completion/cancellation preserves call boundaries and cleanup.
+See [the local procedure contract](rpg-local-procedures.md) for forms, scopes,
+limits, saved/API/process/terminal evidence and remaining return-layout, foreign,
+module/service-program binding, cycle/exception and native-reference work.
+C09 remains partial.
+
+## 39. Native fixed array and LIKEDS parameters
+
+Native and free PR/PI accept fixed DIM arrays and LIKEDS structures/structure
+arrays. References preserve indexed/qualified aliases, formal prefixes and
+caller tails through nested calls. CONST inputs retain live aliases or use
+formal-layout conversion images; local VALUE arrays/structures use private
+mutable copies. Optional/omitted storage guards, source diagnostics, CL character
+storage, native API buffers and checked external-process writeback apply to
+these interfaces. See [aggregate parameters](rpg-aggregate-parameters.md) for
+compatibility, bounds, saved/API/process/terminal evidence and remaining
+additional return-layout, variable-size, table, foreign and module-binding work.
+C09 remains partial.
+
+## 40. Native aggregate returns and RTNPARM
+
+Native/free procedure PR/PI support fixed DIM, LIKEDS and RTNPARM return layouts.
+Scalar operands broadcast to arrays; missing elements receive type defaults;
+surplus elements are ignored. Return images detach from callee storage, convert
+through the declared codec and validate before caller assignment. RTNPARM shifts
+runtime/declaration %PARMNUM and %PARMS while preserving explicit optional/omitted
+bindings and main PSDS counts. Return images participate in invocation storage
+bounds. Bound whole-structure CLEAR now validates and publishes through its
+reference binding. See [return values](rpg-return-values.md) for source forms,
+saved/API/process/terminal evidence and remaining return formats, precision,
+variable-size, foreign, module-binding and native-reference work. C09 remains partial.
+
+## 41. Native variable-size reference parameters
+
+Native/free PR/PI support OPTIONS(*VARSIZE) on reference character/structure
+parameters and arrays, including CONST, NOPASS and OMIT combinations. Declared
+sizes remain distinct from actual capacity and character-array stride. Checked
+byte slices preserve live aliases and caller tails; bounds, readonly status,
+scoped lifetimes and actual-storage admission apply across program/procedure,
+CL-to-RPG, native API and process boundaries. Entry state detaches into owned
+snapshots. See [variable-size parameters](rpg-variable-parameters.md) for forms,
+saved/API/process/terminal evidence and remaining dynamic/type/descriptor,
+foreign and module-binding work. C09 remains partial.
+
+
+## 42. Exact and adjusted native parameters
+
+Native/free PR/PI support OPTIONS(*EXACT) checks for supported scalar/array
+lengths, numeric positions, dimensions/order and LIKEDS type ancestry.
+OPTIONS(*TRIM) and *RIGHTADJ prepare private character CONST/VALUE images before
+dispatch, including arrays. Known declarations reject at compile time; remaining
+value checks reject with status 105 before conversion or target side effects.
+These caller-side attributes can appear on an explicit PR while its PI omits
+them. Existing optional/omitted/RTNPARM modes, bounds and readonly lifetimes apply.
+See [exact and adjusted parameters](rpg-parameter-options.md) for forms, precise
+byte semantics, evidence and remaining type/ILE limitations. C09 remains partial.
+
+
+## 43. Native LIKE types and exact ancestry
+
+Native/free standalone, subfield, parameter and return declarations support
+LIKE of declared supported native types, with explicit signed length
+adjustments. Kind, length, scale and opaque/text mode are inherited; dimensions,
+sort order, initialization and passing/storage flags remain explicit. Fixed
+forms use signed Length columns and blank type/decimal columns. Type identities
+survive LIKE chains, related subfields, indexed actuals and return metadata for
+OPTIONS(*EXACT). Existing bounds, readonly and pre-dispatch checks apply.
+See [LIKE declarations](rpg-like-declarations.md) for target availability, byte
+semantics, evidence and remaining external/type/ILE work. C09 remains partial.
+
+
+## 44. Forward native declaration types
+
+LIKE resolves later fields, subfields, PI parameters and explicit/implicit
+procedure returns. Source-order storage, initialization and overlay binding stay
+separate from cached metadata resolution. Later local types and constants shadow
+global names, and type identities remain stable for EXACT. Missing/void types,
+cycles and dependencies beyond 64 active levels fail with source/include
+locations before object creation. Compiler callbacks detach on every exit.
+See [forward declarations](rpg-forward-declarations.md) for supported forms,
+constant visibility, evidence and remaining forward-value/external/type/ILE work.
+C09 remains partial.
+
+
+## 45. Forward native LIKEDS binding
+
+Structure copies, PR/PI parameters and returns can reference later named native
+templates. Metadata and inherited initialization resolve separately while
+retaining declaration identities for EXACT. DIM/OCCURS remain explicit on the
+copy; subfield layouts, defaults and filler/overlay bytes are preserved.
+Feedback extents propagate through forward chains, and local template names do
+not change imported global layouts. Existing source diagnostics, depth/storage
+limits and interface restrictions apply. See
+[forward structures](rpg-forward-structures.md) for initialization modes,
+evidence and remaining nested/external/type/ILE work. C09 remains partial.
+
+
+## 46. Data templates without runtime storage
+
+Standalone and native structure definitions accept TEMPLATE in free and
+traditional D-specs. LIKE/LIKEDS copies and PR/PI/return layouts retain metadata
+and ancestry while ordinary copies allocate storage. Template buffers and
+scalar slots are omitted, including large arrays and procedure-local layouts.
+%SIZE/%ELEM use declared metadata; declaration-only %LEN/%DECPOS follow the
+supported type rules. Runtime data operands and storage-dependent bindings
+reject during compilation, with status-105 guards for direct runtime access.
+Component/count limits still apply; template layouts do not consume runtime
+allocation budgets. WORKSTN file templates/file parameters, complete CTDATA template behavior,
+nested/EXTNAME/WORKSTN record layouts and independent native acceptance remain open.
+See [data templates](rpg-templates.md). C09 remains partial.
+
+
+## 47. DISK LIKEREC and result data structures
+
+LIKEREC defines qualified layouts from saved DISK record descriptions, with
+input/output/all extracts and packed key-order structures for %KDS. Native
+parameters and returns accept those layouts; LIKEDS and TEMPLATE retain record
+origins. CHAIN/READ/READP/READE/READPE and WRITE/UPDATE accept checked structures
+or indexed structure-array elements. Input stages conversions before publishing
+bytes, preserves imported scalar fields and leaves receivers unchanged on a
+miss or EOF. Output validates one image before file mutation. Existing locks,
+status handling, native storage/lifetime limits and source locations apply.
+Metadata lookup is lazy, cached and source-bound. File parameters and WORKSTN file copies,
+WORKSTN and EXTNAME/nested/multi-format layouts, null extracts, broader CCSIDs
+and independent native acceptance remain open. See
+[record structures](rpg-record-structures.md). C09 remains partial.
+
+
+## 48. DISK TEMPLATE, LIKEFILE and QUALIFIED definitions
+
+DISK templates retain metadata without scalar fields or runtime file opens.
+LIKEFILE requires an earlier parent and inherits supported file properties,
+qualifying record names and requiring result-buffer I/O. Constants for EXTFILE
+inherit; default runtime names, USROPN and TEMPLATE do not. Copies have independent
+cursors and share record ancestry for LIKEREC and exact interfaces. BLOCK(*NO)
+resolves input-parent blocking explicitly. Version-4 saved bindings validate
+families and every recomputed request/layout; ordinary versions remain compatible.
+Free and native fixed F declarations, continuations and standard C result
+operands are covered. File parameters, local files, WORKSTN variants, blocked I/O
+and broader native/ILE acceptance remain open. See
+[DISK file definitions](rpg-file-definitions.md). C09 remains partial.

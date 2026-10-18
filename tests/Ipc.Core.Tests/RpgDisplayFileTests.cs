@@ -20,7 +20,7 @@ using static Ipc.Core.Tests.DisplayPanelTests;
 
 namespace Ipc.Core.Tests;
 
-public sealed class RpgDisplayFileTests : IDisposable
+public sealed partial class RpgDisplayFileTests : IDisposable
 {
     private readonly IpcSystem _system = IpcSystem.Create(":memory:");
     private readonly SqliteFileStore _sources;
@@ -408,9 +408,11 @@ public sealed class RpgDisplayFileTests : IDisposable
         Display(Screen); Compile(File() + "return;");
         var descriptor = _system.Objects.GetRequired("QGPL", "APP", ObjectType.Program);
         var json = descriptor.ExtendedAttributes![RpgWorkstationBindings.AttributeName];
-        json = defect switch { "key" => json.Replace("\"version\":1", "\"version\":1,\"version\":1", StringComparison.Ordinal),
+        using var metadata = JsonDocument.Parse(json);
+        var version = metadata.RootElement.GetProperty("version").GetInt32();
+        json = defect switch { "key" => json.Replace($"\"version\":{version}", $"\"version\":{version},\"version\":{version}", StringComparison.Ordinal),
             "hash" => json.Replace("\"textHash\":\"", "\"textHash\":\"0", StringComparison.Ordinal),
-            "layout" => json.Replace("\"length\":10", "\"length\":11", StringComparison.Ordinal), _ => json.Replace("\"version\":1", "\"version\":2", StringComparison.Ordinal) };
+            "layout" => json.Replace("\"length\":10", "\"length\":11", StringComparison.Ordinal), _ => json.Replace($"\"version\":{version}", "\"version\":999", StringComparison.Ordinal) };
         Assert.Throws<InvalidDataException>(() => RpgWorkstationBindings.Restore(descriptor.Source!, json));
     }
 

@@ -80,7 +80,7 @@ MONITOR chooses the first matching ON-ERROR in the nearest enclosing monitored
 body, then resumes after ENDMON. Unfiltered ON-ERROR means `*ALL` (100–9999);
 `*PROGRAM` means 100–999 or 9999 and `*FILE` means 1000–2999. Colon-separated
 filters and leading-zero numeric spellings are supported. Explicit numeric
-filters currently accept 100, 102, 103, 105, 112, 121, 123, 202, 452, 907,
+filters currently accept 100, 102, 103, 105, 112, 121, 122, 123, 202, 452, 907,
 1021, 1022, 1211, 1215, 1216, 1217,
 1218, 1221, 1222, 1299 and 9999; unsupported codes fail compilation. Limits are
 32 filters per handler, 256 handlers per group and 256 nested control blocks.
@@ -90,7 +90,8 @@ and [ON-ERROR](https://www.ibm.com/docs/ssw_ibm_i_74/rzasd/zzonerr.htm) rules.
 Handler errors bypass that same monitor and can reach an outer handler. EXSR
 preserves the original numeric failure; a called program/procedure failure
 reports 202 to the caller. Typed program failures currently cover division by
-zero (102), substring bounds (100) and ordinary array bounds (121). Native DS
+zero (102), substring bounds (100), ordinary array bounds (121) and
+multiple-occurrence selection bounds (122). Native DS
 fields additionally report overflow (103), numeric conversion (105), invalid
 datetime (112), character conversion (452) and decimal-data errors (907). Inner loop
 and SELECT state is unwound during handler transfer, preserving enclosing
@@ -110,7 +111,7 @@ subroutine/call propagation, bounds, loop/SELECT transfers and source diagnostic
 The real terminal compiles and calls RPGSTATUS, exercising closed-file E,
 numeric status reset, N inquiry and ON-ERROR 1221.
 
-This is a bounded implementation. Full INFDS/PSDS byte layouts, INFSR/*PSSR,
+This is a bounded implementation. Full INFDS/PSDS byte layouts, native cycle return points,
 ON-EXCP, CALLP(E), other extenders, remaining program/file/display status mappings,
 all native fixed calculation layouts, commitment open policy/isolation and
 independent native reference suites remain open. These changes do not close

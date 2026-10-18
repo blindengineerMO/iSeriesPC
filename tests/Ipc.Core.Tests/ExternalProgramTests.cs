@@ -38,6 +38,78 @@ public sealed class ExternalProgramTests : IDisposable
         return _system.Objects.GetRequired("QGPL", name, ObjectType.Program);
     }
 
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void RPG_native_and_unprototyped_aliases_reject_before_external_process_side_effects(bool prototype)
+    {
+        var path = Path.Combine(_directory, "rpg-alias-effect.json"); Register("SIGTARGET", "effect", path: path);
+        var source = "**free\n" + (prototype ? "dcl-pr RUN extpgm('SIGTARGET');\nA int(3);\nB int(3);\nend-pr;\n" : "") +
+            "dcl-s N int(3) inz(7);\ncallp " + (prototype ? "RUN" : "SIGTARGET") + "(N:N);";
+        ClExternalCallTests.Create(_system, "SIGCALLER", "RPG", source);
+        var result = new CommandService(_system).Execute("CALL QGPL/SIGCALLER");
+        Assert.True(result.IsError); Assert.Contains("alias-capable", result.Message); Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(false, "rpg-update", "12:4")] [InlineData(true, "rpg-update", "12:4")]
+    [InlineData(false, "rpg-update-fail", "12:4")] [InlineData(true, "rpg-update-fail", "12:4")]
+    [InlineData(false, "rpg-update-bad", "3:4")] [InlineData(true, "rpg-update-bad", "3:4")]
+    public void RPG_external_responses_validate_every_reference_before_writeback_and_keep_valid_error_updates(bool prototype, string mode, string expected)
+    {
+        Register("SIGTARGET", mode, protocol: 2);
+        var source = "**free\n" + (prototype ? "dcl-pr RUN extpgm('SIGTARGET');\nA int(10);\nB int(10);\nend-pr;\n" : "") +
+            "dcl-s N int(10) inz(3);\ndcl-s OTHER int(10) inz(4);\ncallp(e) " + (prototype ? "RUN" : "SIGTARGET") + "(N:OTHER);\nsndpgmmsg %char(N)+':'+%char(OTHER);";
+        ClExternalCallTests.Create(_system, "SIGCALLER", "RPG", source);
+        var result = new CommandService(_system).Execute("CALL QGPL/SIGCALLER");
+        Assert.False(result.IsError, result.Message); Assert.EndsWith(expected, result.Message?.Trim());
+    }
+
+    [Theory]
+    [InlineData(false, false)] [InlineData(false, true)] [InlineData(true, false)] [InlineData(true, true)]
+    public void CONST_external_echoes_keep_readonly_metadata_through_direct_and_nested_CL_calls(bool throughCl, bool changed)
+    {
+        Register("CONSTEXT", (throughCl ? "cl-const-" : "rpg-const-") + (changed ? "change" : "echo"), protocol: 2);
+        if (throughCl) ClExternalCallTests.Create(_system, "CONSTCL", "CLP", "PGM PARM(&N &INPUT)\nDCL &N *INT LEN(4)\nDCL &INPUT *INT LEN(4)\nCALL CONSTEXT PARM(&N &INPUT)\nENDPGM");
+        var source = "**free\ndcl-pr RUN extpgm('" + (throughCl ? "CONSTCL" : "CONSTEXT") + "');\nOUTPUT int(10);\nINPUT int(10) const;\nend-pr;\ndcl-s N int(10) inz(3);\n" +
+            "callp(e) RUN(N:4);\nsndpgmmsg %char(N);";
+        ClExternalCallTests.Create(_system, "CONSTPGM", "RPG", source);
+        var result = new CommandService(_system).Execute("CALL QGPL/CONSTPGM"); Assert.False(result.IsError, result.Message);
+        Assert.EndsWith(changed ? "3" : "12", result.Message?.Trim());
+    }
+
+    [Theory]
+    [InlineData(0)] [InlineData(1)] [InlineData(2)]
+    public void Native_optional_prototypes_preserve_actual_counts_in_the_external_process_protocol(int count)
+    {
+        var path = Path.Combine(_directory, "optional-arguments.json"); Register("OPTEXT", "effect", path: path, protocol: 2);
+        ClExternalCallTests.Create(_system, "OPTCALLER", "RPG", "**free\ndcl-pr RUN extpgm('OPTEXT');\nN int(10) options(*nopass);\nTEXT char(4) const options(*nopass);\nend-pr;\n" +
+            "dcl-s N int(10) inz(7);\ncallp RUN(" + (count == 0 ? "" : count == 1 ? "N" : "N:'ABCD'") + ");\nsndpgmmsg %char(N);");
+        var result = new CommandService(_system).Execute("CALL QGPL/OPTCALLER"); Assert.False(result.IsError, result.Message); Assert.EndsWith("7", result.Message?.Trim());
+        using var document = JsonDocument.Parse(File.ReadAllText(path)); Assert.Equal(count, document.RootElement.GetArrayLength());
+        if (count > 0) Assert.Equal(7, document.RootElement[0].GetInt32());
+        if (count == 2) Assert.Equal("ABCD", document.RootElement[1].GetString());
+    }
+
+    [Theory]
+    [InlineData(1, false)] [InlineData(1, true)] [InlineData(2, false)] [InlineData(2, true)]
+    public void Native_OMIT_process_arguments_use_null_slots_and_validate_every_return_before_writeback(int protocol, bool changed)
+    {
+        Register("OMITEXT", changed ? "rpg-omit-change" : "rpg-omit-echo", protocol: protocol);
+        ClExternalCallTests.Create(_system, "OMITCALL", "RPG", "**free\ndcl-pr RUN extpgm('OMITEXT');\nN int(10);\nA int(3) options(*omit);\nB char(4) const options(*omit);\nend-pr;\n" +
+            "dcl-s N int(10) inz(7);\ncallp(e) RUN(N:*omit:*omit);\nsndpgmmsg %char(N);");
+        var result = new CommandService(_system).Execute("CALL QGPL/OMITCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(changed ? "7" : "12", result.Message?.Trim());
+    }
+
+    [Theory]
+    [InlineData("rpg-update", "12")] [InlineData("rpg-update-fail", "12")] [InlineData("rpg-update-bad", "3")]
+    public void Local_native_functions_borrow_private_receivers_for_real_external_process_calls(string mode, string expected)
+    {
+        Register("PROCTARGET", mode, protocol: 2);
+        ClExternalCallTests.Create(_system, "PROCCALL", "RPG", "**free\ndcl-pr EXT extpgm('PROCTARGET');\nA int(10);\nB int(10);\nend-pr;\ndcl-s RESULT int(10);\neval RESULT=GET();\nsndpgmmsg %char(RESULT);\nreturn;\n" +
+            "dcl-proc GET;\ndcl-pi *n int(10) end-pi;\ndcl-s A int(10) inz(3);\ndcl-s B int(10) inz(4);\ncallp(e) EXT(A:B);\nreturn A;\nend-proc;");
+        var result = new CommandService(_system).Execute("CALL QGPL/PROCCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(expected, result.Message?.Trim());
+    }
+
     [Fact]
     public void Defined_command_passes_a_native_CPP_typed_scalars_and_binary_list_and_file_layouts()
     {
@@ -49,6 +121,189 @@ public sealed class ExternalProgramTests : IDisposable
         using var document = JsonDocument.Parse(File.ReadAllText(path)); var arguments = document.RootElement;
         Assert.Equal("0002C14040C24040", Convert.ToHexString(Ipc.Core.Text.CodePage.ToBytes(37, arguments[0].GetString()!)));
         Assert.Equal("ORDERS    QGPL      ", arguments[1].GetString()); Assert.Equal(12, arguments[2].GetInt32());
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update", "12:3")] [InlineData("rpg-aggregate-bad", "3:3")]
+    public void Aggregate_process_buffers_validate_later_outputs_before_committing_a_prefix(string mode, string expected)
+    {
+        Register("AGGEXT", mode, protocol: 2);
+        ClExternalCallTests.Create(_system, "AGGCALL", "RPG", "**free\ndcl-pr RUN extpgm('AGGEXT');\nARR int(3) dim(3);\nN int(10);\nend-pr;\ndcl-s ARR int(3) dim(4) inz(3);\ndcl-s N int(10) inz(4);\ncallp(e) RUN(ARR:N);\nsndpgmmsg %char(ARR(2))+':'+%char(ARR(4));");
+        var result = new CommandService(_system).Execute("CALL QGPL/AGGCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(expected, result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Aggregate_and_element_process_aliases_reject_before_starting_the_process()
+    {
+        var path = Path.Combine(_directory, "aggregate-effect.json"); Register("AGGEXT", "effect", path: path, protocol: 2);
+        ClExternalCallTests.Create(_system, "AGGCALL", "RPG", "**free\ndcl-pr RUN extpgm('AGGEXT');\nARR int(3) dim(3);\nN int(3);\nend-pr;\ndcl-s ARR int(3) dim(4) inz(3);\ncallp RUN(ARR:ARR(2));");
+        var result = new CommandService(_system).Execute("CALL QGPL/AGGCALL"); Assert.True(result.IsError); Assert.Contains("alias-capable", result.Message); Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update", "12")] [InlineData("rpg-aggregate-bad", "3")]
+    public void Native_array_return_images_capture_validated_external_updates_before_the_local_frame_exits(string mode, string expected)
+    {
+        Register("RETEXT", mode, protocol: 2);
+        ClExternalCallTests.Create(_system, "RETCALL", "RPG", "**free\ndcl-pr RUN extpgm('RETEXT');\nA int(3) dim(3);\nN int(10);\nend-pr;\ndcl-s RESULT int(3) dim(3);\neval RESULT=GET();\nsndpgmmsg %char(RESULT(2));\nreturn;\ndcl-proc GET;\ndcl-pi *n int(3) dim(3) rtnparm end-pi;\ndcl-s LOCAL int(3) dim(3) inz(3);\ndcl-s N int(10) inz(4);\ncallp(e) RUN(LOCAL:N);\nreturn LOCAL;\nend-proc;");
+        var result = new CommandService(_system).Execute("CALL QGPL/RETCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(expected, result.Message?.Trim());
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update", "12")] [InlineData("rpg-aggregate-bad", "3")]
+    public void Variable_array_process_calls_transfer_actual_storage_and_validate_all_outputs_before_commit(string mode, string expected)
+    {
+        Register("VAREXT", mode, protocol: 2);
+        ClExternalCallTests.Create(_system, "VARCALL", "RPG", "**free\ndcl-pr RUN extpgm('VAREXT');\nA int(3) dim(100) options(*varsize);\nN int(10);\nend-pr;\ndcl-s A int(3) dim(3) inz(3);\ndcl-s N int(10) inz(4);\ncallp(e) RUN(A:N);\nsndpgmmsg %char(A(2));");
+        var result = new CommandService(_system).Execute("CALL QGPL/VARCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(expected, result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Variable_array_and_element_process_aliases_reject_before_process_side_effects()
+    {
+        var path = Path.Combine(_directory, "variable-effect.json"); Register("VAREXT", "effect", path: path, protocol: 2);
+        ClExternalCallTests.Create(_system, "VARCALL", "RPG", "**free\ndcl-pr RUN extpgm('VAREXT');\nA int(3) dim(100) options(*varsize);\nN int(3);\nend-pr;\ndcl-s A int(3) dim(3) inz(3);\ncallp RUN(A:A(2));");
+        var result = new CommandService(_system).Execute("CALL QGPL/VARCALL"); Assert.True(result.IsError); Assert.Contains("alias-capable", result.Message); Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Transformed_CONST_process_echoes_validate_all_outputs_before_committing(bool changed)
+    {
+        Register("OPTEXT", changed ? "rpg-options-change" : "rpg-options-echo", protocol: 2);
+        ClExternalCallTests.Create(_system, "OPTCALL", "RPG", "**free\ndcl-pr RUN extpgm('OPTEXT');\nN int(10);\nP char(4) const options(*trim:*rightadj:*exact);\nend-pr;\ndcl-s N int(10) inz(3);\ndcl-s A char(8) inz('AB');\ncallp(e) RUN(N:A);\nsndpgmmsg %char(N)+':'+%trim(A);");
+        var result = new CommandService(_system).Execute("CALL QGPL/OPTCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(changed ? "3:AB" : "12:AB", result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Exact_character_rejection_prevents_process_side_effects()
+    {
+        var path = Path.Combine(_directory, "exact-effect.json"); Register("OPTEXT", "effect", path: path, protocol: 2);
+        ClExternalCallTests.Create(_system, "OPTCALL", "RPG", "**free\ndcl-pr RUN extpgm('OPTEXT');\nP char(4) const options(*exact);\nend-pr;\nmonitor;\ncallp(e) RUN('ABCDE');\non-error 105;\nsndpgmmsg 'EXACT REJECTED';\nendmon;");
+        var result = new CommandService(_system).Execute("CALL QGPL/OPTCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith("EXACT REJECTED", result.Message?.Trim()); Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void LIKE_character_roots_reach_processes_as_transformed_readonly_values(bool changed)
+    {
+        Register("LIKEXT", changed ? "rpg-options-change" : "rpg-options-echo", protocol: 2);
+        ClExternalCallTests.Create(_system, "LIKECALL", "RPG", "**free\ndcl-s ROOT char(4);\ndcl-pr RUN extpgm('LIKEXT');\nN int(10);\nP like(ROOT) const options(*trim:*rightadj:*exact);\nend-pr;\ndcl-s N int(10) inz(3);\ndcl-s A like(ROOT:+4) inz('AB');\ncallp(e) RUN(N:A);\nsndpgmmsg %char(N)+':'+%trim(A);");
+        var result = new CommandService(_system).Execute("CALL QGPL/LIKECALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(changed ? "3:AB" : "12:AB", result.Message?.Trim());
+    }
+
+    [Fact]
+    public void LIKE_exact_rejects_untyped_values_before_process_launch()
+    {
+        var path = Path.Combine(_directory, "like-effect.json"); Register("LIKEXT", "effect", path: path, protocol: 2);
+        ClExternalCallTests.Create(_system, "LIKECALL", "RPG", "**free\ndcl-s ROOT char(4);\ndcl-pr RUN extpgm('LIKEXT');\nP like(ROOT) const options(*exact);\nend-pr;\nmonitor;\ncallp RUN('AB');\non-error 105;\nsndpgmmsg 'LIKE EXACT REJECTED';\nendmon;");
+        var result = new CommandService(_system).Execute("CALL QGPL/LIKECALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith("LIKE EXACT REJECTED", result.Message?.Trim()); Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Forward_LIKE_prototypes_keep_readonly_process_response_atomicity(bool changed)
+    {
+        Register("FWDEXT", changed ? "rpg-options-change" : "rpg-options-echo", protocol: 2);
+        ClExternalCallTests.Create(_system, "FWDCALL", "RPG", "**free\ndcl-pr RUN extpgm('FWDEXT');\nN int(10);\nP like(ROOT) const options(*trim:*rightadj:*exact);\nend-pr;\ndcl-s A like(ROOT:+4) inz('AB');\ndcl-s ROOT char(4);\ndcl-s N int(10) inz(3);\ncallp(e) RUN(N:A);\nsndpgmmsg %char(N)+':'+%trim(A);");
+        var result = new CommandService(_system).Execute("CALL QGPL/FWDCALL"); Assert.False(result.IsError, result.Message); Assert.EndsWith(changed ? "3:AB" : "12:AB", result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Unrelated_forward_exact_types_reject_creation_before_process_side_effects()
+    {
+        var path = Path.Combine(_directory, "forward-effect.json"); Register("FWDEXT", "effect", path: path, protocol: 2);
+        var source = "**free\ndcl-pr RUN extpgm('FWDEXT');\nP like(ROOT) const options(*exact);\nend-pr;\ndcl-s A char(4);\ndcl-s ROOT char(4);\ncallp RUN(A);";
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections, _system.Objects); files.CreateSourceFile("QGPL", "FWDSRC", sourceWidth: 240); files.SaveSourceMember("QGPL", "FWDSRC", "FWDCALL", source, null);
+        var result = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/FWDCALL) SRCFILE(QGPL/FWDSRC)"); Assert.True(result.IsError); Assert.Contains("*EXACT", result.Message); Assert.False(File.Exists(path)); Assert.False(_system.Objects.Exists("QGPL", "FWDCALL", ObjectType.Program));
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update", "12")] [InlineData("rpg-aggregate-bad", "3")]
+    public void Forward_structure_process_outputs_validate_completely_before_writeback(string mode, string expected)
+    {
+        Register("FDSEXT", mode, protocol: 2);
+        ClExternalCallTests.Create(_system, "FDSCALL", "RPG", "**free\ndcl-pr RUN extpgm('FDSEXT');\nP likeds(ROOT);\nN int(10);\nend-pr;\ndcl-ds A likeds(ROOT) inz(*likeds);\ndcl-ds ROOT qualified inz;\nC int(3) dim(3) inz(3);\nend-ds;\ndcl-s N int(10) inz(4);\ncallp(e) RUN(A:N);\nsndpgmmsg %char(A.C(2));");
+        var result = new CommandService(_system).Execute("CALL QGPL/FDSCALL"); Assert.False(result.IsError,result.Message); Assert.EndsWith(expected,result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Cyclic_forward_structure_templates_prevent_process_side_effects()
+    {
+        var path = Path.Combine(_directory,"fds-effect.json"); Register("FDSEXT","effect",path:path,protocol:2);
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects); files.CreateSourceFile("QGPL","FDSSRC",sourceWidth:240);
+        files.SaveSourceMember("QGPL","FDSSRC","FDSCALL","**free\ndcl-ds A likeds(B) inz(*likeds);\ndcl-ds B likeds(A) inz(*likeds);\ncallp FDSEXT(A);",null);
+        var result = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/FDSCALL) SRCFILE(QGPL/FDSSRC)"); Assert.True(result.IsError); Assert.Contains("Cyclic",result.Message); Assert.False(File.Exists(path)); Assert.False(_system.Objects.Exists("QGPL","FDSCALL",ObjectType.Program));
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update", "12")] [InlineData("rpg-aggregate-bad", "3")]
+    public void Data_template_process_buffers_preserve_atomic_response_validation(string mode, string expected)
+    {
+        Register("TMPLEXT", mode, protocol: 2);
+        ClExternalCallTests.Create(_system, "TMPLCALL", "RPG", "**free\ndcl-pr RUN extpgm('TMPLEXT');\nP likeds(ROOT);\nN int(10);\nend-pr;\ndcl-ds A likeds(ROOT) inz(*likeds);\ndcl-ds ROOT qualified template inz;\nC int(3) dim(3) inz(3);\nend-ds;\ndcl-s N int(10) inz(4);\ncallp(e) RUN(A:N);\nsndpgmmsg %char(A.C(2));");
+        var result = new CommandService(_system).Execute("CALL QGPL/TMPLCALL"); Assert.False(result.IsError,result.Message); Assert.EndsWith(expected,result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Template_data_operands_reject_creation_before_process_side_effects()
+    {
+        var path = Path.Combine(_directory,"template-effect.json"); Register("TMPLEXT","effect",path:path,protocol:2);
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects); files.CreateSourceFile("QGPL","TMPLSRC",sourceWidth:240);
+        files.SaveSourceMember("QGPL","TMPLSRC","TMPLCALL","**free\ndcl-s ROOT char(4) template;\ncallp TMPLEXT(ROOT);",null);
+        var result = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/TMPLCALL) SRCFILE(QGPL/TMPLSRC)"); Assert.True(result.IsError); Assert.Contains("TEMPLATE",result.Message); Assert.False(File.Exists(path)); Assert.False(_system.Objects.Exists("QGPL","TMPLCALL",ObjectType.Program));
+    }
+
+    private void CreateRecordProcessFile(string name="RECFILE", string record="REC")
+    {
+        var format = new Ipc.Db.Definitions.RecordFormat { Name=record, Fields=[
+            new() { Name="A",Type=Ipc.Db.Definitions.FieldType.Binary,Length=1 },
+            new() { Name="B",Type=Ipc.Db.Definitions.FieldType.Binary,Length=1 },
+            new() { Name="C",Type=Ipc.Db.Definitions.FieldType.Binary,Length=1 }] };
+        format.AssignPositions();
+        new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects).CreatePhysicalFile("QGPL",name,
+            new() { Name=name,Attribute=Ipc.Db.Definitions.FileAttribute.Physical,Formats=[format] },"");
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update","12")] [InlineData("rpg-aggregate-bad","3")]
+    public void LIKEREC_process_buffers_validate_all_outputs_before_writeback(string mode,string expected)
+    {
+        CreateRecordProcessFile(); Register("RECEXT",mode,protocol:2);
+        var source="**free\ndcl-f RECFILE;\ndcl-pr RUN extpgm('RECEXT');\nP likerec(REC);\nN int(10);\nend-pr;\ndcl-ds BUFFER likerec(REC) inz;\ndcl-s N int(10) inz(4);\neval BUFFER.A=3;\neval BUFFER.B=3;\neval BUFFER.C=3;\ncallp(e) RUN(BUFFER:N);\nsndpgmmsg %char(BUFFER.B);";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects); files.CreateSourceFile("QGPL","RECSRC",sourceWidth:240); files.SaveSourceMember("QGPL","RECSRC","RECCALL",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/RECCALL) SRCFILE(QGPL/RECSRC)"); Assert.False(created.IsError,created.Message); files.RemoveMember("QGPL","RECSRC","RECCALL");
+        var result=new CommandService(_system).Execute("CALL QGPL/RECCALL"); Assert.False(result.IsError,result.Message); Assert.EndsWith(expected,result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Unrelated_LIKEREC_exact_arguments_prevent_process_launch()
+    {
+        CreateRecordProcessFile(); CreateRecordProcessFile("OTHERFILE","OTHERREC");
+        var path=Path.Combine(_directory,"record-effect.json"); Register("RECEXT","effect",path:path,protocol:2);
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects); files.CreateSourceFile("QGPL","RECSRC",sourceWidth:240);
+        files.SaveSourceMember("QGPL","RECSRC","RECCALL","**free\ndcl-f RECFILE;\ndcl-f OTHERFILE;\ndcl-pr RUN extpgm('RECEXT');\nP likerec(REC) options(*exact);\nend-pr;\ndcl-ds BUFFER likerec(OTHERREC) inz;\ncallp RUN(BUFFER);",null);
+        var result=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/RECCALL) SRCFILE(QGPL/RECSRC)"); Assert.True(result.IsError); Assert.Contains("*EXACT",result.Message); Assert.False(File.Exists(path)); Assert.False(_system.Objects.Exists("QGPL","RECCALL",ObjectType.Program));
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update","12")] [InlineData("rpg-aggregate-bad","3")]
+    public void LIKEFILE_families_preserve_process_response_atomicity(string mode,string expected)
+    {
+        CreateRecordProcessFile();Register("FILEEXT",mode,protocol:2);
+        var source="**free\ndcl-f MODEL qualified template block(*no) extdesc('QGPL/RECFILE');\ndcl-f COPY likefile(MODEL) extfile('QGPL/RECFILE');\ndcl-pr RUN extpgm('FILEEXT');\nP likerec(MODEL.REC) options(*exact);\nN int(10);\nend-pr;\ndcl-ds BUFFER likerec(COPY.REC) inz;\ndcl-s N int(10) inz(4);\neval BUFFER.A=3;\neval BUFFER.B=3;\neval BUFFER.C=3;\ncallp(e) RUN(BUFFER:N);\nsndpgmmsg %char(BUFFER.B);";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","FILESRC",sourceWidth:240);files.SaveSourceMember("QGPL","FILESRC","FILECALL",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/FILECALL) SRCFILE(QGPL/FILESRC)");Assert.False(created.IsError,created.Message);files.RemoveMember("QGPL","FILESRC","FILECALL");
+        var result=new CommandService(_system).Execute("CALL QGPL/FILECALL");Assert.False(result.IsError,result.Message);Assert.EndsWith(expected,result.Message?.Trim());
+    }
+
+    [Fact]
+    public void File_template_arguments_prevent_process_launch_and_program_creation()
+    {
+        CreateRecordProcessFile();var path=Path.Combine(_directory,"file-template-effect.json");Register("FILEEXT","effect",path:path,protocol:2);
+        var source="**free\ndcl-f MODEL template extdesc('QGPL/RECFILE');\ncallp FILEEXT(MODEL);";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","FILESRC",sourceWidth:240);files.SaveSourceMember("QGPL","FILESRC","FILECALL",source,null);
+        var result=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/FILECALL) SRCFILE(QGPL/FILESRC)");Assert.True(result.IsError);Assert.Contains("TEMPLATE",result.Message);Assert.False(File.Exists(path));Assert.False(_system.Objects.Exists("QGPL","FILECALL",ObjectType.Program));
     }
 
     [Fact]
@@ -270,16 +525,30 @@ public sealed class ExternalProgramTests : IDisposable
     private static string Password(string value) => Ipc.Services.Security.PasswordHasher.Hash(value);
 
     [Fact]
-    public void Native_job_accounting_records_process_cpu_threads_and_exit()
+    public async Task Native_job_accounting_records_process_cpu_threads_and_exit()
     {
-        Register("CPU", "cpu");
+        var release = Path.Combine(_directory, "cpu-release"); Register("CPU", "cpu", path: release);
         var job = _system.Jobs.CreateInteractive("QUSER");
-        using var execution = new Ipc.Session.ExecutionSession(_system, job, CancellationToken.None);
-        var result = execution.Execute("CALL PGM(QGPL/CPU)"); Assert.False(result.IsError, result.Message);
-        var info = new JobInformationStore(_system.Connections); var process = Assert.Single(info.Processes(job.Key));
-        Assert.Equal("Exited", process.State); Assert.Equal(0, process.ExitCode); Assert.True(process.CpuNanoseconds > 0);
-        Assert.True(process.PeakThreads > 0); Assert.Equal(0, info.Accounting(job.Key).ActiveProcesses);
-        Assert.Equal(process.CpuNanoseconds, info.Accounting(job.Key).NativeCpuNanoseconds);
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var execution = new Ipc.Session.ExecutionSession(_system, job, stop.Token);
+        var call = Task.Factory.StartNew(() => execution.Execute("CALL PGM(QGPL/CPU)"), CancellationToken.None,
+            TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        var info = new JobInformationStore(_system.Connections);
+        try
+        {
+            while (!info.Processes(job.Key).Any(p => p.CpuNanoseconds > 0 && p.PeakThreads > 0)) await Task.Delay(20, stop.Token);
+            File.WriteAllText(release, "release");
+            var result = await call.WaitAsync(stop.Token); Assert.False(result.IsError, result.Message);
+            var process = Assert.Single(info.Processes(job.Key));
+            Assert.Equal("Exited", process.State); Assert.Equal(0, process.ExitCode); Assert.True(process.CpuNanoseconds > 0);
+            Assert.True(process.PeakThreads > 0); Assert.Equal(0, info.Accounting(job.Key).ActiveProcesses);
+            Assert.Equal(process.CpuNanoseconds, info.Accounting(job.Key).NativeCpuNanoseconds);
+        }
+        finally
+        {
+            File.WriteAllText(release, "release"); stop.Cancel();
+            try { await call.WaitAsync(TimeSpan.FromSeconds(10)); } catch { /* Drain the owned process worker on failure. */ }
+        }
     }
 
     [Fact]

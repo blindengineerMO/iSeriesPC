@@ -96,3 +96,9 @@ Native cycle processing/return points, local file declarations, complete fixed
 D/C layouts, remaining error/status families and independent IBM i golden
 acceptance remain open. General ILE condition handlers, ON-EXCP and the full
 procedure ABI also remain open. C09/C11 therefore stay partial.
+
+Final verification (2026-10-17): all 3233 tests pass, zero failures/skips,
+including 60 new cases and all 60 targeted checks. Locked restore, zero-warning/
+error Release build, expanded display PTY, generated inventory and whitespace
+checks pass. Recovery inside active FOR/SELECT and case-insensitive local labels
+are included. Checklist remains 36 complete / 70 open.

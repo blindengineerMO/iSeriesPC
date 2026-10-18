@@ -74,13 +74,19 @@ and error operations are those enumerated in WP10 and the matrix. Required built
 `%TIME`, `%TIMESTAMP`, `%FOUND`, `%EOF`, `%ERROR`, `%STATUS`. A recognized opcode is still partial
 until its operands, result indicators, errors and effects pass acceptance.
 
+Implemented traditional standalone D definitions and the supported native C
+subset are documented in [fixed declarations](rpg-fixed-declarations.md) and
+[fixed calculations](rpg-fixed-calculations.md). Complete native specifications,
+cycle/opcode semantics and independent native-system acceptance remain required.
+
 Required preprocessing: `/COPY`, `/INCLUDE`, `/DEFINE`, `/UNDEFINE`, `/IF`, `/ELSE`, `/ENDIF`,
 `/TITLE`, `/EJECT`, `/SPACE`, with include/source maps and nested conditional tests.
 The bounded implemented grammar and resolution contract are in
 [source preprocessing](source-preprocessing.md#rpg-directives). Required ILE:
 modules, binding directories, service programs, activation groups, by-reference/value/const
 parameters, return values and writeback, CL/RPG/C#/Node calls through the shared execution context.
-`MONITOR/ON-ERROR/ENDMON` must handle the enclosing scope; today's tail-trap behavior is a gap.
+`MONITOR/ON-ERROR/ENDMON` now routes numeric statuses through the enclosing scope;
+see [file status](rpg-file-status.md) for accepted routing and remaining status families.
 No native MI instruction execution or IBM compiled-program binary loading is promised.
 
 Embedded SQL includes SELECT INTO, INSERT/UPDATE/DELETE, prepared statements with host variables

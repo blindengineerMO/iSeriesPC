@@ -8,31 +8,106 @@ namespace Ipc.Rpg.Parsing;
 
 public static partial class RpgCompiler
 {
-    private sealed record WorkstationDeclaration(int Line, string Name, bool Input, bool Output, string Keywords, bool Disk = false);
+    private sealed record WorkstationDeclaration(int Line, string Name, bool Input, bool Output, string Keywords, bool Disk = false, bool Template = false, bool Qualified = false, string? LikeFile = null, bool IncompleteFile = false);
     private sealed record DeclarationKeyword(string Name, string? Arguments);
 
     private static List<WorkstationDeclaration> ParseWorkstationDeclarations(List<string> lines, RpgProgram program, bool free,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool filesOnly = false, Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
     {
-        var declarations = new List<WorkstationDeclaration>(); var calculations = false;
+        if (!filesOnly)
+        {
+            // Discover final feedback lengths before folding layout-dependent declarations.
+            var discovery = new RpgProgram { Library = program.Library, Name = program.Name, NativeProcedureName = program.NativeProcedureName };
+            if (program.GlobalProgram is { } globals) ImportGlobalSymbols(discovery, globals);
+            var files = ParseWorkstationDeclarations(new(lines), discovery, free, cancellationToken, true);
+            if (!program.IsNativeProcedure)
+            {
+                var recordFiles = files.Where(f => f.Disk).Select(f => f with { Keywords = string.Join(' ',
+                    DeclarationKeywords(f.Keywords, f.Line).Where(k => k.Name is not ("INFDS" or "INFSR"))
+                        .Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")"))) }).ToArray();
+                var resolved = false;
+                program.RecordLayoutsLookup = () =>
+                {
+                    if (!resolved)
+                    {
+                        var metadata = new RpgProgram { Name = program.Name, Library = program.Library };
+                        BindDisks(metadata, recordFiles, diskResolver);
+                        program.DeclarationDiskFiles.AddRange(metadata.DiskFiles); resolved = true;
+                    }
+                    return program.DeclarationDiskFiles;
+                };
+            }
+            foreach (var declaration in files)
+                foreach (var keyword in DeclarationKeywords(declaration.Keywords, declaration.Line).Where(k => k.Name is "INFDS" or "INDDS"))
+                    if (keyword.Arguments is { } structure)
+                        program.DeclarationStructureLengths[structure.ToUpperInvariant()] = Math.Max(
+                            program.DeclarationStructureLengths.GetValueOrDefault(structure.ToUpperInvariant()), keyword.Name == "INDDS" ? 99 : 80);
+        }
+        var declarations = new List<WorkstationDeclaration>(); var calculations = false; var freeBlock = false; var procedure = false;
         for (var index = 0; index < lines.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var raw = lines[index]; var text = raw.Trim(); var line = index + 1;
+            var raw = lines[index]; var text = (!free && raw.Length >= 8 && raw[..5].All(c => c == ' ' || char.IsAsciiDigit(c)) && raw[5] == ' ' && raw[6] == ' ' ? raw[7..] : raw).Trim(); var line = index + 1;
+            if (!free && text.Length == 0) { lines[index] = ""; continue; }
+            if (IsNativeCalculation(raw))
+            {
+                if (!filesOnly) DeclareNativeCalculationResult(program, raw, line, procedure);
+                calculations = true; continue;
+            }
+            if (text.Equals("/free", StringComparison.OrdinalIgnoreCase)) freeBlock = true;
+            if (text.Equals("/end-free", StringComparison.OrdinalIgnoreCase)) freeBlock = false;
+            if (Specification(raw) == 'P') procedure = Col(raw, 24, 24).Equals("B", StringComparison.OrdinalIgnoreCase);
+            if (NativeDefinitionShift(raw) is { } definitionShift)
+            {
+                if (!filesOnly && (calculations || freeBlock || procedure))
+                    throw new RpgCompileException(line, "Traditional fixed definitions require global declaration scope before calculations.");
+                ReadNativeFixedDefinition(lines, ref index, program, definitionShift, !filesOnly, cancellationToken);
+                continue;
+            }
             var scalar = text.StartsWith("DCL-S ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-S\t", StringComparison.OrdinalIgnoreCase);
             var file = text.StartsWith("DCL-F ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-F\t", StringComparison.OrdinalIgnoreCase);
+            if (program.IsNativeProcedure && file) throw new RpgCompileException(line, "Procedure-local file declarations remain unsupported; use a module-global file.");
+            if (Regex.IsMatch(text, @"\ADCL-(PR|PI)\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                if (!filesOnly && (calculations || !free && (freeBlock || procedure)))
+                    throw new RpgCompileException(line, "Program PR/PI declarations require global scope before calculations.");
+                ReadFreeProgramSignature(lines, ref index, program, !filesOnly, !free, cancellationToken);
+                continue;
+            }
+            if (text.StartsWith("DCL-C ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-C\t", StringComparison.OrdinalIgnoreCase))
+            {
+                if (filesOnly) { _ = ReadFreeDeclaration(lines, ref index, line, !free); continue; }
+                if (calculations || !free && (freeBlock || procedure)) throw new RpgCompileException(line, "DCL-C must precede calculations and remain outside column-limited /FREE blocks and procedures.");
+                DeclareFreeConstant(program, ReadFreeDeclaration(lines, ref index, line, !free), line);
+                continue;
+            }
             if (text.StartsWith("DCL-DS ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-DS\t", StringComparison.OrdinalIgnoreCase))
             {
-                if (!free) throw new RpgCompileException(line, "Free declarations require **FREE.");
+                if (filesOnly)
+                {
+                    var header = ReadFreeDeclaration(lines, ref index, line, !free);
+                    if (DeclarationKeywords(Regex.Match(header, @"\ADCL-DS\s+\S+\s*(.*)\z", RegexOptions.IgnoreCase).Groups[1].Value, line).Any(k => k.Name is "LIKEDS" or "LIKEREC")) continue;
+                    for (index++; index < lines.Count; index++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var part = lines[index].Trim();
+                        if (part.Length == 0 || part.StartsWith("//", StringComparison.Ordinal)) continue;
+                        var declaration = ReadFreeDeclaration(lines, ref index, index + 1, !free);
+                        if (Regex.IsMatch(declaration, @"\AEND-DS(?:\s|\z)", RegexOptions.IgnoreCase)) break;
+                    }
+                    continue;
+                }
+                if (!free && (freeBlock || procedure)) throw new RpgCompileException(line, "Column-limited free declarations must remain outside /FREE blocks and procedures.");
                 if (calculations) throw new RpgCompileException(line, "Free declarations must precede calculations.");
-                DeclareNativeStructure(lines, ref index, program, cancellationToken);
+                DeclareNativeStructure(lines, ref index, program, cancellationToken, !free);
                 continue;
             }
             if (scalar || file)
             {
-                if (!free) throw new RpgCompileException(line, "Free declarations require **FREE.");
-                if (calculations) throw new RpgCompileException(line, "Free declarations must precede calculations in the supported global declaration subset.");
-                text = ReadFreeDeclaration(lines, ref index, line);
+                if (filesOnly && scalar) { _ = ReadFreeDeclaration(lines, ref index, line, !free); continue; }
+                if (!free && (freeBlock || procedure)) throw new RpgCompileException(line, "Column-limited free declarations must remain outside /FREE blocks and procedures.");
+                if (calculations && !filesOnly) throw new RpgCompileException(line, "Free declarations must precede calculations in the supported global declaration subset.");
+                text = ReadFreeDeclaration(lines, ref index, line, !free);
                 var match = Regex.Match(text, @"\ADCL-[FS]\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.*))?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
                 if (!match.Success) throw new RpgCompileException(line, "Invalid free declaration.");
                 var name = match.Groups[1].Value.ToUpperInvariant(); var keywords = match.Groups[2].Value;
@@ -50,9 +125,10 @@ public static partial class RpgCompiler
             if (shift < 0)
             {
                 if (text.Length > 0 && text is not ("**free" or "**FREE") && !text.StartsWith('/') && !text.StartsWith('*') &&
-                    (free || Specification(raw) == 'C')) calculations = true;
+                    (free || freeBlock || Specification(raw) == 'C')) calculations = true;
                 continue;
             }
+            if (program.IsNativeProcedure) throw new RpgCompileException(line, "Procedure-local F specs remain unsupported; use a module-global file.");
             var padded = raw.PadRight(43 + shift); lines[index] = "";
             var fileName = padded.Substring(6 + shift, 10).Trim().ToUpperInvariant();
             if (fileName.Length == 0)
@@ -62,6 +138,11 @@ public static partial class RpgCompiler
             }
             var type = char.ToUpperInvariant(padded[16 + shift]); var designation = char.ToUpperInvariant(padded[17 + shift]);
             var device = padded.Substring(35 + shift, 7).Trim().ToUpperInvariant();
+            if (padded.Substring(16 + shift, 27).All(c => c == ' '))
+            {
+                if (!Ipc.Core.Objects.ObjectName.IsValid(fileName)) throw new RpgCompileException(line, "Invalid LIKEFILE F-spec name.");
+                declarations.Add(new(line, fileName, true, false, padded[(43 + shift)..], true, IncompleteFile: true)); continue;
+            }
             if (device == "DISK")
             {
                 if (!Ipc.Core.Objects.ObjectName.IsValid(fileName) || type is not ('I' or 'U' or 'O') ||
@@ -84,7 +165,7 @@ public static partial class RpgCompiler
         }
         if (declarations.Count(d => !d.Disk) > 16 || declarations.Count(d => d.Disk) > 16 || declarations.Select(d => d.Name).Distinct().Count() != declarations.Count)
             throw new RpgCompileException(0, "At most 16 workstation and 16 disk files with distinct names are supported.");
-        return declarations;
+        return ExpandDiskDeclarations(declarations);
     }
 
     private static List<DeclarationKeyword> DeclarationKeywords(string text, int line)
@@ -121,22 +202,28 @@ public static partial class RpgCompiler
     }
     private static string[] DeclarationArguments(string text, int line)
     {
-        var result = new List<string>(); var start = 0; var quoted = false;
+        var result = new List<string>(); var start = 0; var quoted = false; var depth = 0;
         for (var n = 0; n < text.Length; n++)
         {
             if (text[n] == '\'') { if (quoted && n + 1 < text.Length && text[n + 1] == '\'') { n++; continue; } quoted = !quoted; }
-            else if (!quoted && text[n] == ':') { result.Add(text[start..n].Trim()); start = n + 1; }
+            else if (!quoted && text[n] == '(') depth++;
+            else if (!quoted && text[n] == ')') { if (--depth < 0) throw new RpgCompileException(line, "Unbalanced declaration argument."); }
+            else if (!quoted && depth == 0 && text[n] == ':') { result.Add(text[start..n].Trim()); start = n + 1; }
         }
-        if (quoted) throw new RpgCompileException(line, "Unterminated declaration literal.");
+        if (quoted || depth != 0) throw new RpgCompileException(line, "Unbalanced declaration argument or literal.");
         result.Add(text[start..].Trim()); return result.ToArray();
     }
 
-    private static void DeclareFreeScalar(RpgProgram program, string name, string text, int line)
+    private static void DeclareFreeScalar(RpgProgram program, string name, string text, int line,
+        RpgProgram? symbols = null, RpgDataStructure? current = null, bool standaloneStorage = true, bool readOnlyParameter = false, bool noPassParameter = false, bool omitParameter = false, bool valueParameter = false, bool parameter = false)
     {
+        symbols ??= program;
+        if (program.IsNativeProcedure) program.Fields.RemoveAll(f => program.GlobalFields.Contains(f) && f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         var keywords = DeclarationKeywords(text, line);
-        if (!RpgWorkstationBindings.Name(name) || program.FindField(name) is not null || program.FindDs(name) is not null || program.FindDsElement(name) is not null || keywords.Count == 0) throw new RpgCompileException(line, "Invalid or duplicate scalar declaration.");
-        var type = keywords[0]; var dimensions = type.Arguments is null ? Array.Empty<string>() : DeclarationArguments(type.Arguments, line);
-        int Dimension(int index, int fallback) => dimensions.Length <= index ? fallback : int.TryParse(dimensions[index], NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : -1;
+        if (!RpgWorkstationBindings.Name(name) || HasLocalDeclaration(program, name) || keywords.Count == 0) throw new RpgCompileException(line, "Invalid or duplicate scalar declaration.");
+        var inherited = LikeDefinition(symbols, keywords[0], line, current);
+        var type = inherited is null ? keywords[0] : LikeScalarKeyword(inherited, line); var dimensions = type.Arguments is null ? Array.Empty<string>() : DeclarationArguments(type.Arguments, line);
+        int Dimension(int index, int fallback) => dimensions.Length <= index ? fallback : DeclarationInteger(symbols, dimensions[index], line, 0, 32767, current);
         var kind = type.Name switch { "CHAR" => RpgFieldKind.Character, "PACKED" => RpgFieldKind.Packed, "ZONED" => RpgFieldKind.Zoned,
             "INT" => RpgFieldKind.Integer, "FLOAT" => RpgFieldKind.Float, "IND" => RpgFieldKind.Indicator, "DATE" => RpgFieldKind.Date,
             "TIME" => RpgFieldKind.Time, "TIMESTAMP" => RpgFieldKind.Timestamp, _ => throw new RpgCompileException(line, "Unsupported free scalar type " + type.Name + ".") };
@@ -148,37 +235,53 @@ public static partial class RpgCompiler
             kind == RpgFieldKind.Indicator && type.Arguments is not null || kind is RpgFieldKind.Date or RpgFieldKind.Time or RpgFieldKind.Timestamp && type.Arguments is not null)
             throw new RpgCompileException(line, "Unsupported scalar dimensions or date/time options.");
         string? initial = null;
-        if (keywords.Skip(1).Any(k => k.Name is not ("INZ" or "CCSID")) || keywords.Skip(1).GroupBy(k => k.Name).Any(g => g.Count() != 1))
-            throw new RpgCompileException(line, "Supported scalar options are INZ and CHAR CCSID(*HEX).");
+        if (keywords.Skip(1).Any(k => k.Name is not ("INZ" or "CCSID" or "DIM" or "ASCEND" or "DESCEND" or "CTDATA" or "PERRCD" or "EXTFMT" or "ALT" or "STATIC" or "TEMPLATE")) || keywords.Skip(1).GroupBy(k => k.Name).Any(g => g.Count() != 1))
+            throw new RpgCompileException(line, "Unsupported standalone declaration option.");
+        var template = keywords.Any(k => k.Name == "TEMPLATE");
+        if (template && (parameter || current is not null || keywords.Any(k => k.Name == "TEMPLATE" && k.Arguments is not null) ||
+            keywords.Any(k => k.Name is "CTDATA" or "PERRCD" or "EXTFMT" or "ALT") || keywords.Any(k => k.Name == "DIM" && k.Arguments?.StartsWith('*') == true)))
+            throw new RpgCompileException(line, "TEMPLATE requires a standalone field without compile-time data options.");
+        if (template) ValidateTemplateCount(program, line);
+        var isStatic = keywords.Any(k => k.Name == "STATIC");
+        if (isStatic && (!program.IsNativeProcedure || keywords.Any(k => k.Name == "STATIC" && k.Arguments is not null)))
+            throw new RpgCompileException(line, "STATIC requires an argument-free local procedure declaration.");
+        var alternate = keywords.SingleOrDefault(k => k.Name == "ALT"); var alternateOf = alternate?.Arguments?.Trim().ToUpperInvariant();
+        if (alternate is not null && (!RpgWorkstationBindings.Name(alternateOf) || alternateOf == name || keywords.Any(k => k.Name is "CTDATA" or "PERRCD")))
+            throw new RpgCompileException(line, "ALT requires one other main array name and cannot specify CTDATA or PERRCD.");
+        var array = keywords.SingleOrDefault(k => k.Name == "DIM");
+        var table = !template && !parameter && standaloneStorage && array is not null && name.StartsWith("TAB", StringComparison.OrdinalIgnoreCase);
+        if (table && name.Length > 10) throw new RpgCompileException(line, "Standalone table names begin with TAB and contain at most ten characters.");
+        var inferred = array?.Arguments?.Trim().Equals("*CTDATA", StringComparison.OrdinalIgnoreCase) == true;
+        var compileTime = inferred || alternate is not null || keywords.Any(k => k.Name == "CTDATA");
+        var count = inferred ? InferredCompileTimeCount(program, alternateOf ?? name, line) : NativeDimension(symbols, array, line);
+        var perRecord = NativeDimension(symbols, keywords.SingleOrDefault(k => k.Name == "PERRCD"), line);
+        var external = keywords.SingleOrDefault(k => k.Name == "EXTFMT"); var format = external?.Arguments?.Trim().ToUpperInvariant() ?? "S";
+        if (compileTime && (array is null || keywords.Any(k => k.Name == "INZ" || k.Name == "CTDATA" && k.Arguments is not null)) ||
+            !compileTime && keywords.Any(k => k.Name is "PERRCD" or "EXTFMT") || inferred && perRecord != 1 ||
+            external is not null && (external.Arguments is null || kind is not (RpgFieldKind.Integer or RpgFieldKind.Packed or RpgFieldKind.Zoned) || format is not ("S" or "L" or "R")))
+            throw new RpgCompileException(line, "Invalid CTDATA/DIM/PERRCD/EXTFMT combination or CTDATA with INZ.");
+        var sequence = ArraySequence(keywords, array is not null, line);
         var codePage = keywords.SingleOrDefault(k => k.Name == "CCSID");
-        var opaque = codePage is not null;
-        if (opaque && (kind != RpgFieldKind.Character || codePage!.Arguments?.ToUpperInvariant() is not ("*HEX" or "65535")))
-            throw new RpgCompileException(line, "Only CHAR CCSID(*HEX) or CCSID(65535) is supported.");
+        var opaque = codePage is null ? inherited?.OpaqueBytes == true : codePage.Arguments?.ToUpperInvariant() is "*HEX" or "65535";
+        if (codePage is not null && (kind != RpgFieldKind.Character || codePage.Arguments?.ToUpperInvariant() is not ("*HEX" or "65535" or "*DFT")))
+            throw new RpgCompileException(line, "Only CHAR CCSID(*HEX), CCSID(65535) or CCSID(*DFT) is supported.");
+        if (compileTime && opaque) throw new RpgCompileException(line, "Opaque CTDATA requires the complete source-CCSID byte contract, which is not yet supported.");
+        string? initializationExpression = null;
         if (keywords.SingleOrDefault(k => k.Name == "INZ")?.Arguments is { } init)
         {
-            var quoted = Regex.IsMatch(init, @"\A'(?:[^']|'')*'\z", RegexOptions.CultureInvariant);
-            var numeric = Regex.IsMatch(init, @"\A[+-]?[0-9]+(?:\.[0-9]+)?\z", RegexOptions.CultureInvariant);
-            var special = init.ToUpperInvariant();
-            var rawHex = opaque && Regex.IsMatch(init, @"\A[Xx]'(?:[0-9A-Fa-f]{2})+'\z", RegexOptions.CultureInvariant);
-            var valid = kind switch {
-                RpgFieldKind.Character => (opaque ? rawHex : quoted) || special is "*BLANK" or "*BLANKS",
-                RpgFieldKind.Indicator => special is "*ON" or "*OFF" or "'0'" or "'1'",
-                RpgFieldKind.Date or RpgFieldKind.Time or RpgFieldKind.Timestamp => quoted,
-                _ => numeric || special is "*ZERO" or "*ZEROS" };
-            if (!valid) throw new RpgCompileException(line, "INZ requires a supported constant literal for the scalar type.");
-            initial = quoted ? Unquote(init).Replace("''", "'", StringComparison.Ordinal) : special;
-            if (rawHex && (init.Length - 3) / 2 != length) throw new RpgCompileException(line, "Hexadecimal INZ must match the raw character field width.");
-            if (numeric && kind != RpgFieldKind.Float && (!decimal.TryParse(init, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) ||
-                decimal.Round(value, decimals) != value || decimal.Abs(value).ToString("F" + decimals, CultureInfo.InvariantCulture).Replace(".", "").TrimStart('0').Length > length ||
-                kind == RpgFieldKind.Integer && (value < long.MinValue || value > long.MaxValue)))
-                throw new RpgCompileException(line, "INZ exceeds the declared numeric precision.");
-            if (kind == RpgFieldKind.Character && quoted && initial.Length > length)
-                throw new RpgCompileException(line, "INZ exceeds the declared character length.");
-            if (kind is RpgFieldKind.Date or RpgFieldKind.Timestamp && !DateTimeOffset.TryParse(initial, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _) ||
-                kind == RpgFieldKind.Time && (!TimeSpan.TryParse(initial, CultureInfo.InvariantCulture, out var time) || time < TimeSpan.Zero || time >= TimeSpan.FromDays(1)))
-                throw new RpgCompileException(line, "Unsupported date/time INZ literal.");
+            var value = DeclarationValue(symbols, init, line, current);
+            ValidateDeclarationInitializer(value, kind, length, decimals, opaque, line);
+            if (kind != RpgFieldKind.Float && RpgValues.IsNumeric(value)) value = RpgValues.ToDecimal(value);
+            initializationExpression = DeclarationLiteral(value);
+            initial = value is string characters ? characters : initializationExpression;
         }
-        program.Fields.Add(new() { Name = name, Kind = kind, Length = length, Decimals = decimals, InitialValue = initial, OpaqueBytes = opaque });
+        program.Fields.Add(new() { Name = name, IsTemplate = template, Kind = kind, Length = length, Decimals = decimals, InitialValue = initial,
+            LikeType = inherited?.LikeType ?? DeclarationIdentity(symbols, line, name), DeclaredLike = inherited is not null, ReadOnlyParameter = readOnlyParameter, NoPassParameter = noPassParameter, OmitParameter = omitParameter, ValueParameter = valueParameter, StaticLocal = isStatic,
+            InitializationExpression = initializationExpression, OpaqueBytes = opaque, IsArray = array is not null && !table, IsTable = table,
+            NativeArray = !template && array is not null && !table, NativeScalar = !template && standaloneStorage && array is null, DeclarationLine = line, Dimension = count, ArrayDescending = sequence, CompileTimeArray = compileTime,
+            InferredCompileTimeDimension = inferred, ElementsPerRecord = perRecord, CompileTimeFormat = format, AlternateOf = alternateOf });
+        if (compileTime && (long)CompileTimeWidth(program.Fields[^1]) * perRecord > 100) throw new RpgCompileException(line, "Compile-time entries per record exceed 100 source positions.");
+        if (array is not null && !template) DeclareNativeStandalone(program, program.Fields[^1], line);
     }
 
     private static void BindWorkstations(RpgProgram program, IReadOnlyList<WorkstationDeclaration> declarations,
@@ -259,7 +362,7 @@ public static partial class RpgCompiler
                 {
                     var rrn = program.FindField(subfile.RelativeRecord);
                     var size = layout.Records.Single(r => r.Name == subfile.Record).Capacity;
-                    if (rrn is null || rrn.IsArray || rrn.Decimals != 0 || rrn.Kind is not (RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Decimal or RpgFieldKind.Integer or RpgFieldKind.Binary) ||
+                    if (rrn is null || rrn.IsTemplate || rrn.IsArray || rrn.Decimals != 0 || rrn.Kind is not (RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Decimal or RpgFieldKind.Integer or RpgFieldKind.Binary) ||
                         rrn.Length < size.ToString(CultureInfo.InvariantCulture).Length)
                         throw new RpgCompileException(declaration.Line, "SFILE RRN requires a sufficiently large numeric scalar with zero decimals.");
                 }

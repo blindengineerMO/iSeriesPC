@@ -9,6 +9,27 @@ internal static class RpgDiskFileFixture
             new() { Name = "TEXT", Type = FieldType.Alpha, Length = 12 }] }; format.AssignPositions();
         files.CreatePhysicalFile("QGPL", "GDISK", new() { Name = "GDISK", Attribute = FileAttribute.Physical, Formats = [format] }, "");
         foreach (var id in new[] { 20L, 10L }) files.Insert("QGPL", "GDISK", "GDISK", "DISKROW", new Dictionary<string, object?> { ["ID"] = id, ["TEXT"] = "*BLANKS" });
+        files.SaveSourceMember("QGPL", "SOURCE", "RPGFILES", """
+            **free
+            dcl-f MODEL template keyed block(*no) extdesc('QGPL/GDISK');
+            dcl-f COPY likefile(MODEL) extfile('QGPL/GDISK');
+            dcl-ds BUFFER likerec(DISKROW);
+            read COPY.DISKROW BUFFER;
+            if BUFFER.ID=10 and BUFFER.TEXT='*BLANKS';
+              sndpgmmsg 'FILE TYPES OK';
+            endif;
+            seton LR;
+            """, null);
+        files.SaveSourceMember("QGPL", "SOURCE", "RPGREC", """
+            **free
+            dcl-f ROWS keyed extdesc('QGPL/GDISK') extfile(*extdesc) rename(DISKROW:REC);
+            dcl-ds BUFFER likerec(REC);
+            read ROWS BUFFER;
+            if BUFFER.ID=10 and BUFFER.TEXT='*BLANKS' and ID=0 and %size(BUFFER)=20;
+              sndpgmmsg 'RECORD DS OK';
+            endif;
+            seton LR;
+            """, null);
         files.SaveSourceMember("QGPL", "SOURCE", "RPGDISK", """
             **free
             dcl-f ARRIVAL extdesc('QGPL/GDISK') extfile(*extdesc) rename(DISKROW:ARRROW) prefix(A_);

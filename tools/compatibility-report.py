@@ -91,7 +91,7 @@ def render():
         lines += ["", f"### {title}", "", "| Old spelling | Disposition |", "|---|---|"]
         for old, new in catalog[key].items():
             lines.append(f"| `{old}` | {new} |")
-    lines += ["", "## Observed RPG opcode parser mappings", "",
+    lines += ["", "## Observed legacy fixed and free RPG opcode mappings", "",
               "Recognition is not execution/semantic acceptance. Fixed and free forms can differ.",
               "Unknown operations fail compilation with original source locations. Fixed operations",
               "occupy the emulator's seven-column operation field; ON-ERROR and SNDPGMMSG are free-only.", "",
@@ -102,12 +102,27 @@ def render():
         body = re.search(rf"private static RpgOpcode {method}\(string opcode\) => opcode switch\s*\{{(.*?)\n    \}};", source, re.S)
         if body is None:
             raise ValueError(f"Missing RPG opcode mapping: {method}")
-        mappings[method] = dict(re.findall(r'"([A-Z-]+)" => RpgOpcode\.(\w+)', body[1]))
+        mappings[method] = dict(re.findall(r'"([A-Z-]+(?:\([A-Z]+\))?)" => RpgOpcode\.(\w+)', body[1]))
     for name in sorted(mappings["MapOpcode"].keys() | mappings["MapFreeOpcode"].keys()):
         fixed, free = mappings["MapOpcode"].get(name), mappings["MapFreeOpcode"].get(name)
         if fixed and (len(name) > 7 or free and fixed != free):
             raise ValueError(f"Unreachable or inconsistent RPG opcode mapping: {name}")
         lines.append(f"| `{name}` | {'Recognized' if fixed else '—'} | {'Recognized' if free else '—'} | `{fixed or free}` |")
+    lines += ["", "## Observed native C-spec mappings", "",
+              "Native calculations use the ten-column operation field at columns 26–35.",
+              "Standard operands and extended factor 2 follow separate parsers; recognition",
+              "does not establish complete native semantics or remaining cycle/ILE acceptance.",
+              "See [the native calculation contract](rpg-fixed-calculations.md).", "",
+              "| Spelling | Native form | IR opcode |", "|---|---|---|"]
+    native = (ROOT / "src/Ipc.Rpg/Parsing/RpgFixedCalculations.cs").read_text()
+    for method, form in (("MapNativeOpcode", "Standard"), ("MapNativeExtendedOpcode", "Extended factor 2")):
+        body = re.search(rf"private static RpgOpcode {method}\(string opcode\) => opcode switch\s*\{{(.*?)\n    \}};", native, re.S)
+        if body is None:
+            raise ValueError(f"Missing native RPG opcode mapping: {method}")
+        for spelling, opcode in re.findall(r'"([A-Z-]+(?:\([A-Z]+\))?)" => RpgOpcode\.(\w+)', body[1]):
+            if len(spelling) > 10:
+                raise ValueError(f"Unreachable native RPG operation: {spelling}")
+            lines.append(f"| `{spelling}` | {form} | `{opcode}` |")
     lines += ["", "See [RPG specification](rpg-spec.md) and [DDS specification](dds-schema.md) for",
               "current subset details. [Display DDS](display-files.md) has a strict compiler and panel runtime.",
               "[UIM help](shared-help.md) and [command definitions](command-definitions.md) are implemented.",

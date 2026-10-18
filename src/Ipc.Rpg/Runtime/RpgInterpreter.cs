@@ -16,15 +16,23 @@ public sealed partial class RpgInterpreter
 
     public RpgInterpreter(RpgHost host) => _host = host;
 
-    public static IReadOnlyList<string> EntryParameterNames(RpgProgram program) => program.MainStatements
+    public static IReadOnlyList<string> EntryParameterNames(RpgProgram program) => program.NativeParameterLists.TryGetValue("/*ENTRY", out var entry) ? entry : program.MainStatements
         .Where(statement => statement.Opcode == RpgOpcode.Parm && InEntryPlist(program.MainStatements, statement))
         .Select(statement => statement.Factor1 ?? throw new RpgRuntimeException("RPG entry PARM requires a field.")).ToArray();
+
+    public static bool AcceptsEntryParameterCount(RpgProgram program, int count)
+    {
+        var names = EntryParameterNames(program);
+        if (count < 0 || count > names.Count) return false;
+        return program.HasNativeEntryInterface ? names.Skip(count).All(name => program.FindField(name)?.NoPassParameter == true) : count == names.Count;
+    }
 
     public RpgRuntimeContext Run(RpgProgram program, IReadOnlyList<object?>? parameters = null, RpgRuntimeContext? existingContext = null)
     {
         _host.CancellationToken.ThrowIfCancellationRequested();
         var context = existingContext is { IsCancelled: false } ? existingContext : new RpgRuntimeContext(program, _host);
         context.RebindHost(_host);
+        context.NativeFunction = (name, arguments) => InvokeNativeProcedure(context, name, arguments, expression: true);
         _context = context;
         _files.Clear();
         _programEnded = false;
@@ -34,8 +42,10 @@ public sealed partial class RpgInterpreter
         _procedure = null; _procedureInvocation = new object(); _executionFrames.Clear(); _errorSubroutineCalls.Clear();
         try
         {
+            context.BeginEntryBinding();
             context.BeginFeedbackCall(parameters?.Count ?? 0);
             BindEntryParameters(program, context, parameters);
+            context.ProtectEntryParameters();
             InitializeExternalFiles(context);
             Execute(program.MainStatements, context, new RpgBlockState());
             return context;
@@ -52,7 +62,7 @@ public sealed partial class RpgInterpreter
                 finally
                 {
                     try { if (!_host.RetainFiles || context.Indicators[0] || context.IsCancelled) context.CloseDiskFiles(); }
-                    finally { _fileHandles.Clear(); _files.Clear(); _context = null; context.ReleaseReferences(); }
+                    finally { _fileHandles.Clear(); _files.Clear(); _context = null; context.ProtectEntryParameters(); context.ReleaseReferences(); }
                 }
             }
         }
@@ -60,8 +70,36 @@ public sealed partial class RpgInterpreter
 
     private void BindEntryParameters(RpgProgram program, RpgRuntimeContext context, IReadOnlyList<object?>? parameters)
     {
+        if (program.HasNativeEntryInterface && !AcceptsEntryParameterCount(program, parameters?.Count ?? 0))
+            throw new RpgRuntimeException("RPG main PI parameter count does not match the caller.");
+        if (program.HasNativeEntryInterface) context.SetUnpassedParameters(program.NativeParameterLists["/*ENTRY"].Skip(parameters?.Count ?? 0));
         if (parameters is null || parameters.Count == 0)
         {
+            return;
+        }
+
+        if (program.NativeParameterLists.TryGetValue("/*ENTRY", out var native))
+        {
+            if (!program.HasNativeEntryInterface && parameters.Count != native.Count) throw new RpgRuntimeException("RPG entry parameter count does not match the caller.");
+            long actualBytes = 0;
+            for (var position = 0; position < parameters.Count && program.HasNativeEntryInterface; position++)
+            {
+                if (parameters[position] is Ipc.Core.Work.ProgramArgument { IsOmitted: true } || parameters[position] is null) continue;
+                var field = program.FindField(native[position])!;
+                actualBytes += parameters[position] is Ipc.Core.Work.ProgramArgument argument ? argument.Memory?.Capacity ??
+                    (argument.Type is "*CHAR" or "*RAW" && argument.Length > 0 ? argument.Length : RpgRuntimeContext.ParameterBytes(field))
+                    : parameters[position] is Ipc.Core.Work.ProgramBuffer buffer ? buffer.Length
+                    : field.VariableSizeParameter && parameters[position] is object?[] items ? (long)RpgRuntimeContext.ParameterUnitBytes(field) * items.Length
+                    : field.VariableSizeParameter && parameters[position] is string text ? Ipc.Core.Text.CodePage.ToBytes(context.NativeCcsid, text).Length
+                    : RpgRuntimeContext.ParameterBytes(field);
+                if (actualBytes > 1048576) throw new RpgRuntimeException("Native entry arguments exceed 1 MiB of actual storage.") { StatusCode = 105 };
+            }
+            for (var position = 0; position < parameters.Count; position++)
+                if (parameters[position] is Ipc.Core.Work.ProgramArgument { IsOmitted: true } || program.HasNativeEntryInterface && parameters[position] is null) context.BindOmittedParameter(native[position]);
+                else if (parameters[position] is Ipc.Core.Work.ProgramArgument cell) context.BindReference(native[position], cell);
+                else if (program.FindField(native[position])?.VariableSizeParameter == true) context.BindVariableValue(native[position], parameters[position]);
+                else if (RpgRuntimeContext.AggregateParameter(program.FindField(native[position])!)) context.InitializeAggregateParameter(native[position], parameters[position]);
+                else context.WriteValue(native[position], parameters[position]);
             return;
         }
 
@@ -158,7 +196,8 @@ public sealed partial class RpgInterpreter
                     var statement = statements[pc];
                     if (!ConditionsMet(statement, context))
                     {
-                        pc = statement.Opcode is RpgOpcode.Monitor or RpgOpcode.Select ? statement.End + 1 : pc + 1;
+                        pc = statement.Opcode is RpgOpcode.Monitor or RpgOpcode.Select || statement.NativeOperation is not null &&
+                            statement.Opcode is RpgOpcode.If or RpgOpcode.Do or RpgOpcode.DoU or RpgOpcode.DoW or RpgOpcode.For ? statement.End + 1 : pc + 1;
                         continue;
                     }
 
@@ -177,7 +216,8 @@ public sealed partial class RpgInterpreter
 
                     var jump = 0;
                     context.SetFeedbackOperation(statement, routine);
-                    if (statement.ErrorExtender) context.BeginErrorOperation(StatusFile(statement));
+                    if (statement.ErrorExtender) context.BeginErrorOperation(statement.NativeOperation == "CALL" || statement.Opcode == RpgOpcode.CallP ? null : StatusFile(statement));
+                    if (statement.NativeOperation == "CALL" && statement.Indicator1 != 0) context.Indicators[statement.Indicator1] = false;
                     if (IsFileOperation(statement.Opcode) && DeclaredFile(statement) && statement.Indicator2 != 0) context.Indicators[statement.Indicator2] = false;
                     try
                     {
@@ -185,7 +225,7 @@ public sealed partial class RpgInterpreter
                     }
                     catch (RpgRuntimeException error)
                     {
-                        if (statement.Opcode is RpgOpcode.Call or RpgOpcode.CallB or RpgOpcode.CallP && (error.StatusCode != 202 || error.FeedbackRecorded))
+                        if (!error.CallArgumentError && statement.Opcode is RpgOpcode.Call or RpgOpcode.CallB or RpgOpcode.CallP && (error.StatusCode != 202 || error.FeedbackRecorded))
                             error = new(error.Message) { StatusCode = 202, ServiceError = error.ServiceError, StatusFile = error.StatusFile };
                         if (!error.FeedbackRecorded) context.SetFeedbackOperation(statement, routine, preserveCallTarget: true);
                         if (HandleOperationError(error, statement, context)) { pc++; continue; }
@@ -208,11 +248,14 @@ public sealed partial class RpgInterpreter
                         pc = handler;
                         continue;
                     }
-                    catch (Ipc.Core.Messages.CpfException error) when (error.MessageId != "CPF1241" && statement.Location is { })
+                    catch (Ipc.Core.Messages.CpfException error) when (error.MessageId != "CPF1241" && (error.MessageId != "RNX9001" || !context.IsCancelled && !context.ModuleContext.IsCancelled) && statement.Location is { })
                     {
                         if (statement.Opcode is RpgOpcode.Call or RpgOpcode.CallB or RpgOpcode.CallP)
                         {
                             context.SetFeedbackOperation(statement, routine, preserveCallTarget: true);
+                            if ((statement.NativeOperation == "CALL" || statement.Opcode == RpgOpcode.CallP) && (statement.ErrorExtender || statement.Indicator1 != 0) &&
+                                HandleOperationError(new RpgRuntimeException(error.Message) { StatusCode = 202, ServiceError = error }, statement, context))
+                            { pc++; continue; }
                             context.RecordStatus(202);
                             context.RecordFeedbackError(new RpgRuntimeException(error.Message) { StatusCode = 202, ServiceError = error });
                             var handler = MonitorHandler(statements, pc, 202, state);
@@ -271,6 +314,8 @@ public sealed partial class RpgInterpreter
 
     private int ExecuteOp(RpgStatement stmt, IReadOnlyList<RpgStatement> statements, RpgRuntimeContext ctx, RpgBlockState state)
     {
+        if (stmt.NativeOperation is not null && stmt.Opcode is RpgOpcode.Add or RpgOpcode.Subtract or RpgOpcode.Multiply or RpgOpcode.Divide or RpgOpcode.ZAdd or RpgOpcode.ZSub or RpgOpcode.XFoot)
+            return NativeArithmetic(stmt, ctx);
         switch (stmt.Opcode)
         {
             case RpgOpcode.Monitor:
@@ -305,9 +350,12 @@ public sealed partial class RpgInterpreter
                 var clearTarget = stmt.Result ?? stmt.Factor2;
                 if (clearTarget is not null)
                 {
-                    ctx.ClearValue(clearTarget);
+                    ctx.ClearValue(clearTarget, stmt.ClearAllOccurrences);
                 }
 
+                return -1;
+            case RpgOpcode.SortA:
+                ctx.SortArray(RpgExpressionParser.Parse(stmt.Factor1!), stmt.SortDescending, stmt.SortFields);
                 return -1;
             case RpgOpcode.BitOn:
                 return SetBit(stmt, ctx, true);
@@ -323,6 +371,8 @@ public sealed partial class RpgInterpreter
                 return TestOpcode(stmt, ctx);
             case RpgOpcode.Comp:
                 return CompareOpcode(stmt, ctx);
+            case RpgOpcode.Lookup:
+                ctx.FixedLookup(stmt); return -1;
             case RpgOpcode.If:
                 return IfOpcode(stmt, ctx);
             case RpgOpcode.Else:
@@ -364,6 +414,11 @@ public sealed partial class RpgInterpreter
                 return ExsrOpcode(stmt, ctx);
             case RpgOpcode.Retrn:
             case RpgOpcode.Return:
+                if (ctx.Program.IsNativeProcedure && ctx.Program.NativeReturnField is { } returnType)
+                {
+                    ctx.ProcedureReturn = ctx.NormalizeProcedureReturn(returnType, Eval(stmt.Value ?? stmt.Factor2 ?? stmt.Factor1, ctx));
+                    ctx.HasProcedureReturn = true;
+                }
                 if (_depth == 0)
                 {
                     _programEnded = true;
@@ -466,6 +521,11 @@ public sealed partial class RpgInterpreter
     private void ApplyArithmeticIndicators(RpgStatement stmt, object? value, RpgRuntimeContext ctx)
     {
         if (stmt.Indicator1 == 0 && stmt.Indicator2 == 0 && stmt.Indicator3 == 0) return;
+        if (stmt.NativeOperation is not null)
+        {
+            var compared = RpgValues.Compare(value, 0m);
+            setInd(stmt.Indicator1, compared > 0, ctx); setInd(stmt.Indicator2, compared < 0, ctx); setInd(stmt.Indicator3, compared == 0, ctx); return;
+        }
         setInd(stmt.Indicator1, RpgValues.Compare(value, 0m) >= 0, ctx);
         setInd(stmt.Indicator2, RpgValues.Compare(value, 0m) <= 0, ctx);
         if (RpgValues.Compare(value, 0m) == 0)
@@ -503,7 +563,9 @@ public sealed partial class RpgInterpreter
         var value = Eval(expression, ctx);
         if (target.Length > 0)
         {
-            WriteTarget(target, value, ctx);
+            if (RpgExpressionParser.Parse(target) is RpgBuiltin { Name: "OCCUR" } occurrence)
+                ctx.SetOccurrence(occurrence.Arguments, value, RpgExpressionParser.Parse(expression));
+            else WriteTarget(target, value, ctx);
         }
 
         ApplyArithmeticIndicators(stmt, value, ctx);
@@ -544,7 +606,8 @@ public sealed partial class RpgInterpreter
                 ctx.WriteValue(fieldRef.Name, value);
                 break;
             case RpgDynamicIndexRef indexRef:
-                ctx.WriteArrayValue(indexRef.Name, RpgValues.ToLong(indexRef.Index.Eval(ctx)), value);
+                if (ctx.TryNativeReference(indexRef, out var indexed)) ctx.WriteCapturedNative(indexed, value);
+                else ctx.WriteArrayValue(indexRef.Name, RpgValues.ToLong(indexRef.Index.Eval(ctx)), value);
                 break;
             case RpgMemberRef or RpgElementRef:
                 ctx.WriteNativeReference(expr, value);
@@ -554,6 +617,9 @@ public sealed partial class RpgInterpreter
                 break;
             case RpgBuiltin { Name: "SUBST" } substring:
                 ctx.WriteSubstring(substring.Arguments, value);
+                break;
+            case RpgBuiltin { Name: "SUBARR" } subarray:
+                ctx.WriteNativeReference(subarray, value);
                 break;
             default:
                 throw new RpgRuntimeException($"Invalid assignment target '{target}'.");
@@ -626,6 +692,14 @@ public sealed partial class RpgInterpreter
 
     private int CompareOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
+        if (stmt.NativeOperation is not null)
+        {
+            var native = ctx.CompareNativeCalculation(RpgExpressionParser.Parse(stmt.Factor1!), RpgExpressionParser.Parse(stmt.Factor2!));
+            if (stmt.Indicator1 != 0) ctx.Indicators[stmt.Indicator1] = native > 0;
+            if (stmt.Indicator2 != 0) ctx.Indicators[stmt.Indicator2] = native < 0;
+            if (stmt.Indicator3 != 0) ctx.Indicators[stmt.Indicator3] = native == 0;
+            return -1;
+        }
         var comparison = RpgValues.Compare(Eval(stmt.Factor1, ctx), Eval(stmt.Factor2, ctx));
         if (stmt.Indicator1 != 0)
         {
@@ -701,9 +775,15 @@ public sealed partial class RpgInterpreter
     {
         var counter = stmt.Result
             ?? throw new RpgRuntimeException("DO requires a result counter field.");
-        var start = RpgValues.ToDecimal(Eval(stmt.Factor1, ctx));
-        var end = RpgValues.ToDecimal(Eval(stmt.Factor2, ctx));
-        ctx.WriteValue(counter, start);
+        var start = RpgValues.ToDecimal(Eval(stmt.Factor1 ?? (stmt.NativeOperation is not null ? "1" : null), ctx));
+        var nativeLimit = stmt.NativeOperation is not null ? RpgExpressionParser.Parse(stmt.Factor2 ?? "1") : null;
+        var end = nativeLimit is null ? RpgValues.ToDecimal(Eval(stmt.Factor2, ctx)) : 0m;
+        if (nativeLimit is not null) WriteNativeDoCounter(counter, start, ctx); else ctx.WriteValue(counter, start);
+        if (nativeLimit is not null)
+        {
+            end = RpgValues.ToDecimal(nativeLimit.Eval(ctx));
+            if (RpgValues.ToDecimal(ReadNativeDoCounter(counter, ctx)) > end) return stmt.End + 1;
+        }
         state.Loops.Push(new RpgLoopFrame
         {
             Start = SelfIndex(statements, stmt),
@@ -711,9 +791,19 @@ public sealed partial class RpgInterpreter
             Kind = RpgLoopKind.Do,
             Counter = counter,
             EndValue = end,
+            Condition = nativeLimit,
             Step = 1m,
         });
         return -1;
+    }
+
+    private object? ReadNativeDoCounter(string name, RpgRuntimeContext context) =>
+        context.HasField(name) ? context.ReadValue(name) : Eval(name, context);
+
+    private void WriteNativeDoCounter(string name, object? value, RpgRuntimeContext context)
+    {
+        // Compiler-owned counters have internal names outside the expression grammar.
+        if (context.HasField(name)) context.WriteValue(name, value); else WriteTarget(name, value, context);
     }
 
     private int DoConditionalOpcode(RpgStatement stmt, IReadOnlyList<RpgStatement> statements, RpgRuntimeContext ctx, RpgBlockState state)
@@ -796,9 +886,13 @@ public sealed partial class RpgInterpreter
             case RpgLoopKind.Do:
             case RpgLoopKind.For:
             {
-                var current = RpgValues.ToDecimal(ctx.ReadValue(frame.Counter!)) + frame.Step;
-                ctx.WriteValue(frame.Counter!, current);
-                var done = frame.Step >= 0 ? current > frame.EndValue : current < frame.EndValue;
+                var nativeDo = frame.Kind == RpgLoopKind.Do && frame.Condition is not null;
+                var step = nativeDo ? RpgValues.ToDecimal(Eval(stmt.Factor2 ?? "1", ctx)) : frame.Step;
+                var current = RpgValues.ToDecimal(nativeDo ? ReadNativeDoCounter(frame.Counter!, ctx) : ctx.ReadValue(frame.Counter!)) + step;
+                if (nativeDo) WriteNativeDoCounter(frame.Counter!, current, ctx); else ctx.WriteValue(frame.Counter!, current);
+                var done = nativeDo
+                    ? RpgValues.ToDecimal(ReadNativeDoCounter(frame.Counter!, ctx)) > RpgValues.ToDecimal(frame.Condition!.Eval(ctx))
+                    : frame.Step >= 0 ? current > frame.EndValue : current < frame.EndValue;
                 if (done)
                 {
                     state.Loops.Pop();
@@ -928,6 +1022,7 @@ public sealed partial class RpgInterpreter
 
     private int ChainOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
+        var receiver = RecordReceiver(stmt, ctx);
         var cursor = IoCursor(stmt);
         var search = cursor.IsKeyed ? FileSearchValues(stmt, ctx, cursor) ?? throw new RpgRuntimeException("CHAIN requires a search argument.") : null;
         var number = cursor.IsKeyed ? 0 : FileRecordNumber(stmt, ctx);
@@ -949,7 +1044,7 @@ public sealed partial class RpgInterpreter
 
         if (found)
         {
-            CopyDiskRecord(ctx, stmt, cursor.Current!, cursor);
+            CopyDiskRecord(ctx, stmt, cursor.Current!, cursor, receiver);
         }
 
         return -1;
@@ -957,6 +1052,7 @@ public sealed partial class RpgInterpreter
 
     private int ReadOpcode(RpgStatement stmt, RpgRuntimeContext ctx, bool prior, bool keyed)
     {
+        var receiver = RecordReceiver(stmt, ctx);
         var cursor = IoCursor(stmt);
         IReadOnlyDictionary<string, object?>? record = null;
         bool eof = false;
@@ -1006,7 +1102,7 @@ public sealed partial class RpgInterpreter
         if (declared && stmt.Indicator3 != 0) ctx.Indicators[stmt.Indicator3] = eof;
         if (record is not null)
         {
-            CopyDiskRecord(ctx, stmt, record, cursor);
+            CopyDiskRecord(ctx, stmt, record, cursor, receiver);
         }
 
         return -1;
@@ -1022,16 +1118,19 @@ public sealed partial class RpgInterpreter
             var equal = FileIo(StatusFile(stmt), () => cursor.IsKeyed ? cursor.SetLowerBound(search!) : cursor.SetRecordLowerBound(number));
             ctx.RecordStatus(cursor.AtEnd ? 12 : 0, StatusFile(stmt));
             ctx.SetFileStatus(StatusFile(stmt), found: !cursor.AtEnd, clearFileEof: !cursor.AtEnd);
+            ctx.SetEqualStatus(StatusFile(stmt), equal);
             if (stmt.Indicator1 != 0)
             {
-                ctx.Indicators[stmt.Indicator1] = equal;
+                ctx.Indicators[stmt.Indicator1] = stmt.NativeOperation is null ? equal : cursor.AtEnd;
             }
+            if (stmt.NativeOperation is not null && stmt.Indicator3 != 0) ctx.Indicators[stmt.Indicator3] = equal;
         }
         else
         {
             FileIo(StatusFile(stmt), () => { if (cursor.IsKeyed) cursor.SetUpperBound(search!); else cursor.SetRecordUpperBound(number); });
             ctx.RecordStatus(cursor.AtEnd ? 12 : 0, StatusFile(stmt));
             ctx.SetFileStatus(StatusFile(stmt), found: !cursor.AtEnd, clearFileEof: !cursor.AtEnd);
+            if (stmt.NativeOperation is not null && stmt.Indicator1 != 0) ctx.Indicators[stmt.Indicator1] = cursor.AtEnd;
         }
 
         return -1;
@@ -1045,7 +1144,7 @@ public sealed partial class RpgInterpreter
             if (!binding.Request.Output || !FirstFile(stmt).Equals(binding.Layout.Record, StringComparison.OrdinalIgnoreCase))
                 throw new RpgRuntimeException("WRITE requires an output-capable DISK record format.");
             var target = IoCursor(stmt);
-            var mapped = binding.Layout.Fields.ToDictionary(field => field.External, field => ctx.ReadValue(field.Name), StringComparer.OrdinalIgnoreCase);
+            var mapped = RecordOutput(stmt, ctx, binding);
             FileIo(binding.Request.Name, () => target.Write(mapped));
             ctx.RecordStatus(0, binding.Request.Name);
             return -1;
@@ -1071,7 +1170,7 @@ public sealed partial class RpgInterpreter
             throw new RpgRuntimeException("UPDATE requires an update-capable DISK record format.");
         var cursor = IoCursor(stmt);
         var values = binding is null ? BuildRecordValues(ctx, cursor.Definition.PrimaryFormat) :
-            binding.Layout.Fields.ToDictionary(field => field.External, field => ctx.ReadValue(field.Name), StringComparer.OrdinalIgnoreCase);
+            RecordOutput(stmt, ctx, binding);
         FileIo(StatusFile(stmt), () => cursor.UpdateCurrent(values));
         ctx.RecordStatus(0, StatusFile(stmt));
         return -1;
@@ -1108,7 +1207,7 @@ public sealed partial class RpgInterpreter
         var text = Eval(stmt.Factor1, ctx);
         var display = RpgValues.ToText(text);
         _host.Display?.Invoke(display);
-        var input = _host.ReceiveMessage?.Invoke();
+        var input = stmt.NativeOperation is null || stmt.Result is not null ? _host.ReceiveMessage?.Invoke() : null;
         if (input is not null && stmt.Result is not null)
         {
             ctx.WriteValue(stmt.Result, input);
@@ -1140,7 +1239,11 @@ public sealed partial class RpgInterpreter
         RpgRuntimeContext? context = null, IReadOnlyList<RpgExpr>? arguments = null, RpgPrototype? prototype = null,
         Func<IReadOnlyList<object?>>? prepareSemantic = null)
     {
-        RpgArgumentScope? scope = null;
+        RpgArgumentScope? scope = null; RpgArgumentScope? programScope = null;
+        var targetLibrary = "*LIBL";
+        if (prototype?.NativeSignature == true && name.Split('/') is { Length: 2 } qualified) { targetLibrary = qualified[0]; name = qualified[1]; }
+        if (prototype?.NativeSignature == true && _host.ProgramDispatcher is null && _host.TypedProgramCaller is null)
+            throw new RpgRuntimeException("Native reference prototypes require a typed program dispatcher.");
         context?.SetFeedbackCallTarget(name);
         using var semantic = prepareSemantic is null ? null : new SemanticArguments(prepareSemantic);
         var active = true;
@@ -1150,19 +1253,46 @@ public sealed partial class RpgInterpreter
             {
                 ObjectDisposedException.ThrowIf(!active, this);
                 Func<int, RpgRuntimeContext.NativeView?>? captured = parameters is ArgumentSnapshots snapshots ? snapshots.NativeAt : null;
-                return (scope ??= new RpgArgumentScope(context!, arguments!, parameters, _host.Ccsid(), prototype, captured)).Arguments;
+                return (scope ??= new RpgArgumentScope(context!, arguments!, parameters, _host.Ccsid(), prototype, captured,
+                    preparedArguments: parameters is ArgumentSnapshots prepared ? prepared.ArgumentAt : null)).Arguments;
             }
-            var legacy = _host.TypedProgramCaller is null ? prepareSemantic?.Invoke() ?? parameters : parameters;
-            var result = _host.TypedProgramCaller is { } typed
-                ? typed("*LIBL", name, (IReadOnlyList<object?>?)semantic ?? parameters, context is not null && arguments is not null ? Borrow : null)
-                : _host.ProgramCaller?.Invoke("*LIBL", name, legacy);
+            IReadOnlyList<object?>? BorrowProgram()
+            {
+                ObjectDisposedException.ThrowIf(!active, this);
+                if (prototype is not null && !prototype.NativeSignature) return null;
+                Func<int, RpgRuntimeContext.NativeView?>? captured = parameters is ArgumentSnapshots snapshots ? snapshots.NativeAt : null;
+                return (programScope ??= new RpgArgumentScope(context!, arguments!, parameters, _host.Ccsid(), prototype,
+                    capturedNative: captured, allowUntyped: prototype is null, preparedArguments: parameters is ArgumentSnapshots prepared ? prepared.ArgumentAt : null)).Arguments;
+            }
+            var legacy = _host.TypedProgramCaller is null && _host.ProgramDispatcher is null ? prepareSemantic?.Invoke() ?? parameters : parameters;
+            var result = _host.ProgramDispatcher is { } dispatch
+                ? dispatch(targetLibrary, name, (IReadOnlyList<object?>?)semantic ?? parameters,
+                    context is not null && arguments is not null ? Borrow : null, context is not null && arguments is not null ? BorrowProgram : null)
+                : _host.TypedProgramCaller is { } typed
+                ? typed(targetLibrary, name, (IReadOnlyList<object?>?)semantic ?? parameters, context is not null && arguments is not null ? Borrow : null)
+                : _host.ProgramCaller?.Invoke(targetLibrary, name, legacy);
+            // The original untyped callback may acknowledge a void call by
+            // returning null. Typed dispatch uses null to report no target.
+            if (result is null && _host.ProgramDispatcher is null && _host.TypedProgramCaller is null && _host.ProgramCaller is not null)
+                result = new() { Success = true };
+            if (prototype?.NativeSignature == true && result?.UpdatedParameters is { Count: > 0 } returned)
+            {
+                var targets = Borrow();
+                if (returned.Count != targets.Count) throw new RpgRuntimeException("Native returned parameter count differs from the prototype.");
+                var prepared = returned.Select((value, index) => value is null ? null : ((Ipc.Core.Work.ProgramArgument)targets[index]!).NormalizeReturnedValue(value)).ToArray();
+                for (var index = 0; index < prepared.Length; index++)
+                    if (prepared[index] is not null && targets[index] is Ipc.Core.Work.ProgramArgument { IsReadOnly: false } target) target.Value = prepared[index];
+                result = new() { Success = result.Success, Message = result.Message, UpdatedParameters = [] };
+            }
             if (semantic is not null && result is not null && ReferenceEquals(result.UpdatedParameters, semantic))
                 result = new() { Success = result.Success, Message = result.Message, UpdatedParameters = semantic.ToArray() };
             if (result is { Success: false } && statement.Indicator1 == 0)
                 throw new RpgRuntimeException(result.Message ?? $"External program {name} failed.");
             return result;
         }
-        finally { active = false; scope?.Dispose(); }
+        catch (RpgRuntimeException error) when (error.CallArgumentError)
+        { throw new RpgRuntimeException(error.Message) { StatusCode = 202, ServiceError = error.ServiceError }; }
+        finally { active = false; try { scope?.Dispose(); } finally { programScope?.Dispose(); } }
     }
 
     private sealed class SemanticArguments(Func<IReadOnlyList<object?>> prepare) : IReadOnlyList<object?>, IDisposable
@@ -1181,39 +1311,118 @@ public sealed partial class RpgInterpreter
     {
         private readonly object?[] _values;
         private readonly RpgRuntimeContext.NativeView?[] _nativeViews;
+        private readonly Ipc.Core.Work.ProgramArgument?[] _preparedArguments;
         private readonly Dictionary<int, System.Runtime.ExceptionServices.ExceptionDispatchInfo> _errors = new();
-        internal ArgumentSnapshots(IEnumerable<RpgExpr> expressions, RpgRuntimeContext context)
+        internal ArgumentSnapshots(IEnumerable<RpgExpr> expressions, RpgRuntimeContext context, RpgPrototype? prototype = null)
         {
             var source = expressions.ToArray(); _values = new object?[source.Length];
             _nativeViews = new RpgRuntimeContext.NativeView?[source.Length]; long nativeBytes = 0;
+            _preparedArguments = new Ipc.Core.Work.ProgramArgument?[source.Length];
+            if (prototype?.NativeSignature == true && !prototype.AcceptsArgumentCount(source.Length))
+                throw new RpgRuntimeException("Native prototype argument count differs from its metadata.") { StatusCode = 105 };
+            if (prototype?.NativeSignature == true)
+            {
+                if (source.Length + (prototype.NativeReturnField?.ReturnByParameter == true ? 1 : 0) > 255)
+                    throw new RpgRuntimeException("Native calls are bounded to 255 arguments including RTNPARM.") { StatusCode = 105 };
+                foreach (var formal in prototype.NativeParameters) RpgArgumentScope.ValidateNativeFormal(formal);
+            }
             for (var index = 0; index < source.Length; index++)
-                if (context.TryNativeReference(source[index], out var view))
+                if (context.TryNativeArgument(source[index], out var view))
                 {
-                    _nativeViews[index] = view; nativeBytes += view.Width;
+                    var optionFormal = prototype?.NativeSignature == true ? prototype.NativeParameters[index] : null;
+                    if (optionFormal?.ExactParameter == true) context.RequireExactType(optionFormal, source[index], view);
+                    var transform = optionFormal is { TrimParameter: true } or { RightAdjustParameter: true };
+                    var variable = prototype?.NativeSignature == true && prototype.NativeParameters[index].VariableSizeParameter || prototype is null && context.VariableTransport(view);
+                    if (!variable && !transform && prototype?.NativeSignature == true && RpgRuntimeContext.AggregateParameter(prototype.NativeParameters[index]) &&
+                        RpgRuntimeContext.MatchingAggregate(view, prototype.NativeParameters[index]))
+                        view = context.AggregatePrefix(view, prototype.NativeParameters[index]);
+                    if (!variable && !transform && prototype?.NativeSignature == true && prototype.NativeParameters[index] is { Kind: RpgFieldKind.Character } character &&
+                        !RpgRuntimeContext.AggregateParameter(character) &&
+                        view is { Element.Kind: RpgFieldKind.Character, IsArray: false } && view.Element.OpaqueBytes == character.OpaqueBytes && view.Width >= character.Length)
+                        view = context.NativeCharacterPrefix(view, character.Length);
+                    if (variable) { if (context.NativeMemory(view).Capacity < 1) throw new RpgRuntimeException("Variable actual has no accessible storage.") { StatusCode = 105 }; }
+                    else context.EnsureArgumentStorage(view);
+                    _nativeViews[index] = view; nativeBytes += context.NativeMemory(view).Capacity;
                     if (source.Length > 256 || nativeBytes > 1048576) throw new Ipc.Core.Messages.CpfException("CPF3C3A", "Native call arguments exceed 256 parameters or 1 MiB.");
                 }
             for (var index = 0; index < source.Length; index++)
             {
+                if (source[index] is RpgOmittedArgument)
+                {
+                    if (prototype?.NativeSignature != true || !prototype.NativeParameters[index].OmitParameter)
+                        throw new RpgRuntimeException("*OMIT requires a native OPTIONS(*OMIT) prototype parameter.") { StatusCode = 105 };
+                    _preparedArguments[index] = Ipc.Core.Work.ProgramArgument.Omitted(); continue;
+                }
                 // A borrowed output receiver need not contain valid numeric data before the call.
                 if (_nativeViews[index] is { } native)
                 {
-                    try { _values[index] = context.ReadNative(native); }
+                    try { _values[index] = prototype?.NativeSignature == true && prototype.NativeParameters[index] is { } character && (character.TrimParameter || character.RightAdjustParameter)
+                            ? context.ParameterOptionValue(native)
+                            : prototype?.NativeSignature == true && prototype.NativeParameters[index].VariableSizeParameter
+                            ? RpgRuntimeContext.MatchingVariable(native, prototype.NativeParameters[index]) ? context.VariableBuffer(native) : context.ActualVariableValues(native)
+                            : prototype is null && context.VariableTransport(native) ? context.VariableBuffer(native)
+                            : prototype?.NativeSignature == true && RpgRuntimeContext.AggregateParameter(prototype.NativeParameters[index]) &&
+                            RpgRuntimeContext.MatchingAggregate(native, prototype.NativeParameters[index])
+                            ? context.NativeBuffer(context.AggregatePrefix(native, prototype.NativeParameters[index])) : context.ReadNative(native); }
                     catch (RpgRuntimeException error) { _errors.Add(index, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error)); }
                 }
                 else _values[index] = source[index].Eval(context);
             }
+            if (prototype?.NativeSignature == true)
+                for (var index = 0; index < source.Length; index++)
+                    if (prototype.NativeParameters[index] is { ExactParameter: true } exact && _preparedArguments[index]?.IsOmitted != true)
+                    {
+                        context.RequireExactType(exact, source[index], _nativeViews[index]);
+                        if (_nativeViews[index] is null && RpgCompiler.ExactActualType(context.Program, source[index]) is null) context.RequireExactValue(exact, this[index]);
+                    }
+            if (prototype?.NativeSignature == true)
+                for (var index = 0; index < source.Length; index++)
+                {
+                    var formal = prototype.NativeParameters[index];
+                    if (!formal.ReadOnlyParameter && !formal.ValueParameter || _preparedArguments[index]?.IsOmitted == true) continue;
+                    var actual = _nativeViews[index];
+                    if (formal.TrimParameter || formal.RightAdjustParameter)
+                    {
+                        var prepared = context.CharacterOptionTemporary(formal, this[index]);
+                        nativeBytes += prepared.ToBuffer()!.Length - (actual is null ? 0 : context.NativeMemory(actual).Capacity);
+                        if (nativeBytes > 1048576) throw new Ipc.Core.Messages.CpfException("CPF3C3A", "Transformed native arguments exceed 1 MiB.");
+                        _preparedArguments[index] = prepared; _nativeViews[index] = null; _errors.Remove(index); _values[index] = prepared.Value;
+                        continue;
+                    }
+                    if (formal.VariableSizeParameter)
+                    {
+                        if (actual is null || RpgRuntimeContext.ContainsSubarray(source[index]) || !RpgRuntimeContext.MatchingVariable(actual, formal))
+                        {
+                            var input = actual is not null && RpgRuntimeContext.MatchingVariable(actual, formal) ? context.ActualVariableValues(actual) : this[index];
+                            var prepared = context.VariableTemporary(formal, input);
+                            nativeBytes += prepared.ToBuffer()!.Length - (actual is null ? 0 : context.NativeMemory(actual).Capacity);
+                            if (nativeBytes > 1048576) throw new Ipc.Core.Messages.CpfException("CPF3C3A", "Converted native arguments exceed 1 MiB.");
+                            _preparedArguments[index] = prepared; _nativeViews[index] = null; _errors.Remove(index); _values[index] = prepared.Value;
+                        }
+                        continue;
+                    }
+                    if (formal.ValueParameter || actual is null || RpgRuntimeContext.ContainsSubarray(source[index]) ||
+                        !(RpgRuntimeContext.AggregateParameter(formal) ? RpgRuntimeContext.MatchingAggregate(actual, formal) : RpgRuntimeContext.SameParameterLayout(actual, formal)))
+                    {
+                        var prepared = context.ConstTemporary(formal, this[index], readOnly: !formal.ValueParameter);
+                        nativeBytes += prepared.ToBuffer()!.Length - (actual is null ? 0 : context.NativeMemory(actual).Capacity);
+                        if (nativeBytes > 1048576) throw new Ipc.Core.Messages.CpfException("CPF3C3A", "Converted native arguments exceed 1 MiB.");
+                        _preparedArguments[index] = prepared; _nativeViews[index] = null; _errors.Remove(index); _values[index] = prepared.Value;
+                    }
+                }
         }
         public int Count => _values.Length;
         internal RpgRuntimeContext.NativeView? NativeAt(int index) => _nativeViews[index];
+        internal Ipc.Core.Work.ProgramArgument? ArgumentAt(int index) => _preparedArguments[index];
         public object? this[int index] { get { if (_errors.TryGetValue(index, out var error)) error.Throw(); return _values[index]; } }
         public IEnumerator<object?> GetEnumerator() { for (var index = 0; index < Count; index++) yield return this[index]; }
         global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-        public void Dispose() => Array.Clear(_nativeViews);
+        public void Dispose() { Array.Clear(_nativeViews); Array.Clear(_preparedArguments); }
     }
 
     private int CallOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
-        var programName = Unquote(stmt.Factor1 ?? string.Empty);
+        var programName = stmt.NativeOperation == "CALL" ? RpgValues.ToText(Eval(stmt.Factor1, ctx)).Trim() : Unquote(stmt.Factor1 ?? string.Empty);
         if (programName.Length == 0)
         {
             programName = Unquote(stmt.Result ?? string.Empty);
@@ -1225,12 +1434,15 @@ public sealed partial class RpgInterpreter
         }
 
         var plistName = stmt.Factor2;
-        var parameters = CollectParameters(stmt, ctx);
+        var nativeFields = stmt.NativeOperation == "CALL" ? NativeCallFields(stmt, ctx) : null;
+        var parameters = nativeFields is null ? CollectParameters(stmt, ctx) : new ArgumentSnapshots(nativeFields.Select(RpgExpressionParser.Parse), ctx);
         using var snapshots = parameters as ArgumentSnapshots;
         var result = CallExternal(stmt, programName, parameters, ctx,
-            string.IsNullOrWhiteSpace(plistName) ? [] : CollectPlistFieldNames(ctx.Program, plistName).Select(RpgExpressionParser.Parse).ToArray());
+            nativeFields is not null ? nativeFields.Select(RpgExpressionParser.Parse).ToArray() :
+                string.IsNullOrWhiteSpace(plistName) ? [] : CollectPlistFieldNames(ctx.Program, plistName).Select(RpgExpressionParser.Parse).ToArray());
         if (result is null)
         {
+            if (stmt.NativeOperation is not null) throw new RpgRuntimeException("Native CALL target could not be resolved.") { StatusCode = 202 };
             if (stmt.Indicator1 != 0)
             {
                 ctx.Indicators[stmt.Indicator1] = true;
@@ -1240,6 +1452,10 @@ public sealed partial class RpgInterpreter
         {
             if (!result.Success)
             {
+                if (stmt.NativeOperation is not null)
+                {
+                    ctx.RecordStatus(202); ctx.RecordFeedbackError(new RpgRuntimeException(result.Message ?? "Native CALL failed.") { StatusCode = 202 });
+                }
                 if (stmt.Indicator1 != 0)
                 {
                     ctx.Indicators[stmt.Indicator1] = true;
@@ -1251,7 +1467,12 @@ public sealed partial class RpgInterpreter
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(plistName))
+            if (nativeFields is not null && result.UpdatedParameters is { } updates)
+            {
+                for (var index = 0; index < nativeFields.Count && index < updates.Count; index++)
+                    if (updates[index] is not null) ctx.WriteValue(nativeFields[index], updates[index]);
+            }
+            else if (!string.IsNullOrWhiteSpace(plistName))
             {
                 WriteBackPlist(ctx.Program, plistName, result.UpdatedParameters, ctx);
             }
@@ -1288,21 +1509,27 @@ public sealed partial class RpgInterpreter
         }
 
         name = Unquote(name);
-        var subroutine = ctx.Program.FindSubprocedure(name);
+        if (ctx.Program.FindPrototype(name) is { NativeProcedure: true })
+        {
+            _ = InvokeNativeProcedure(ctx, name, arguments, expression: false);
+            return -1;
+        }
+        var subroutine = ctx.Program.FindPrototype(name) is { NativeSignature: true } ? null : ctx.Program.FindSubprocedure(name);
         if (subroutine is not null)
         {
-            BindParameters(ctx, subroutine, arguments);
+            PrepareCallArguments(() => { BindParameters(ctx, subroutine, arguments); return 0; });
             var savedReturned = _returned;
             var savedHandling = _handlingError;
             _returned = false;
             _depth++;
             var savedCount = ctx.ParameterCount; ctx.ParameterCount = arguments.Count;
+            var savedParameterScope = ctx.InSubprocedure; ctx.InSubprocedure = true;
             var savedProcedure = _procedure; var savedInvocation = _procedureInvocation;
             _procedure = subroutine.Name; _procedureInvocation = new object();
             try { Execute(subroutine.Statements, ctx, new RpgBlockState(), subroutine.Name); }
             finally
             {
-                ctx.ParameterCount = savedCount; _depth--;
+                ctx.ParameterCount = savedCount; ctx.InSubprocedure = savedParameterScope; _depth--;
                 _procedure = savedProcedure; _procedureInvocation = savedInvocation;
                 _returned = savedReturned; _handlingError = savedHandling;
             }
@@ -1310,7 +1537,7 @@ public sealed partial class RpgInterpreter
         }
 
         var plistName = stmt.Factor2;
-        if (string.IsNullOrWhiteSpace(plistName) && rawArguments.Count == 1)
+        if (ctx.Program.FindPrototype(name) is not { NativeSignature: true } && string.IsNullOrWhiteSpace(plistName) && rawArguments.Count == 1)
         {
             var candidate = rawArguments[0].Trim();
             if (IsPlistName(ctx.Program, candidate))
@@ -1322,10 +1549,11 @@ public sealed partial class RpgInterpreter
 
         if (!string.IsNullOrWhiteSpace(plistName))
         {
-            var parameters = CollectPlistValues(ctx.Program, plistName, ctx);
+            var parameters = PrepareCallArguments(() => CollectPlistValues(ctx.Program, plistName, ctx));
             using var snapshots = parameters as ArgumentSnapshots;
             var result = CallExternal(stmt, name, parameters, ctx,
                 CollectPlistFieldNames(ctx.Program, plistName).Select(n => (RpgExpr)new RpgFieldRef(n)).ToArray());
+            if (result is null && stmt.Opcode == RpgOpcode.CallP) throw new RpgRuntimeException("Called program could not be resolved.") { StatusCode = 202 };
             if (result is not null)
             {
                 if (!result.Success && stmt.Indicator1 != 0)
@@ -1339,18 +1567,26 @@ public sealed partial class RpgInterpreter
             return -1;
         }
 
-        using var evaluated = new ArgumentSnapshots(arguments, ctx);
+        using var evaluated = PrepareCallArguments(() => new ArgumentSnapshots(arguments, ctx, ctx.Program.FindPrototype(name)));
 
         var prototype = ctx.Program.FindPrototype(name);
         if (prototype is not null)
         {
             var externalName = prototype.ExternalName ?? prototype.Name;
+            if (prototype.NativeSignature)
+            {
+                var nativeResult = CallExternal(stmt, externalName, evaluated, ctx, arguments, prototype);
+                if (nativeResult is null) throw new RpgRuntimeException("Native prototyped program could not be resolved.") { StatusCode = 202 };
+                WriteBackArguments(arguments, nativeResult.UpdatedParameters, ctx, evaluated);
+                return -1;
+            }
             IReadOnlyList<object?> PrepareSemantic()
             {
                 BindPrototypeParameters(ctx, prototype, evaluated);
                 return prototype.Parameters.Count > 0 ? prototype.Parameters.Select(ctx.ReadValue).ToArray() : evaluated.ToArray();
             }
             var result = CallExternal(stmt, externalName, evaluated, ctx, arguments, prototype, PrepareSemantic);
+            if (result is null && stmt.Opcode == RpgOpcode.CallP) throw new RpgRuntimeException("Called program could not be resolved.") { StatusCode = 202 };
             if (result is not null)
             {
                 if (!result.Success && stmt.Indicator1 != 0)
@@ -1386,6 +1622,7 @@ public sealed partial class RpgInterpreter
         }
 
         var external = CallExternal(stmt, name, evaluated, ctx, arguments);
+        if (external is null && stmt.Opcode == RpgOpcode.CallP) throw new RpgRuntimeException("Called program could not be resolved.") { StatusCode = 202 };
         if (external is not null && !external.Success && stmt.Indicator1 != 0)
         {
             ctx.Indicators[stmt.Indicator1] = true;
@@ -1393,6 +1630,14 @@ public sealed partial class RpgInterpreter
 
         WriteBackArguments(arguments, external?.UpdatedParameters, ctx, evaluated);
         return -1;
+    }
+
+    private static T PrepareCallArguments<T>(Func<T> prepare)
+    {
+        try { return prepare(); }
+        catch (RpgRuntimeException error) { error.CallArgumentError = true; throw; }
+        catch (Ipc.Core.Messages.CpfException error) when (error.MessageId != "CPF1241")
+        { throw new RpgRuntimeException(error.Message) { StatusCode = 105, ServiceError = error, CallArgumentError = true }; }
     }
 
     private static IEnumerable<string> SplitCallArguments(string text)
@@ -1442,6 +1687,7 @@ public sealed partial class RpgInterpreter
 
         for (var index = 0; index < arguments.Count && index < updated.Count; index++)
         {
+            if (RpgRuntimeContext.ContainsSubarray(arguments[index])) continue;
             if (updated[index] is not null && snapshots?.NativeAt(index) is { } native) ctx.WriteCapturedNative(native, updated[index]);
             else if (arguments[index] is RpgFieldRef field && updated[index] is not null)
             {
