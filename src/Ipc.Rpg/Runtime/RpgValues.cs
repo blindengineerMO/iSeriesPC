@@ -16,6 +16,7 @@ public static class RpgValues
 
     public static decimal ToDecimal(object? value) => value switch
     {
+        object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         decimal d => d,
         long l => l,
         int i => i,
@@ -37,6 +38,7 @@ public static class RpgValues
 
     public static long ToLong(object? value) => value switch
     {
+        object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         long l => l,
         int i => i,
         short s => s,
@@ -53,6 +55,7 @@ public static class RpgValues
 
     public static double ToDouble(object? value) => value switch
     {
+        object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         double d => d,
         float f => f,
         decimal m => (double)m,
@@ -67,6 +70,7 @@ public static class RpgValues
 
     public static bool ToBool(object? value) => value switch
     {
+        object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         bool b => b,
         null => false,
         long l => l != 0,
@@ -77,6 +81,7 @@ public static class RpgValues
 
     public static string ToText(object? value) => value switch
     {
+        object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         null => string.Empty,
         string s => s,
         Ipc.Core.Work.ProgramBuffer buffer => buffer.ToText(),
@@ -181,7 +186,7 @@ public static class RpgValues
             var divisor = ToDouble(right);
             if (divisor == 0d)
             {
-                throw new RpgRuntimeException("Division by zero.");
+                throw new RpgRuntimeException("Division by zero.") { StatusCode = 102 };
             }
 
             return ToDouble(left) / divisor;
@@ -190,7 +195,7 @@ public static class RpgValues
         var denominator = ToDecimal(right);
         if (denominator == 0m)
         {
-            throw new RpgRuntimeException("Division by zero.");
+            throw new RpgRuntimeException("Division by zero.") { StatusCode = 102 };
         }
 
         return ToDecimal(left) / denominator;
@@ -200,10 +205,13 @@ public static class RpgValues
     {
         if (IsFloat(left) || IsFloat(right))
         {
-            return ToDouble(left) % ToDouble(right);
+            var divisor = ToDouble(right);
+            if (divisor == 0d) throw new RpgRuntimeException("Division by zero.") { StatusCode = 102 };
+            return ToDouble(left) % divisor;
         }
-
-        return ToDecimal(left) % ToDecimal(right);
+        var denominator = ToDecimal(right);
+        if (denominator == 0m) throw new RpgRuntimeException("Division by zero.") { StatusCode = 102 };
+        return ToDecimal(left) % denominator;
     }
 
     public static int Compare(object? left, object? right)

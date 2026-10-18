@@ -27,6 +27,7 @@ public sealed class UserSpaceApi(SqliteConnectionFactory factory, Func<string, I
             _ => throw new CpfException("CPF3C36", "Invalid user-space API or parameter count.")
         };
         var error = errorIndex < 0 ? null : new ApiArguments.ErrorReceiver(_arguments, parameters[errorIndex]);
+        ApiArguments.DistinctErrorReceiver(error, parameters, errorIndex);
         try
         {
             var outputs = new List<ProgramArgument>(); if (error?.Target is { } errorTarget) outputs.Add(errorTarget);

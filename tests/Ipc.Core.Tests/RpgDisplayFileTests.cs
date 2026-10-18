@@ -60,6 +60,38 @@ public sealed class RpgDisplayFileTests : IDisposable
         public PanelResponse Read(ProgramDisplay display, CancellationToken cancellationToken) => read(display);
     }
 
+    [Fact]
+    public void Workstation_INFSR_handles_closed_file_errors_before_any_terminal_transfer()
+    {
+        Display(Screen); Compile(File("usropn infsr(FAIL)") + "read SCREEN;\nreturn;\nbegsr FAIL;\n" +
+            "if %status(SCREEN)=1211;\nsndpgmmsg 'WORKSTATION INFSR';\nendif;\nreturn;\nendsr;");
+        using var menu = Menu(); Command(menu, "CALL QGPL/APP"); Assert.Equal("WORKSTATION INFSR", Status(menu));
+    }
+
+    [Fact]
+    public void Workstation_INFDS_reports_actual_transfer_and_close_without_clearing_PSDS()
+    {
+        Display(Screen); Compile(File("infds(F)") +
+            "dcl-ds F qualified;\nSTATUS *status;\nOP *opcode;\nRECORD_NAME *record;\nIS_OPEN ind pos(9);\nend-ds;\n" +
+            "dcl-ds P psds qualified;\nSTATUS *status;\nend-ds;\n" +
+            "exfmt ENTRY;\nif F.STATUS=0 and F.OP='EXFMTR' and F.RECORD_NAME='ENTRY' and F.IS_OPEN and P.STATUS=0;\n" +
+            "close SCREEN;\nif not F.IS_OPEN and F.OP='CLOSEF';\nsndpgmmsg 'WORKSTATION FEEDBACK';\nendif;\nendif;\nseton LR;");
+        var terminal = new Terminal(display => display.Session.Handle(new(AidKey.Enter)));
+        using var session = new ExecutionSession(_system, _system.Jobs.CreateInteractive("QSECOFR"), _timeout.Token, terminal);
+        var result = session.Execute("CALL QGPL/APP"); Assert.False(result.IsError, result.Message); Assert.Contains("WORKSTATION FEEDBACK", result.Message);
+    }
+
+    [Theory]
+    [InlineData("read(e) SCREEN;")]
+    [InlineData("write(e) ENTRY;")]
+    [InlineData("exfmt(e) ENTRY;")]
+    public void Closed_workstation_E_operations_report_numeric_status_and_bypass_MONITOR(string operation)
+    {
+        Display(Screen); Compile(File("usropn") + "monitor;\n" + operation + "\nif %error and %status=1211 and %status(SCREEN)=1211;\n" +
+            "sndpgmmsg 'WORKSTN STATUS';\nendif;\non-error *file;\nsndpgmmsg 'BAD';\nendmon;\nseton LR;");
+        using var menu = Menu(); Command(menu, "CALL QGPL/APP"); Assert.Equal("WORKSTN STATUS", Status(menu));
+    }
+
     [Theory]
     [InlineData("2.5", "2.50")]
     [InlineData("-12.3", "-12.30")]

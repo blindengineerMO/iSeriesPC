@@ -38,7 +38,8 @@ MBR(*NONE) creates no member. MAXMBRS defaults to 1 for CRTPF; 1–32767 and *NO
 (the 32767 system maximum) are supported. Typed/legacy definitions retain a 32767
 maximum unless explicitly limited. ADDPFM rejects duplicate names and atomically
 checks the current limit before creating the member and its indexes. Source saves
-use the same limit check. CHGPF currently changes MAXMBRS, accepting *SAME/*NOMAX;
+use the same limit check. CHGPF changes MAXMBRS, accepting *SAME/*NOMAX, and
+WAITRCD;
 shrinking below the existing member count fails before any catalog change.
 See IBM [CRTPF](https://www.ibm.com/docs/en/i/7.5.0?topic=c-create-physical-file)
 and [CHGPF](https://www.ibm.com/docs/en/i/7.5.0?topic=c-change-physical-file).
@@ -158,8 +159,11 @@ key values are given. Physical and logical keys use the same exact decimal and
 CCSID byte-key functions. New keyed physical members have maintained expression
 indexes. Native file-level UNIQUE(*INCNULL|*EXCNULL) is enforced per physical member;
 PF constraints have separate ownership from logical constraints, survive object copies,
-and cannot be removed by deleting an LF. Nulls sort above non-null key values. Equality/update/delete do not cast decimals to floating point; mutations
-require the complete key. Files with no keys use record-number order.
+and cannot be removed by deleting an LF. Nulls sort above non-null key values.
+Equality/update/delete do not cast decimals to floating point. Bulk keyed
+mutations require the complete key; current-record cursor writes use the selected
+physical member/RRN with an exact before-image check. Files with no keys use
+record-number order and support these current-record writes.
 
 Large integral decimals use TEXT storage in newly created members. Writes to
 legacy INTEGER-affinity members with precision above 18 are rejected before they
@@ -179,9 +183,24 @@ sequence number, otherwise the next numeric value is chosen. Compilation
 compiler over them, so multi-row record-format + field lines assemble into one
 `FileDefinition`.
 
+## Bounded cursor navigation
+
+Physical/logical and SQLite RPG cursors share live keyset reads, reverse reads,
+keyed CHAIN/lower/upper limits and adjacent equal reads. The cursor retains one
+record and a bounded position; job commitment checkpoints cover these RPG cursors
+as well. Current-record writes affect one selected physical RRN and check the
+full before image, including fields hidden by a logical projection. See
+[navigation, evidence and remaining limits](cursor-navigation.md).
+
 ## Limitations
 
 - Only the primary record format is materialized; multi-format record files
   create one table from the primary format.
 - CPF codes used by the store: `CPF9801` file not found, `CPF2817` member not
   found, `CPF3201` no key fields / no key values.
+
+
+Database PF/LF definitions also persist [record-wait attributes](record-waits.md).
+CRTPF/CRTLF default WAITRCD to 60 seconds; CHGPF/CHGLF can change it without
+changing record layouts. Existing JSON defaults to 60, and copy/rename/restart
+preserve explicit values. Native commitment/open flags remain separate work.

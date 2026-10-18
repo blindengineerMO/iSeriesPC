@@ -2,6 +2,7 @@ using Ipc.Core.Messages;
 using Ipc.Core.Security;
 using Ipc.Core.System;
 using Ipc.Services.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Security;
 
@@ -124,7 +125,12 @@ public sealed class UserProfileStore
     internal UserProfile? TryGetForAuthentication(string name)
     {
         using var connection = _factory.Open();
-        using var cmd = connection.CreateCommand();
+        return ReadForAuthentication(connection, null, name);
+    }
+
+    internal static UserProfile? ReadForAuthentication(SqliteConnection connection, SqliteTransaction? transaction, string name)
+    {
+        using var cmd = connection.CreateCommand(); cmd.Transaction = transaction;
         cmd.CommandText = "SELECT name, user_class, special_auth, group_profile, owner, description, " +
                           "status, initial_menu, initial_program, initial_curlib, password_changed, " +
                           "password_expires, days_used, signon_attempts, password_hash, hash_iterations, " +

@@ -17,7 +17,52 @@ The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
 Latest [completion checkpoint](docs/completion-progress.md): 36/106 checklist items
-complete, 2309 tests passing, and real sign-on/display PTY acceptance passing.
+complete, 3173 tests passing, and real sign-on/display PTY acceptance passing.
+The C11 [journal foundation](docs/journals.md) now supplies durable receivers,
+rotation, entry display, atomic PF/source capture, and forward/reverse recovery
+with native partial-error policies. Audit hooks, save/restore and
+commitment-control acceptance remain open. The internal
+[record transaction foundation](docs/record-transactions.md) now shares staged
+file/RPG/SQL changes and publishes records and journal cycles atomically. Statement
+workspaces load only needed journaled members from a consistent snapshot while
+excluding catalog/security/history rows. Joins, trigger/FK dependencies and bound
+physical/logical/cursor members share that path; authenticated in-memory
+publication is also verified. Bounded cursors retain successful commit checkpoints
+and restore their positions on service rollback. SQLite RPG file access now uses
+[bounded forward/reverse/key navigation](docs/cursor-navigation.md) with the same
+checkpoints and no managed record-list cache. Current-record UPDATE/DELETE target
+one physical member/RRN, preserving duplicate-key siblings and checking exact
+before images through ordinary and enlisted writes. Compiled
+[compound file keys](docs/rpg-file-keys.md) support expression lists, KLIST and
+scalar `%KDS`; keyed DELETE selects one record under the same transaction gate.
+[Relative record access](docs/relative-records.md) adds sparse RRN lookup, bounds
+and deletion, explicit host arrival mode and the same commitment checkpoints.
+[Declared DISK files](docs/rpg-disk-files.md) add external field bindings,
+explicit access modes, USROPN, overrides and retained activation positions.
+Declared *OUTPUT and fixed A/O modes now add records through mapped record-format
+WRITE, including output-only users with Add authority. RECNO and native slot
+allocation/reuse remain open.
+The [retained update-read foundation](docs/update-read-locks.md) adds scoped
+input locks, inquiry access, bounded waits and lifecycle cleanup. Declared
+noncommit update/delete files now use them through N input, UNLOCK and mapped
+record-format UPDATE.
+[WAITRCD file attributes and overrides](docs/record-waits.md) now configure timed,
+immediate and cancellable indefinite record waits for declared update files.
+[Numeric file statuses and MONITOR](docs/rpg-file-status.md) now handle E/ER
+precedence, record contention, preserved input fields and nested numeric handlers.
+Full status/INFDS/PSDS and ILE exception coverage remain open.
+[Native free-form data structures](docs/rpg-native-structures.md) now provide byte
+layouts, qualified fields/arrays, shared overlays and borrowed API receivers.
+[Native INFDS/PSDS feedback](docs/rpg-feedback-structures.md) now supplies common
+file feedback, program errors, last-file snapshots and initial job identity.
+Extended feedback areas, nested structures and full entry/prototype ABI remain open.
+[RPG error subroutines](docs/rpg-error-subroutines.md) now dispatch INFSR and
+procedure-local *PSSR with monitor precedence, RETURN/GOTO recovery and *CANCL
+cleanup. Native cycle restart points and general ILE exception handling remain open.
+APY/RMV
+validates committed cycles and reports incomplete ending ranges.
+Native commitment commands, isolation and pending/rollback/interleaved cycle
+recovery remain unfinished.
 The C11 [job data-area storage lifecycle](docs/job-environment.md#c11-storage-completion-evidence)
 is verified across submission, routing, group sharing, process concurrency, restart and cleanup.
 [QWCRDTAA](docs/data-areas.md#qwcrdtaa-retrieval-api) now retrieves typed named/job

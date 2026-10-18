@@ -17,7 +17,7 @@ internal sealed class RpgArgumentScope : IDisposable
     internal IReadOnlyList<object?> Arguments { get; }
 
     internal RpgArgumentScope(RpgRuntimeContext context, IReadOnlyList<RpgExpr> expressions, IReadOnlyList<object?> values, int ccsid,
-        RpgPrototype? prototype = null)
+        RpgPrototype? prototype = null, Func<int, RpgRuntimeContext.NativeView?>? capturedNative = null)
     {
         if (expressions.Count > 256 || values.Count != expressions.Count) throw Bad("Invalid RPG API argument count; at most 256 arguments are supported.");
         RpgField[]? formals = null;
@@ -41,6 +41,7 @@ internal sealed class RpgArgumentScope : IDisposable
             }
         }
         var byField = new Dictionary<string, ProgramArgument>(StringComparer.OrdinalIgnoreCase);
+        var byNative = new Dictionary<string, ProgramArgument>(StringComparer.Ordinal);
         var byReference = new Dictionary<ProgramArgument, ProgramArgument>(ReferenceEqualityComparer.Instance);
         var arguments = new List<object?>(); long bytes = 0;
         var encoding = (Encoding)CodePage.FromCcsid(ccsid).Clone();
@@ -50,6 +51,39 @@ internal sealed class RpgArgumentScope : IDisposable
         {
             var expression = expressions[index];
             var formal = formals?[index];
+            var native = capturedNative?.Invoke(index);
+            if (native is null && capturedNative is null) context.TryNativeReference(expression, out native);
+            if (native is not null)
+            {
+                if (context.NativeCcsid != ccsid) throw Bad("Native structure CCSID differs from the current call; explicit conversion is required.");
+                if (native.IsArray && native.Stride != native.UnitWidth) throw Bad("A noncontiguous array cannot be borrowed as one native buffer; pass an indexed element.");
+                var element = native.Element;
+                var raw = element is null || native.IsArray || element.OpaqueBytes;
+                var kind = raw ? RpgFieldKind.Character : element!.Kind;
+                var precision = kind is RpgFieldKind.Packed or RpgFieldKind.Zoned ? element!.Length : native.Width;
+                if (formal is not null && (formal.Kind != kind || formal.OpaqueBytes != raw ||
+                    formal.Length != (kind == RpgFieldKind.Integer ? element!.Length : precision) || formal.Decimals != (element?.Decimals ?? 0)))
+                    throw Bad("Native actual field differs from its scalar prototype.");
+                bytes += native.Width;
+                if (bytes > 1048576) throw Bad("RPG API arguments exceed 1 MiB.");
+                if (!byNative.TryGetValue(native.Identity, out var reference))
+                {
+                    object? NormalizeNative(object? value)
+                    {
+                        CheckActive();
+                        try { return new ProgramBuffer(context.NormalizeNative(native, value, strict: true), ccsid); }
+                        catch (RpgRuntimeException error) { throw Bad(error.Message); }
+                    }
+                    var type = kind switch { RpgFieldKind.Character => "*CHAR", RpgFieldKind.Packed => "*DEC", RpgFieldKind.Zoned => "*ZONED",
+                        RpgFieldKind.Integer => "*INT", RpgFieldKind.Float => "*FLT", RpgFieldKind.Indicator => "*LGL",
+                        RpgFieldKind.Date => "*DATE", RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", _ => throw Bad("Unsupported native argument type.") };
+                    reference = new(() => { CheckActive(); return raw ? context.NativeBuffer(native) : context.ReadNative(native); },
+                        value => { CheckActive(); RpgRuntimeContext.WriteNativeBytes(native, ((ProgramBuffer)value!).ToArray()); }, NormalizeNative,
+                        type, precision, element?.Decimals ?? 0, () => { CheckActive(); return context.NativeBuffer(native); }, constant: null, storage: context.NativeStorageRange(native));
+                    byNative.Add(native.Identity, reference);
+                }
+                arguments.Add(reference); continue;
+            }
             if (expression is not RpgFieldRef fieldRef)
             {
                 // Expressions are private values, never writable receivers.

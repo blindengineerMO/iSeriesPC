@@ -32,7 +32,9 @@ public sealed partial class CommandService
         var file = CommandParser.Unquote(call.GetOption("FILE") ?? "*ALL").ToUpperInvariant();
         if (call.Name.Equals("DSPOVR", StringComparison.OrdinalIgnoreCase))
             return new CommandResult { Listing = environment.Overrides().Where(x => file == "*ALL" || x.File == file)
-                .Select(x => $"{x.File} TOFILE({x.Library}/{x.Name}) MBR({x.Member}) SHARE({(x.Share ? "*YES" : "*NO")}) OVRSCOPE({(x.Scope == JobEnvironmentScope.Job ? "*JOB" : "*CALLLVL")})").ToArray() };
+                .Select(x => $"{x.File} TOFILE({x.Library}/{x.Name}) MBR({x.Member}) SHARE({(x.Share ? "*YES" : "*NO")})" +
+                    (x.RecordLockWaitSeconds is { } wait ? " WAITRCD(" + RecordWaitText(wait) + ")" : "") +
+                    $" OVRSCOPE({(x.Scope == JobEnvironmentScope.Job ? "*JOB" : "*CALLLVL")})").ToArray() };
         var scopeText = CommandParser.Unquote(call.GetOption("OVRSCOPE") ?? call.GetOption("LVL") ?? "*CALLLVL").ToUpperInvariant();
         var scope = scopeText switch { "*JOB" => JobEnvironmentScope.Job, "*CALLLVL" or "*" => JobEnvironmentScope.Call,
             _ => throw new CpfException("IPC0126", "Supported override scopes are *CALLLVL and *JOB.") };
@@ -40,6 +42,7 @@ public sealed partial class CommandService
         else
         {
             var target = CommandParser.Unquote(call.GetOption("TOFILE") ?? file).ToUpperInvariant();
+            if (target == "*FILE") target = file;
             var (library, name) = ResolveWorkObject(target, ObjectType.File);
             _ = _system.Objects.GetRequired(library, name, ObjectType.File);
             var member = CommandParser.Unquote(call.GetOption("MBR") ?? "*FIRST").ToUpperInvariant();
@@ -47,7 +50,7 @@ public sealed partial class CommandService
             if (!_files.MemberExists(library, name, member)) throw new CpfException("CPF2817", "Override member not found.");
             var share = CommandParser.Unquote(call.GetOption("SHARE") ?? "*NO").ToUpperInvariant() switch {
                 "*YES" => true, "*NO" => false, _ => throw new CpfException("IPC0126", "SHARE must be *YES or *NO.") };
-            environment.Override(new(file, library, name, member, share, scope));
+            environment.Override(new(file, library, name, member, share, scope, ParseRecordWait(call.GetOption("WAITRCD"), overriding: true)));
         }
         return CommandResult.Ok("Job file overrides updated.");
     }
@@ -103,12 +106,12 @@ public sealed partial class CommandService
             {
                 var allocation = new JobLockStore(_system.Connections).AcquireWithLifetime(_job!.Key,
                     new(library, name, ObjectType.File), JobLockMode.SharedRead, TimeSpan.Zero, _cancellationToken, "OpenPath", Guid.NewGuid().ToString("N"));
-                try { return new RpgJobPath(new RpgFileCursor(new RpgSqliteFileAccess(_files), library, name, member), allocation); }
+                try { return new RpgJobPath(new RpgFileCursor(new RpgSqliteFileAccess(_files), library, name, member, _cancellationToken), allocation); }
                 catch { allocation.Dispose(); throw; }
             });
         try
         {
-            // Refresh data/authority and command record locks while preserving the shared position.
+            // Validate live authority/schema while preserving the shared position and buffer.
             path.Value.Cursor.Reload();
             return new RpgFileHandle(() => path.Value.Cursor, path.Dispose, path.Close);
         }

@@ -21,6 +21,7 @@ public sealed class DataAreaApi(SqliteConnectionFactory factory, Func<string, IE
         cancellationToken.ThrowIfCancellationRequested();
         if (parameters.Count != 6) throw new CpfException("CPF3C36", "QWCRDTAA requires six parameters.");
         var error = new ApiArguments.ErrorReceiver(_arguments, parameters[5]);
+        ApiArguments.DistinctErrorReceiver(error, parameters, 5);
         try
         {
             var receiver = _arguments.CharacterOutput(parameters[0]);

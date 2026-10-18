@@ -55,6 +55,7 @@ public sealed partial class CommandService
         _catalog.Register("CRTSRCPF", ExecuteCreateSourceFile);
         _catalog.Register("CRTPF", ExecuteCreatePhysicalFile);
         _catalog.Register("CHGPF", ExecuteChangePhysicalFile);
+        _catalog.Register("CHGLF", ExecuteChangeLogicalFile);
         _catalog.Register("CRTLF", ExecuteCreateLogicalFile);
         _catalog.Register("ADDPFM", ExecuteAddMember);
         _catalog.Register("ADDLFM", ExecuteAddMember);
@@ -90,6 +91,7 @@ public sealed partial class CommandService
         RegisterDisplayCommands();
         RegisterDataQueueCommands();
         RegisterUserSpaceCommands();
+        RegisterJournalCommands();
         _catalog.Register("WRKAPILS", ListRuntimeApis);
         RegisterGroupCommands();
         RegisterWorkScreenCommands();
@@ -166,7 +168,7 @@ public sealed partial class CommandService
         var descriptor = _loadedDescriptors.GetValue(program, _ => throw new CpfException("IPC0110", "Missing RPG source snapshot."));
         var key = program.Library + "/" + program.Name;
         var fingerprint = Convert.ToHexString(global::System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(
-            descriptor.Source! + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgWorkstationBindings.AttributeName))));
+            descriptor.Source! + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgWorkstationBindings.AttributeName) + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgDiskBindings.AttributeName))));
         var state = groups.Resource(key, () => new RpgActivationState(fingerprint, new RpgRuntimeContext(program, host)));
         if (state.Fingerprint != fingerprint)
         {
@@ -175,14 +177,15 @@ public sealed partial class CommandService
         }
         if (state.Active) throw new CpfException("IPC0124", "Recursive RPG calls require a new activation group.");
         state.Active = true;
-        try { interpreter.Run(program, parameters, state.Context); }
-        finally { state.Active = false; if (state.Context.Indicators[0]) groups.RemoveResource(key); }
+        var failed = true;
+        try { interpreter.Run(program, parameters, state.Context); failed = false; }
+        finally { state.Active = false; if (failed || state.Context.Indicators[0] || state.Context.IsCancelled) groups.RemoveResource(key); }
         // LR ends this program's retained storage.
     }
     private sealed record RpgActivationState(string Fingerprint, RpgRuntimeContext Context) : IDisposable
     {
         public bool Active { get; set; }
-        public void Dispose() => Context.CloseWorkstations();
+        public void Dispose() { try { Context.CloseWorkstations(); } finally { Context.CloseDiskFiles(); } }
     }
 
     private CommandResult ExecuteSystemValues(CommandCall call)
@@ -431,7 +434,7 @@ public sealed partial class CommandService
         RpgProgram program;
         try
         {
-            program = RpgCompiler.Compile(library, name, source, resolver.ResolveRpg, _cancellationToken, DescribeRpgWorkstation);
+            program = RpgCompiler.Compile(library, name, source, resolver.ResolveRpg, _cancellationToken, DescribeRpgWorkstation, DescribeRpgDisk);
         }
         catch (RpgCompileException ex)
         {
@@ -441,6 +444,7 @@ public sealed partial class CommandService
         var attributes = new Dictionary<string, string>(ActivationAttributes(call));
         attributes[Ipc.Core.Compilation.CompiledSourceMap.AttributeName] = Ipc.Core.Compilation.CompiledSourceMap.Serialize(program.Source!);
         attributes[RpgWorkstationBindings.AttributeName] = RpgWorkstationBindings.Serialize(program);
+        attributes[RpgDiskBindings.AttributeName] = RpgDiskBindings.Serialize(program);
         _system.Objects.Create(new ObjectDescriptor
         {
             Key = new QualifiedName(library, name),
@@ -528,6 +532,7 @@ public sealed partial class CommandService
         var maximumText = CommandParser.Unquote(call.GetOption("MAXMBRS") ?? "1").ToUpperInvariant();
         var maximum = maximumText == "*NOMAX" ? 32767 : int.TryParse(maximumText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : 0;
         if (maximum is < 1 or > 32767) return CommandResult.Error("IPC0003: MAXMBRS requires 1–32767 or *NOMAX.");
+        var recordWait = ParseRecordWait(call.GetOption("WAITRCD"))!.Value;
         if (sourceMember.Length == 0 || sourceMember == "*FILE") sourceMember = name;
 
         if (sourceFile.Length == 0)
@@ -564,6 +569,7 @@ public sealed partial class CommandService
 
         try
         {
+            definition.RecordLockWaitSeconds = recordWait;
             _files.CreatePhysicalFile(library, name, definition, sourceText,
                 text.Length > 0 ? text : $"Physical file {name}.", member, maximum);
         }
@@ -863,10 +869,14 @@ public sealed partial class CommandService
 
     private RpgHost BuildRpgHost() => new()
     {
+        Job = _job?.Key,
+        CurrentUser = _job?.UserProfile ?? _job?.Key.User,
         Ccsid = () => _job?.Ccsid ?? _system.Config.Ccsid,
         CancellationToken = _cancellationToken,
         Files = new RpgSqliteFileAccess(_files),
         OpenFile = _job is null ? null : OpenRpgFile,
+        OpenDisk = OpenRpgDisk,
+        RetainFiles = _job is not null && _system.JobRuntime.Groups(_job.Key) is not null,
         OpenWorkstation = OpenRpgWorkstation,
         RebindWorkstation = RebindRpgWorkstation,
         RetainWorkstations = _job is not null && _system.JobRuntime.Groups(_job.Key) is not null,
@@ -982,9 +992,13 @@ public sealed partial class CommandService
                         var bindings = descriptor.ExtendedAttributes?.TryGetValue(RpgWorkstationBindings.AttributeName, out var saved) == true
                             ? RpgWorkstationBindings.Restore(source, saved) : null;
                         Func<RpgWorkstationRequest, RpgWorkstationLayout>? resolver = bindings is null ? null : bindings.Resolve;
+                        var diskBindings = descriptor.ExtendedAttributes?.TryGetValue(RpgDiskBindings.AttributeName, out var savedDisk) == true
+                            ? RpgDiskBindings.Restore(source, savedDisk) : null;
+                        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = diskBindings is null ? null : diskBindings.Resolve;
                         rpg = expanded is not null
-                            ? RpgCompiler.Compile(lib, name, expanded, _cancellationToken, resolver)
-                            : RpgCompiler.Compile(lib, name, source, _cancellationToken, resolver);
+                            ? RpgCompiler.Compile(lib, name, expanded, _cancellationToken, resolver, diskResolver)
+                            : RpgCompiler.Compile(lib, name, source, _cancellationToken, resolver, diskResolver);
+                        if (diskBindings is not null && diskBindings.Files.Count != rpg.DiskFiles.Count) throw new InvalidDataException("Unused compiled RPG disk bindings.");
                         if (bindings is not null && bindings.Files.Count != rpg.Workstations.Count) throw new InvalidDataException("Unused compiled RPG workstation bindings.");
                     }
                     catch (Exception error) when (error is InvalidDataException or RpgCompileException)

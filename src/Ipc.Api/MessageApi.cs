@@ -27,6 +27,7 @@ public sealed partial class MessageApi(SqliteConnectionFactory factory, Func<str
             _ => throw new CpfException("IPC0136", "Unknown message API.") };
         if (!counts.Contains(parameters.Count)) throw new CpfException("CPF3C36", "Incomplete message API parameter group.");
         var error = new ApiArguments.ErrorReceiver(_arguments, parameters[errorIndex]);
+        ApiArguments.DistinctErrorReceiver(error, parameters, errorIndex);
         try
         {
             switch (name)

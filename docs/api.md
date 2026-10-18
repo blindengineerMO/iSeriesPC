@@ -380,8 +380,11 @@ integral-value checks; INT(10) satisfies native BIN(4) parameters. Raw API text 
 as `*BLANK` is stored literally, without RPG assignment-keyword interpretation.
 
 Named constants and evaluated expressions are immutable inputs. Expression values
-are evaluated once. Arrays, DS/overlays, varying characters, zoned fields, legacy
-RPG B-spec binary fields, floats and date/time fields cannot be borrowed in this checkpoint.
+are evaluated once. The original scalar path still excludes legacy text DS/overlays,
+varying characters, zoned fields and RPG B-spec binary fields. New native DCL-DS
+structures, contiguous arrays and typed subfields use the
+[native byte-view path](rpg-native-structures.md#borrowed-api-views), including
+zoned/float/default ISO datetime subfields.
 Calls are bounded to 256 arguments and 1 MiB of aggregate storage. Scalar
 prototype calls can also borrow receivers under the contract below. Full native
 RPG storage, broader prototype modes and the C09/C14 contracts remain open.
@@ -424,8 +427,9 @@ variables with the same name. Multiple unnamed prototypes get independent storag
 the first legacy unnamed prototype retains P1/P2 names where available. This
 checkpoint accepts fixed reference parameters with no options beyond PARM.
 CONST, VALUE, OPTIONS and other parameter keywords are retained and rejected for
-typed API borrowing. Arrays, DS/overlays, varying fields and unsupported numeric
-types also fail. These limits apply when a built-in target requests borrowing.
+typed API borrowing. Whole-DS/array prototype formals, legacy DS/overlays, varying
+fields and unsupported numeric types also fail; compatible scalar formals can now
+borrow native subfields. These limits apply when a built-in target requests borrowing.
 
 Literals and expression results become immutable ProgramConstant inputs with the
 formal layout. Character values pad to that width without truncation; packed

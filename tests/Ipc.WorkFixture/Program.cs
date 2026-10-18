@@ -12,8 +12,36 @@ public static class Program
         using var factory = new SqliteConnectionFactory(root);
         var jobs = new JobService(factory); var queue = new BatchQueue(factory, jobs);
         File.WriteAllText(Path.Combine(root, $"ready-{Environment.ProcessId}"), "ready");
-        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(mode == "record-publish" ? 60 : 30));
         while (!File.Exists(Path.Combine(root, "start"))) await Task.Delay(10, stop.Token);
+        if (mode is "record-stage" or "record-publish")
+        {
+            var job = new Ipc.Core.Work.JobKey(int.Parse(args[3]), args[4], args[5]);
+            using var identity = Ipc.Services.Events.OperationIdentity.Enter(job.User, job);
+            factory.RecordTransactions.Begin(job); factory.RecordTransactions.Enlist(job, new("QGPL", "FIRST"));
+            using (var statement = factory.RecordTransactions.Open(job))
+            { statement.Execute("UPDATE \"QGPL.FIRST.FIRST\" SET TEXT='interrupted pending'"); statement.Complete(); }
+            File.WriteAllText(Path.Combine(root, "staged-" + Environment.ProcessId), "staged");
+            if (mode == "record-publish")
+            {
+                while (!File.Exists(Path.Combine(root, "publish"))) await Task.Delay(10, stop.Token);
+                factory.RecordTransactions.Commit(job, stop.Token); Console.Write("committed"); return 0;
+            }
+            await Task.Delay(Timeout.Infinite, stop.Token); return 0;
+        }
+        if (mode == "journal-recover")
+        {
+            var result = new JournalStore(factory).Recover(new("QGPL", "RECOVERY"), [new(new("QGPL", "RECORDS"), "*ALL")], count, 1, remove: true, cancellationToken: stop.Token);
+            Console.Write(result.Changes); return 0;
+        }
+        if (mode == "journal-append")
+        {
+            var journals = new JournalStore(factory);
+            var sequences = new List<long>();
+            for (var index = 0; index < count; index++)
+                sequences.Add(journals.Send(new("QGPL", "TESTJRN"), "AA", BitConverter.GetBytes(Environment.ProcessId), stop.Token));
+            Console.Write(JsonSerializer.Serialize(sequences)); return 0;
+        }
         if (mode == "system-value-pairs")
         {
             for (var index = 0; index < count; index++)

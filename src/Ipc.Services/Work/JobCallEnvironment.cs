@@ -9,7 +9,7 @@ using System.Runtime.ExceptionServices;
 namespace Ipc.Services.Work;
 
 public enum JobEnvironmentScope { Call, Job }
-public sealed record JobFileOverride(string File, string Library, string Name, string Member, bool Share, JobEnvironmentScope Scope);
+public sealed record JobFileOverride(string File, string Library, string Name, string Member, bool Share, JobEnvironmentScope Scope, int? RecordLockWaitSeconds = null);
 
 /// <summary>One job's call frames, overrides and open paths. Handles never migrate to another job.</summary>
 public sealed class JobCallEnvironment : IDisposable
@@ -63,7 +63,7 @@ public sealed class JobCallEnvironment : IDisposable
     public void Override(JobFileOverride value)
     {
         RequireOwner();
-        if (!ObjectName.IsValid(value.File) || !ObjectName.IsValid(value.Library) || !ObjectName.IsValid(value.Name) || !ObjectName.IsValid(value.Member) || !Enum.IsDefined(value.Scope))
+        if (value.RecordLockWaitSeconds is < -1 or > 32767 || !ObjectName.IsValid(value.File) || !ObjectName.IsValid(value.Library) || !ObjectName.IsValid(value.Name) || !ObjectName.IsValid(value.Member) || !Enum.IsDefined(value.Scope))
             throw new CpfException("IPC0126", "Invalid file override identity or scope.");
         var frame = value.Scope == JobEnvironmentScope.Job ? _root : _current;
         if (!frame.Overrides.ContainsKey(value.File) && frame.Overrides.Count >= 256) throw new CpfException("IPC0126", "Override limit reached.");

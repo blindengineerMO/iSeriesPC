@@ -45,8 +45,23 @@ public interface IRpgFileAccess
     long RowCount(string library, string name, string member);
 }
 
+public interface IRpgCursorFileAccess
+{
+    Ipc.Db.Store.DatabaseRecordCursor OpenUpdateCursor(string library, string name, string member, bool keyed, bool deleteAccess, TimeSpan recordWait, CancellationToken cancellationToken = default)
+        => throw new RpgRuntimeException("This file provider does not support an explicit record-wait policy.");
+    Ipc.Db.Store.DatabaseRecordWriter OpenWriter(string library, string name, string member, CancellationToken cancellationToken = default)
+        => throw new RpgRuntimeException("This file provider does not support declared record output.");
+    Ipc.Db.Store.DatabaseRecordCursor OpenUpdateCursor(string library, string name, string member, bool keyed, bool deleteAccess, CancellationToken cancellationToken = default)
+        => throw new RpgRuntimeException("This file provider does not support retained update input.");
+    Ipc.Db.Store.DatabaseRecordCursor OpenCursor(string library, string name, string member, CancellationToken cancellationToken = default);
+    Ipc.Db.Store.DatabaseRecordCursor OpenCursor(string library, string name, string member, bool keyed, CancellationToken cancellationToken = default)
+        => throw new RpgRuntimeException("This file provider does not support an explicit access mode.");
+}
+
 public sealed class RpgHost
 {
+    public Ipc.Core.Work.JobKey? Job { get; init; }
+    public string? CurrentUser { get; init; }
     public Func<int> Ccsid { get; init; } = () => 37;
 
     public CancellationToken CancellationToken { get; init; }
@@ -54,6 +69,8 @@ public sealed class RpgHost
     public IRpgFileAccess? Files { get; init; }
 
     public Func<string, RpgFileHandle>? OpenFile { get; init; }
+    public Func<Ipc.Rpg.Model.RpgDiskBinding, RpgFileHandle>? OpenDisk { get; init; }
+    public bool RetainFiles { get; init; }
     public Func<Ipc.Rpg.Model.RpgWorkstationBinding, IRpgWorkstation>? OpenWorkstation { get; init; }
     public Action<IRpgWorkstation>? RebindWorkstation { get; init; }
     public bool RetainWorkstations { get; init; }
@@ -73,10 +90,15 @@ public sealed class RpgHost
     public DateTimeOffset? Now { get; init; }
 }
 
-public sealed class RpgFileHandle(Func<RpgFileCursor> cursor, Action close, Action? explicitClose = null) : IDisposable
+public sealed class RpgFileHandle(Func<RpgFileCursor> cursor, Action close, Action? explicitClose = null, Action<CancellationToken>? rebind = null) : IDisposable
 {
     private bool _closed;
     public RpgFileCursor Cursor { get { ObjectDisposedException.ThrowIf(_closed, this); return cursor(); } }
+    public void Rebind(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_closed, this); cancellationToken.ThrowIfCancellationRequested();
+        if (rebind is null) Cursor.RebindCancellation(cancellationToken); else rebind(cancellationToken);
+    }
     public void Close() { if (_closed) return; (explicitClose ?? close)(); _closed = true; }
     public void Dispose() { if (_closed) return; close(); _closed = true; }
 }

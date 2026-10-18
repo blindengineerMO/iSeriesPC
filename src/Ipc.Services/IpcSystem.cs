@@ -135,6 +135,8 @@ public sealed class IpcSystem : IDisposable
     public EimService EnterpriseIdentities => _eim;
     public CertificateService Certificates => _certificates;
     public CryptographicService Cryptography => new(_connectionFactory);
+    public JournalStore Journals => new(_connectionFactory);
+    public JobRecordTransactions RecordTransactions => _connectionFactory.RecordTransactions;
     public ContentTrustService ContentTrust => _contentTrust;
     public ObjectSigningService ObjectSigning => _objectSigning;
     public SignedDeploymentService SignedDeployments => new(_connectionFactory, _contentTrust, _objectSigning);

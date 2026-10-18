@@ -6,6 +6,18 @@ namespace Ipc.Services.Sqlite;
 /// Microsoft.Data.Sqlite's Cancel method is a no-op; the SQLite VM must poll instead.</summary>
 public static class SqliteCancellation
 {
+    internal static SqliteTransaction BeginWrite(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        connection.DefaultTimeout = 1; var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { return connection.BeginTransaction(deferred: false); }
+            catch (SqliteException failure) when (failure.SqliteErrorCode is 5 or 6 && System.Diagnostics.Stopwatch.GetElapsedTime(start) < TimeSpan.FromSeconds(30))
+            { cancellationToken.WaitHandle.WaitOne(25); }
+        }
+    }
+
     public static T Run<T>(SqliteConnection connection, CancellationToken cancellationToken, Func<T> operation)
     {
         cancellationToken.ThrowIfCancellationRequested();

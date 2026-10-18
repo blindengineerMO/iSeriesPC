@@ -1,6 +1,7 @@
 using Ipc.Core.Messages;
 using Ipc.Core.Security;
 using Ipc.Services.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Security;
 
@@ -77,9 +78,14 @@ internal sealed class SessionTokenStore(SqliteConnectionFactory factory, TimePro
 
     internal bool IsActive(string id, string profile, bool touch = false)
     {
-        var now = clock.GetUtcNow();
         using var connection = factory.Open();
-        using var command = connection.CreateCommand();
+        return IsActive(connection, null, id, profile, touch);
+    }
+
+    internal bool IsActive(SqliteConnection connection, SqliteTransaction? transaction, string id, string profile, bool touch = false)
+    {
+        var now = clock.GetUtcNow();
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = (touch ? "UPDATE sys_auth_sessions AS s SET last_seen=$now WHERE " : "SELECT count(*) FROM sys_auth_sessions s WHERE ") +
             "id=$id AND profile=$profile AND " + Active;
         command.Parameters.AddWithValue("$id", id);

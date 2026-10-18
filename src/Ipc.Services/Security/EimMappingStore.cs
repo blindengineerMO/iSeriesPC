@@ -26,7 +26,12 @@ public sealed class EimMappingStore(SqliteConnectionFactory factory)
     internal EimMapping? GetInternal(string profile)
     {
         using var connection = factory.Open();
-        using var command = connection.CreateCommand();
+        return ReadInternal(connection, null, profile);
+    }
+
+    internal static EimMapping? ReadInternal(SqliteConnection connection, SqliteTransaction? transaction, string profile)
+    {
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT * FROM sys_eim_mappings WHERE profile=$profile";
         command.Parameters.AddWithValue("$profile", profile.ToUpperInvariant());
         using var reader = command.ExecuteReader();

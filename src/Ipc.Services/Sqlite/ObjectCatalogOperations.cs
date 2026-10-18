@@ -207,6 +207,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 throw new CpfException("CPF3C49", "The target library does not allow user-domain objects.");
         }
         var targetTemporary = Ipc.Services.Work.JobTemporaryLibrary.LogicalLibrary(connection, transaction, target.Library) == LibraryNames.QTemp;
+        JournalHooks.ValidateRelocation(connection, transaction, source, type, copy, targetTemporary);
         if (targetTemporary && !copy && op.Number("SELECT count(*) FROM sys_object_dependencies WHERE target_lib=$lib AND target_name=$name AND target_type=$type AND source_lib<>$targetLib AND NOT(source_lib=$lib AND source_name=$name AND source_type=$type)") != 0)
             throw new CpfException("IPC0201", "Relocation would leave a permanent dependent on QTEMP.");
         if (!targetTemporary && op.Number("SELECT count(*) FROM sys_object_dependencies d JOIN sys_job_temp_libraries t ON t.library=d.target_lib WHERE d.source_lib=$lib AND d.source_name=$name AND d.source_type=$type AND NOT(d.target_lib=$lib AND d.target_name=$name AND d.target_type=$type)") != 0)

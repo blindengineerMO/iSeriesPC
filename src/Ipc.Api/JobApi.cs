@@ -24,7 +24,7 @@ public sealed partial class JobApi(SqliteConnectionFactory factory, Func<string,
             throw new CpfException("CPF3C36", "Invalid job API parameter count or incomplete group.");
         var errorIndex = name == "QUSRJOBI" ? p.Count >= 6 ? 5 : -1 : p.Count >= 5 ? 4 : -1;
         var error = errorIndex < 0 ? null : new ApiArguments.ErrorReceiver(_arguments, p[errorIndex]);
-        if (error?.Target is { } target && p.Where((_, index) => index != errorIndex).Any(value => ReferenceEquals(value, target)))
+        if (error?.Target is { } target && p.Where((_, index) => index != errorIndex).Any(value => Ipc.Core.Work.ProgramArgument.Overlaps(value, target)))
             throw ApiArguments.Bad("API error receiver cannot alias another parameter.");
         try
         {

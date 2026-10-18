@@ -79,7 +79,7 @@ DSPOVR FILE(INPUT)
 DLTOVR FILE(INPUT) LVL(*JOB)
 ```
 
-The implemented override subset is replacement file/member, `SHARE`, and explicit
+The implemented override subset is replacement file/member, `SHARE`, `WAITRCD`, and explicit
 `*CALLLVL`/`*JOB` scope. The default is `*CALLLVL`; at the command-entry root its
 lifetime is the job. Nested calls search the nearest override first. An override
 issued inside a called program with job scope survives that program's return.
@@ -89,7 +89,8 @@ Activation-group scope, parameter merging and additional file/print/query option
 remain in their owning C07/C08/C10 items and are rejected by this command contract.
 
 RPG file opening resolves the owning job's override before constructing a cursor.
-The registry keys a path by resolved library/file/member. Shared paths carry one
+The registry keys a path by resolved library/file/member; declared DISK paths also
+separate access modes and effective record-wait policies. Shared paths carry one
 cursor position through nested calls; job-scoped shared paths can survive separate
 calls. Unshared paths close when their handle is disposed. Returning from a call
 closes resources owned by that call frame and restores its parent's override lookup,
@@ -97,17 +98,18 @@ including exceptional exits. A `CLOSE` request destroys a shared path after its 
 active handle closes; the next open starts fresh. Removing an override does not
 retroactively retarget an already open path.
 
-Each open path holds a typed shared-read object allocation with `OpenPath` lifetime.
+Input paths hold shared-read allocations, while declared update/output paths use
+shared-update allocations with `OpenPath` lifetime.
 It cannot be removed with `DLCOBJ`, whose scope is explicit job allocations. Fresh
 opens revalidate authority and refresh file data/automatic record allocations while
 preserving the cursor position. Structural deletion/move/rename remains blocked
 until the path closes. Job end disposes all paths and activation resources.
 
-Limits are 64 call frames and 256 overrides/paths per frame. The current RPG cursor
-still materializes records; bounded cursors, stable positioning under concurrent
-row changes, access-mode sharing, query ODPs and job commitment integration remain
-C08 requirements. This checkpoint establishes ownership and call/submit/return
-behavior; it does not mark those database items complete.
+Limits are 64 call frames and 256 overrides/paths per frame. SQLite RPG paths use
+bounded live cursors; legacy custom providers can still use materialized input.
+[Record-wait policies](record-waits.md) are captured at open and survive retained
+calls. Query ODPs, full sharing compatibility, native commitment/open policy and
+independent concurrency acceptance remain C08 requirements.
 
 ## Evidence
 

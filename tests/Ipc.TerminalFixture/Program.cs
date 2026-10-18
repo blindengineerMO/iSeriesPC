@@ -18,6 +18,10 @@ if (system is not null)
         if (args[1] == "work")
         {
             var rpgSources = new Ipc.Db.Store.SqliteFileStore(system.Connections, system.Objects);
+            JournalCycleFixture.Seed(system, rpgSources);
+            RpgFileKeyFixture.Seed(rpgSources);
+            RpgRelativeRecordFixture.Seed(system, rpgSources);
+            RpgDiskFileFixture.Seed(rpgSources);
             rpgSources.SaveSourceMember("QGPL", "SOURCE", "CLCRYPTO", Ipc.Testing.CryptoProgramSources.ClSource, null);
             rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGCRYPTO", Ipc.Testing.CryptoProgramSources.RpgSource, null);
             rpgSources.SaveSourceMember("QGPL", "SOURCE", "CLDATEAPI", """

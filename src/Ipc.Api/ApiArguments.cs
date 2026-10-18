@@ -115,8 +115,19 @@ internal sealed class ApiArguments(int ccsid)
     }
     internal static void DistinctOutputs(IEnumerable<ProgramArgument> outputs)
     {
-        var seen = new HashSet<ProgramArgument>(ReferenceEqualityComparer.Instance);
-        foreach (var output in outputs) if (!seen.Add(output)) throw Bad("Overlapping API output arguments are unsupported.");
+        var seen = new List<ProgramArgument>();
+        foreach (var output in outputs)
+        {
+            if (seen.Any(previous => ProgramArgument.Overlaps(previous, output))) throw Bad("Overlapping API output arguments are unsupported.");
+            seen.Add(output);
+        }
+    }
+    internal static void DistinctErrorReceiver(ErrorReceiver? error, IReadOnlyList<object?> parameters, int errorIndex)
+    {
+        // Preserve these adapters' existing exact-cell error reporting. Distinct views
+        // with intersecting byte ranges must not overwrite each other while reporting.
+        if (error?.Target is { } target && parameters.Where((_, index) => index != errorIndex).Any(value => !ReferenceEquals(value, target) && ProgramArgument.Overlaps(value, target)))
+            throw Bad("API error receiver partially overlaps another parameter.");
     }
     internal static void Apply(IEnumerable<Assignment> assignments)
     { foreach (var assignment in assignments) assignment.Target.Value = assignment.Value; }

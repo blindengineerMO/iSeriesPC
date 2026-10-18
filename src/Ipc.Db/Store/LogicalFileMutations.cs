@@ -7,12 +7,12 @@ namespace Ipc.Db.Store;
 
 public sealed partial class SqliteFileStore
 {
-    private void MutateLogical(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation)
+    private void MutateLogical(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation, CancellationToken cancellationToken = default, Action? validateAfterWait = null)
     {
-        try { MutateLogicalCore(definition, member, formatName, values, operation); }
+        try { MutateLogicalCore(definition, member, formatName, values, operation, cancellationToken, validateAfterWait); }
         catch (Microsoft.Data.Sqlite.SqliteException error) when (error.SqliteErrorCode == 1) { throw LogicalError("Invalid stored logical value or mutation definition."); }
     }
-    private void MutateLogicalCore(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation)
+    private void MutateLogicalCore(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation, CancellationToken cancellationToken, Action? validateAfterWait)
     {
         var logical = definition.Logical!; ValidateLogical(logical);
         var format = definition.PrimaryFormat;
@@ -24,8 +24,9 @@ public sealed partial class SqliteFileStore
             throw LogicalError("Physical fields changed; recompile the logical file.");
         if (values.Keys.Any(k => format.Find(k) is null)) throw LogicalError("Unknown logical field.");
         foreach (var physicalMember in members) EnsureMember(logical.SourceLibrary, logical.SourceFile, physicalMember);
-        using var connection = _factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
+        using var data = OpenRecordData(logical.SourceLibrary, logical.SourceFile, write: true, cancellationToken, members: members);
+        validateAfterWait?.Invoke();
+        var connection = data.Connection; var transaction = data.Transaction!;
         foreach (var physicalMember in members) EnsureExactDecimalStorage(connection, transaction, MemberTable(logical.SourceLibrary, logical.SourceFile, physicalMember), physical.PrimaryFormat);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         var predicate = LogicalPredicate(command, logical, physical.PrimaryFormat);
@@ -43,7 +44,7 @@ public sealed partial class SqliteFileStore
             var selected = Convert.ToInt64(command.ExecuteScalar());
             if (selected != 1) throw LogicalError("Output record does not satisfy the logical selection rules.");
             command.CommandText = "INSERT INTO " + Quote(MemberTable(logical.SourceLibrary, logical.SourceFile, members[0])) + " (" + string.Join(',', fields.Select(f => Quote(f.Name))) + ") VALUES (" + string.Join(',', parameters) + ")";
-            command.ExecuteNonQuery(); command.CommandText = "SELECT last_insert_rowid()";
+            data.Prepare(command); Ipc.Services.Sqlite.SqliteCancellation.Run(connection, cancellationToken, command.ExecuteNonQuery); command.CommandText = "SELECT last_insert_rowid()";
             new JobLockStore(_factory).RequireRecordAccess(logical.SourceLibrary, logical.SourceFile, members[0], Convert.ToInt64(command.ExecuteScalar()), write: true);
         }
         else
@@ -61,9 +62,9 @@ public sealed partial class SqliteFileStore
                     new JobLockStore(_factory).RequireRecordAccess(logical.SourceLibrary, logical.SourceFile, physicalMember, reader.GetInt64(0), write: true);
                
                 command.CommandText = (operation == "DELETE" ? "DELETE FROM " + table : "UPDATE " + table + " SET " + string.Join(',', changes)) + " WHERE " + predicate;
-                command.ExecuteNonQuery();
+                data.Prepare(command); command.ExecuteNonQuery();
             }
         }
-        transaction.Commit();
+        cancellationToken.ThrowIfCancellationRequested(); data.Complete();
     }
 }

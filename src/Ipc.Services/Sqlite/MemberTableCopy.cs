@@ -57,7 +57,7 @@ internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransac
             CopySequence(table.Source, table.Target);
         }
         // Loading a duplicate must not emit application trigger side effects.
-        foreach (var schema in schemas.Where(s => s.Type == "trigger"))
+        foreach (var schema in schemas.Where(s => s.Type == "trigger" && !JournalHooks.OwnsTrigger(connection, transaction, s.Name)))
             Run(RenameSchemaObject(schema.Sql, "TRIGGER", $"{schema.Table}.trigger.{schema.Name}"));
     }
 

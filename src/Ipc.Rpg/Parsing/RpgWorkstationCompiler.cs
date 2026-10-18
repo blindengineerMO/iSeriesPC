@@ -8,7 +8,7 @@ namespace Ipc.Rpg.Parsing;
 
 public static partial class RpgCompiler
 {
-    private sealed record WorkstationDeclaration(int Line, string Name, bool Input, bool Output, string Keywords);
+    private sealed record WorkstationDeclaration(int Line, string Name, bool Input, bool Output, string Keywords, bool Disk = false);
     private sealed record DeclarationKeyword(string Name, string? Arguments);
 
     private static List<WorkstationDeclaration> ParseWorkstationDeclarations(List<string> lines, RpgProgram program, bool free,
@@ -21,43 +21,28 @@ public static partial class RpgCompiler
             var raw = lines[index]; var text = raw.Trim(); var line = index + 1;
             var scalar = text.StartsWith("DCL-S ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-S\t", StringComparison.OrdinalIgnoreCase);
             var file = text.StartsWith("DCL-F ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-F\t", StringComparison.OrdinalIgnoreCase);
+            if (text.StartsWith("DCL-DS ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-DS\t", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!free) throw new RpgCompileException(line, "Free declarations require **FREE.");
+                if (calculations) throw new RpgCompileException(line, "Free declarations must precede calculations.");
+                DeclareNativeStructure(lines, ref index, program, cancellationToken);
+                continue;
+            }
             if (scalar || file)
             {
                 if (!free) throw new RpgCompileException(line, "Free declarations require **FREE.");
                 if (calculations) throw new RpgCompileException(line, "Free declarations must precede calculations in the supported global declaration subset.");
-                var statement = new StringBuilder(); var quoted = false; var ended = false;
-                do
-                {
-                    var part = lines[index]; lines[index] = "";
-                    for (var n = 0; n < part.Length; n++)
-                    {
-                        var c = part[n];
-                        if (c == '\'')
-                        {
-                            statement.Append(c);
-                            if (quoted && n + 1 < part.Length && part[n + 1] == '\'') { statement.Append(part[++n]); continue; }
-                            quoted = !quoted; continue;
-                        }
-                        if (!quoted && c == '/' && n + 1 < part.Length && part[n + 1] == '/') break;
-                        if (!quoted && c == ';')
-                        {
-                            var tail = part[(n + 1)..].Trim();
-                            if (tail.Length > 0 && !tail.StartsWith("//", StringComparison.Ordinal)) throw new RpgCompileException(line, "Use one declaration per source statement.");
-                            ended = true; break;
-                        }
-                        statement.Append(c);
-                    }
-                    if (statement.Length > 32768) throw new RpgCompileException(line, "Declaration exceeds 32768 characters.");
-                    if (ended) break;
-                    statement.Append(' '); index++;
-                } while (index < lines.Count);
-                if (!ended || quoted) throw new RpgCompileException(line, "Unterminated free declaration.");
-                text = statement.ToString().Trim();
-                var match = Regex.Match(text, @"\ADCL-[FS]\s+([A-Za-z_][A-Za-z0-9_]*)\s+(.*)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                text = ReadFreeDeclaration(lines, ref index, line);
+                var match = Regex.Match(text, @"\ADCL-[FS]\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s+(.*))?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
                 if (!match.Success) throw new RpgCompileException(line, "Invalid free declaration.");
                 var name = match.Groups[1].Value.ToUpperInvariant(); var keywords = match.Groups[2].Value;
                 if (scalar) DeclareFreeScalar(program, name, keywords, line);
-                else declarations.Add(new(line, name, true, true, keywords));
+                else
+                {
+                    var options = DeclarationKeywords(keywords, line);
+                    var disk = options.Count == 0 || options[0].Name != "WORKSTN";
+                    declarations.Add(new(line, name, true, !disk, keywords, disk));
+                }
                 continue;
             }
             var shift = raw.Length > 6 && raw[..6].All(c => c == ' ' || char.IsAsciiDigit(c)) && char.ToUpperInvariant(raw[6]) == 'F' ? 1 :
@@ -76,14 +61,29 @@ public static partial class RpgCompiler
                 declarations[^1] = declarations[^1] with { Keywords = declarations[^1].Keywords + " " + padded[(43 + shift)..] }; continue;
             }
             var type = char.ToUpperInvariant(padded[16 + shift]); var designation = char.ToUpperInvariant(padded[17 + shift]);
+            var device = padded.Substring(35 + shift, 7).Trim().ToUpperInvariant();
+            if (device == "DISK")
+            {
+                if (!Ipc.Core.Objects.ObjectName.IsValid(fileName) || type is not ('I' or 'U' or 'O') ||
+                    (type == 'O' ? designation is not (' ' or 'F') : designation != 'F') ||
+                    char.ToUpperInvariant(padded[21 + shift]) != 'E' || padded[18 + shift] != ' ' ||
+                    char.ToUpperInvariant(padded[19 + shift]) is not (' ' or 'A') || padded[20 + shift] != ' ' ||
+                    padded.Substring(22 + shift, 11).Any(c => c != ' ') || char.ToUpperInvariant(padded[33 + shift]) is not (' ' or 'K') ||
+                    padded[34 + shift] != ' ' || padded[42 + shift] != ' ')
+                    throw new RpgCompileException(line, "Supported DISK F-specs require an externally described full-procedural I/U or output O file, with optional K access and A addition.");
+                var usage = type switch { 'U' => "*UPDATE:*DELETE", 'I' => "*INPUT", _ => "*OUTPUT" };
+                if (type != 'O' && char.ToUpperInvariant(padded[19 + shift]) == 'A') usage += ":*OUTPUT";
+                declarations.Add(new(line, fileName, true, false, "DISK USAGE(" + usage + ") " + (char.ToUpperInvariant(padded[33 + shift]) == 'K' ? "KEYED " : "") + padded[(43 + shift)..], true));
+                continue;
+            }
             if (!Ipc.Core.Objects.ObjectName.IsValid(fileName) || type is not ('C' or 'O') || type == 'C' && designation != 'F' || type == 'O' && designation is not (' ' or 'F') ||
                 char.ToUpperInvariant(padded[21 + shift]) != 'E' || padded.Substring(35 + shift, 7).Trim().ToUpperInvariant() != "WORKSTN" ||
                 padded.Substring(18 + shift, 3).Any(c => c != ' ') || padded.Substring(22 + shift, 13).Any(c => c != ' ') || padded[42 + shift] != ' ')
                 throw new RpgCompileException(line, "Supported F-specs require an externally described full-procedural C/O WORKSTN file.");
             declarations.Add(new(line, fileName, type == 'C', true, "WORKSTN " + padded[(43 + shift)..]));
         }
-        if (declarations.Count > 16 || declarations.Select(d => d.Name).Distinct().Count() != declarations.Count)
-            throw new RpgCompileException(0, "At most 16 distinct workstation files are supported.");
+        if (declarations.Count(d => !d.Disk) > 16 || declarations.Count(d => d.Disk) > 16 || declarations.Select(d => d.Name).Distinct().Count() != declarations.Count)
+            throw new RpgCompileException(0, "At most 16 workstation and 16 disk files with distinct names are supported.");
         return declarations;
     }
 
@@ -134,16 +134,17 @@ public static partial class RpgCompiler
     private static void DeclareFreeScalar(RpgProgram program, string name, string text, int line)
     {
         var keywords = DeclarationKeywords(text, line);
-        if (!RpgWorkstationBindings.Name(name) || program.FindField(name) is not null || keywords.Count == 0) throw new RpgCompileException(line, "Invalid or duplicate scalar declaration.");
+        if (!RpgWorkstationBindings.Name(name) || program.FindField(name) is not null || program.FindDs(name) is not null || program.FindDsElement(name) is not null || keywords.Count == 0) throw new RpgCompileException(line, "Invalid or duplicate scalar declaration.");
         var type = keywords[0]; var dimensions = type.Arguments is null ? Array.Empty<string>() : DeclarationArguments(type.Arguments, line);
         int Dimension(int index, int fallback) => dimensions.Length <= index ? fallback : int.TryParse(dimensions[index], NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : -1;
         var kind = type.Name switch { "CHAR" => RpgFieldKind.Character, "PACKED" => RpgFieldKind.Packed, "ZONED" => RpgFieldKind.Zoned,
-            "INT" => RpgFieldKind.Integer, "IND" => RpgFieldKind.Indicator, "DATE" => RpgFieldKind.Date,
+            "INT" => RpgFieldKind.Integer, "FLOAT" => RpgFieldKind.Float, "IND" => RpgFieldKind.Indicator, "DATE" => RpgFieldKind.Date,
             "TIME" => RpgFieldKind.Time, "TIMESTAMP" => RpgFieldKind.Timestamp, _ => throw new RpgCompileException(line, "Unsupported free scalar type " + type.Name + ".") };
-        var length = Dimension(0, kind is RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Zoned ? -1 : kind == RpgFieldKind.Indicator ? 1 : kind == RpgFieldKind.Timestamp ? 26 : kind == RpgFieldKind.Time ? 8 : 10);
+        var length = Dimension(0, kind is RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Zoned ? -1 : kind == RpgFieldKind.Indicator ? 1 : kind == RpgFieldKind.Timestamp ? 26 : kind is RpgFieldKind.Time or RpgFieldKind.Float ? 8 : 10);
         var decimals = Dimension(1, 0);
         if (length is < 1 or > 32767 || decimals < 0 || decimals > 28 || kind is RpgFieldKind.Packed or RpgFieldKind.Zoned && (length > 29 || decimals > length) ||
             dimensions.Length > (kind is RpgFieldKind.Packed or RpgFieldKind.Zoned ? 2 : 1) || kind == RpgFieldKind.Integer && length is not (3 or 5 or 10 or 20) ||
+            kind == RpgFieldKind.Float && length is not (4 or 8) ||
             kind == RpgFieldKind.Indicator && type.Arguments is not null || kind is RpgFieldKind.Date or RpgFieldKind.Time or RpgFieldKind.Timestamp && type.Arguments is not null)
             throw new RpgCompileException(line, "Unsupported scalar dimensions or date/time options.");
         string? initial = null;
@@ -167,7 +168,7 @@ public static partial class RpgCompiler
             if (!valid) throw new RpgCompileException(line, "INZ requires a supported constant literal for the scalar type.");
             initial = quoted ? Unquote(init).Replace("''", "'", StringComparison.Ordinal) : special;
             if (rawHex && (init.Length - 3) / 2 != length) throw new RpgCompileException(line, "Hexadecimal INZ must match the raw character field width.");
-            if (numeric && (!decimal.TryParse(init, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) ||
+            if (numeric && kind != RpgFieldKind.Float && (!decimal.TryParse(init, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var value) ||
                 decimal.Round(value, decimals) != value || decimal.Abs(value).ToString("F" + decimals, CultureInfo.InvariantCulture).Replace(".", "").TrimStart('0').Length > length ||
                 kind == RpgFieldKind.Integer && (value < long.MinValue || value > long.MaxValue)))
                 throw new RpgCompileException(line, "INZ exceeds the declared numeric precision.");

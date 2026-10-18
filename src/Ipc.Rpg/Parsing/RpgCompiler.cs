@@ -9,19 +9,22 @@ namespace Ipc.Rpg.Parsing;
 public static partial class RpgCompiler
 {
     public static RpgProgram Compile(string library, string name, string source, CancellationToken cancellationToken = default,
-        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null)
-        => Compile(library, name, new SourceDocument(library + "/" + name, source), cancellationToken: cancellationToken, workstationResolver: workstationResolver);
+        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
+        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
+        => Compile(library, name, new SourceDocument(library + "/" + name, source), cancellationToken: cancellationToken, workstationResolver: workstationResolver, diskResolver: diskResolver);
 
     public static RpgProgram Compile(string library, string name, SourceDocument source,
         Func<SourceDocument, string, SourceDocument>? resolver = null, CancellationToken cancellationToken = default,
-        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null)
+        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
+        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
     {
-        try { return Compile(library, name, new RpgSourcePreprocessor(resolver).Expand(source, cancellationToken), cancellationToken, workstationResolver); }
+        try { return Compile(library, name, new RpgSourcePreprocessor(resolver).Expand(source, cancellationToken), cancellationToken, workstationResolver, diskResolver); }
         catch (SourcePreprocessException error) { throw new RpgCompileException(error.Location, error.Message); }
     }
 
     public static RpgProgram Compile(string library, string name, PreprocessedSource source, CancellationToken cancellationToken = default,
-        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null)
+        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
+        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant(), Source = source };
@@ -34,10 +37,17 @@ public static partial class RpgCompiler
             program.IsFreeForm = freeForm;
             var workstations = ParseWorkstationDeclarations(specificationLines, program, freeForm, cancellationToken);
             ParseDeclarations(specificationLines, program, cancellationToken);
-            BindWorkstations(program, workstations, workstationResolver);
+            ParseFileErrorHandlers(program, workstations);
+            BindFeedbackStructures(program, workstations);
+            BindWorkstations(program, workstations.Where(d => !d.Disk).ToArray(), workstationResolver);
+            BindDisks(program, workstations.Where(d => d.Disk).ToArray(), diskResolver);
+            program.FileSpecs.Clear(); program.FileSpecs.AddRange(workstations.Select(d => d.Name));
+            var keyDeclarations = ParseKeyDeclarations(specificationLines, program, freeForm, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             ParseStatements(specificationLines, program, freeForm, cancellationToken);
+            BindFileSearches(program, keyDeclarations.Lists, keyDeclarations.Scopes, cancellationToken);
             ValidateWorkstationStatements(program);
+            ValidateDiskStatements(program);
             foreach (var statement in program.MainStatements)
                 if (statement.LineNumber > 0 && statement.LineNumber <= source.Locations.Count)
                     statement.Location = source.Locations[statement.LineNumber - 1];
@@ -59,6 +69,8 @@ public static partial class RpgCompiler
                 ResolveBlocks(subprocedure.Statements);
             }
 
+            ValidateErrorSubroutines(program);
+
             AssignDsOffsets(program);
             return program;
         }
@@ -69,6 +81,7 @@ public static partial class RpgCompiler
     private static List<string> ReadSpecs(string source)
     {
         var lines = new List<string>();
+        var globalFree = source.Split('\n').Any(line => line.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase));
         foreach (var raw in source.Split('\n'))
         {
             var line = raw.TrimEnd('\r');
@@ -79,7 +92,8 @@ public static partial class RpgCompiler
             }
 
             if (line.TrimStart().StartsWith("*", StringComparison.Ordinal) &&
-                !line.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase))
+                !line.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase) &&
+                !(globalFree && Regex.IsMatch(line.TrimStart(), @"\A\*[Nn](?:\s|\z)")))
             {
                 lines.Add(string.Empty);
                 continue;
@@ -470,6 +484,7 @@ public static partial class RpgCompiler
         var conditions = ParseConditions(Col(line, 8, 17));
         var factor1 = Col(line, 18, 35).Trim();
         var opcode = Col(line, 36, 42).Trim().ToUpperInvariant();
+        var (noLock, errorExtender) = ParseFileExtenders(ref opcode, lineNumber);
         var mapped = MapOpcode(opcode);
         if (mapped == RpgOpcode.None) throw new RpgCompileException(lineNumber, opcode.Length == 0 ? "Missing fixed RPG operation." : "Unsupported fixed RPG operation " + opcode + ".");
         var factor2 = Col(line, 43, 47).Trim();
@@ -482,6 +497,8 @@ public static partial class RpgCompiler
         var statement = new RpgStatement
         {
             Opcode = mapped,
+            NoLock = noLock,
+            ErrorExtender = errorExtender,
             Factor1 = factor1,
             Factor2 = factor2,
             Result = result,
@@ -491,6 +508,7 @@ public static partial class RpgCompiler
             Indicator2 = indicator2,
             Indicator3 = indicator3,
         };
+        if (errorExtender && indicator2 != 0) throw new RpgCompileException(lineNumber, "E and an error indicator cannot be combined.");
         statement.Conditions.AddRange(conditions);
         if (mapped is RpgOpcode.BegSr or RpgOpcode.Exsr or RpgOpcode.Goto or RpgOpcode.Tag)
         {
@@ -518,10 +536,11 @@ public static partial class RpgCompiler
         var space = text.IndexOfAny(new[] { ' ', '\t' });
         var opcode = (space >= 0 ? text[..space] : text).Trim().ToUpperInvariant();
         var operands = space >= 0 ? text[(space + 1)..].Trim() : string.Empty;
+        var (noLock, errorExtender) = ParseFileExtenders(ref opcode, lineNumber);
         var mapped = MapFreeOpcode(opcode);
         if (mapped == RpgOpcode.None) throw new RpgCompileException(lineNumber, "Unsupported free RPG operation " + (opcode.Length == 0 ? "(empty)" : opcode) + ".");
         if (operands.Length > 0 && mapped is (RpgOpcode.Else or RpgOpcode.EndIf or RpgOpcode.Select or RpgOpcode.Other or RpgOpcode.EndSl or
-            RpgOpcode.EndDo or RpgOpcode.Iter or RpgOpcode.Leave or RpgOpcode.EndSr or RpgOpcode.Retrn or RpgOpcode.Return or RpgOpcode.OnError))
+            RpgOpcode.EndDo or RpgOpcode.Iter or RpgOpcode.Leave or RpgOpcode.Retrn or RpgOpcode.Return or RpgOpcode.Monitor or RpgOpcode.EndMon))
             throw new RpgCompileException(lineNumber, "Operands are unsupported for free RPG " + opcode + ".");
         if (operands.Length == 0 && mapped is (RpgOpcode.If or RpgOpcode.When or RpgOpcode.DoU or RpgOpcode.DoW or RpgOpcode.For))
             throw new RpgCompileException(lineNumber, "Free RPG " + opcode + " requires a condition or loop expression.");
@@ -529,10 +548,13 @@ public static partial class RpgCompiler
         var statement = new RpgStatement
         {
             Opcode = mapped,
+            NoLock = noLock,
+            ErrorExtender = errorExtender,
             Factor1 = null,
             Factor2 = null,
             Result = null,
             Value = operands.Length > 0 ? operands : null,
+            IsFreeForm = true,
             LineNumber = lineNumber,
         };
 
@@ -557,13 +579,18 @@ public static partial class RpgCompiler
             case RpgOpcode.Leave:
             case RpgOpcode.Return:
             case RpgOpcode.Retrn:
-            case RpgOpcode.EndSr:
+            case RpgOpcode.Monitor:
+            case RpgOpcode.EndMon:
             case RpgOpcode.Parm:
             case RpgOpcode.Plist:
-            case RpgOpcode.OnError:
             case RpgOpcode.None:
                 break;
 
+            case RpgOpcode.EndSr:
+                statement.Factor2 = statement.Value;
+                break;
+
+            case RpgOpcode.OnError:
             case RpgOpcode.BegSr:
             case RpgOpcode.Tag:
             case RpgOpcode.Exsr:
@@ -576,10 +603,10 @@ public static partial class RpgCompiler
             case RpgOpcode.Test:
             case RpgOpcode.Open:
             case RpgOpcode.Close:
+            case RpgOpcode.Unlock:
             case RpgOpcode.Write:
             case RpgOpcode.ExFmt:
             case RpgOpcode.Update:
-            case RpgOpcode.Delete:
                 statement.Factor1 = operands;
                 break;
 
@@ -588,6 +615,7 @@ public static partial class RpgCompiler
                 SplitCall(operands, statement);
                 break;
 
+            case RpgOpcode.Delete:
             case RpgOpcode.Chain:
             case RpgOpcode.SetLl:
             case RpgOpcode.SetGt:
@@ -596,7 +624,7 @@ public static partial class RpgCompiler
             case RpgOpcode.Reade:
             case RpgOpcode.ReadP:
             case RpgOpcode.ReadPe:
-                ParseKeyFile(operands, statement);
+                ParseKeyFile(operands, statement, program);
                 break;
 
             case RpgOpcode.Move:
@@ -647,23 +675,6 @@ public static partial class RpgCompiler
     {
         var parts = operands.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
         return parts.Length > 1 ? string.Join(" ", parts.Skip(1)) : string.Empty;
-    }
-
-    private static void ParseKeyFile(string operands, RpgStatement statement)
-    {
-        operands = operands.Trim();
-        if (operands.StartsWith('('))
-        {
-            var end = operands.IndexOf(')');
-            if (end > 0)
-            {
-                statement.Factor1 = operands[1..end];
-                statement.Factor2 = operands[(end + 1)..].Trim();
-                return;
-            }
-        }
-
-        SplitTwo(operands, statement);
     }
 
     private static void SplitTwo(string operands, RpgStatement statement)
@@ -726,6 +737,20 @@ public static partial class RpgCompiler
         _ => false,
     };
 
+    private static (bool NoLock, bool Error) ParseFileExtenders(ref string opcode, int line)
+    {
+        var opening = opcode.IndexOf('(');
+        if (opening < 0) return (false, false);
+        var operation = opcode[..opening];
+        var input = operation is "CHAIN" or "READ" or "READP" or "READE" or "READPE";
+        if (!input && operation is not ("OPEN" or "CLOSE" or "SETLL" or "SETGT" or "WRITE" or "UPDATE" or "DELETE" or "UNLOCK" or "EXFMT" or "READC"))
+            return (false, false);
+        var match = Regex.Match(opcode, @"\A[A-Z]+\(([EN]+)\)\z", RegexOptions.CultureInvariant);
+        var extenders = match.Success ? match.Groups[1].Value : "";
+        if (extenders.Length == 0 || extenders.Distinct().Count() != extenders.Length || extenders.Contains('N') && !input)
+            throw new RpgCompileException(line, "File operations support E and, on update input, N; extenders cannot repeat.");
+        opcode = operation; return (extenders.Contains('N'), extenders.Contains('E'));
+    }
     private static RpgOpcode MapFreeOpcode(string opcode) => opcode switch
     {
         "EVAL" => RpgOpcode.Eval,
@@ -753,6 +778,8 @@ public static partial class RpgCompiler
         "ENDSR" => RpgOpcode.EndSr,
         "EXSR" => RpgOpcode.Exsr,
         "ON-ERROR" => RpgOpcode.OnError,
+        "MONITOR" => RpgOpcode.Monitor,
+        "ENDMON" => RpgOpcode.EndMon,
         "RETURN" => RpgOpcode.Return,
         "RETRN" => RpgOpcode.Retrn,
         "MOVE" => RpgOpcode.Move,
@@ -780,6 +807,7 @@ public static partial class RpgCompiler
         "DELETE" => RpgOpcode.Delete,
         "OPEN" => RpgOpcode.Open,
         "CLOSE" => RpgOpcode.Close,
+        "UNLOCK" => RpgOpcode.Unlock,
         "FORCE" => RpgOpcode.Force,
         "DSPLY" => RpgOpcode.Dsply,
         "SNDMSG" => RpgOpcode.SndMsg,
@@ -790,6 +818,8 @@ public static partial class RpgCompiler
 
     private static RpgOpcode MapOpcode(string opcode) => opcode switch
     {
+        "KLIST" => RpgOpcode.Klist,
+        "KFLD" => RpgOpcode.Kfld,
         "ADD" => RpgOpcode.Add,
         "SUB" => RpgOpcode.Subtract,
         "MULT" => RpgOpcode.Multiply,
@@ -831,6 +861,7 @@ public static partial class RpgCompiler
         "RETURN" => RpgOpcode.Return,
         "OPEN" => RpgOpcode.Open,
         "CLOSE" => RpgOpcode.Close,
+        "UNLOCK" => RpgOpcode.Unlock,
         "CHAIN" => RpgOpcode.Chain,
         "READ" => RpgOpcode.Read,
         "READC" => RpgOpcode.ReadC,
@@ -860,13 +891,18 @@ public static partial class RpgCompiler
         var main = program.MainStatements;
         List<RpgStatement>? current = null;
         RpgSubroutine? subroutine = null;
+        string? procedure = null;
         var keep = new List<RpgStatement>();
         foreach (var statement in main)
         {
             switch (statement.Opcode)
             {
+                case RpgOpcode.BegProc:
+                    procedure = statement.Factor1?.ToUpperInvariant(); keep.Add(statement); break;
+                case RpgOpcode.EndProc:
+                    procedure = null; keep.Add(statement); break;
                 case RpgOpcode.BegSr:
-                    subroutine = new RpgSubroutine { Name = statement.Factor1 ?? string.Empty };
+                    subroutine = new RpgSubroutine { Name = statement.Factor1?.ToUpperInvariant() ?? string.Empty, Procedure = procedure };
                     current = new List<RpgStatement>();
                     program.Subroutines.Add(subroutine);
                     break;
@@ -874,6 +910,7 @@ public static partial class RpgCompiler
                     if (current is not null)
                     {
                         subroutine!.Statements.AddRange(current);
+                        subroutine.Ending = statement;
                         current = null;
                     }
 
@@ -958,6 +995,7 @@ public static partial class RpgCompiler
         ResolveIfBlocks(statements);
         ResolveDoBlocks(statements);
         ResolveSelectBlocks(statements);
+        RpgMonitorCompiler.Bind(statements);
     }
 
     private static void ResolveIfBlocks(List<RpgStatement> statements)
@@ -1062,8 +1100,8 @@ public static partial class RpgCompiler
                     }
 
                     var members = stack.Pop();
-                    openings.Pop();
                     var end = index;
+                    statements[openings.Pop()].End = end;
                     statements[end].Jump = -1;
                     for (var member = 0; member < members.Count; member++)
                     {
@@ -1086,6 +1124,7 @@ public static partial class RpgCompiler
     {
         foreach (var ds in program.DataStructures)
         {
+            if (ds.NativeStorage) continue;
             var extent = 0;
             var offset = 0;
             foreach (var element in ds.Elements)

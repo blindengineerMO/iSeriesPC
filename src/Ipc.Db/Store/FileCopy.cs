@@ -13,8 +13,10 @@ public sealed partial class SqliteFileStore
     public int CopyRecords(QualifiedName source, string sourceMember, QualifiedName target, string targetMember,
         bool replace = false, bool map = false, bool drop = false, CancellationToken cancellationToken = default)
     {
+        using var recordLocks = new JobLockStore(_factory).EnterRecordWrite(cancellationToken);
         var temporary = new JobTemporaryLibrary(_factory);
         source = temporary.Resolve(source, FileType); target = temporary.Resolve(target, FileType);
+        RequireUnenlisted(source.Library, source.Name.Value, "CPYF"); RequireUnenlisted(target.Library, target.Name.Value, "CPYF");
         sourceMember = sourceMember.ToUpperInvariant(); targetMember = targetMember.ToUpperInvariant();
         Authorize(source.Library, source.Name.Value, AuthorityBit.Read);
         Authorize(target.Library, target.Name.Value, AuthorityBit.Add | (replace ? AuthorityBit.Delete : AuthorityBit.None));
@@ -39,6 +41,7 @@ public sealed partial class SqliteFileStore
         if (basedOn is not null) ValidateLogical(basedOn);
         var members = basedOn is null ? new[] { sourceMember } : basedOn.Members[sourceMember];
         var baseLibrary = basedOn?.SourceLibrary ?? source.Library; var baseFile = basedOn?.SourceFile ?? source.Name.Value;
+        RequireUnenlisted(baseLibrary, baseFile, "CPYF");
         var physical = basedOn is null ? from : GetDefinition(baseLibrary, baseFile) ?? throw LogicalError("Missing physical definition.");
         if (basedOn is not null && (physical.PrimaryFormat.Name != basedOn.SourceFormat || input.Fields.Any(f => physical.PrimaryFormat.Find(f.Name) is not { } original || !Same(f, original))))
             throw LogicalError("Physical format changed; recompile the logical file.");

@@ -13,7 +13,7 @@ public sealed partial class SqliteFileStore
 {
     public void CreateLogicalFile(string library, string name, FileDefinition definition, string source, IReadOnlyList<string>? physicalMembers = null, string member = "*FILE", int maximumMembers = 256)
     {
-        if (definition.Attribute != FileAttribute.Logical || definition.Logical is not { } logical || definition.Formats.Count != 1 || definition.Name != name)
+        if (definition.RecordLockWaitSeconds is < 0 or > 32767 || definition.Attribute != FileAttribute.Logical || definition.Logical is not { } logical || definition.Formats.Count != 1 || definition.Name != name)
             throw LogicalError("Invalid logical file definition.");
         library = ResolveLibrary(library);
         logical = logical with { SourceLibrary = ResolveLibrary(logical.SourceLibrary) };
@@ -86,7 +86,8 @@ public sealed partial class SqliteFileStore
         if (format.Fields.Any(f => !ObjectName.IsValid(f.Name) || physical.PrimaryFormat.Find(f.Name) is not { } original || original.Type != f.Type || original.Length != f.Length || original.Decimals != f.Decimals || original.Ccsid != f.Ccsid || original.NullCapable != f.NullCapable || original.VariableLength != f.VariableLength || original.DeclaredDigits != f.DeclaredDigits || original.CurrentDatetimeDefault != f.CurrentDatetimeDefault || original.DefaultValue != f.DefaultValue))
             throw LogicalError("Physical fields changed; recompile the logical file.");
         foreach (var physicalMember in members) EnsureMember(logical.SourceLibrary, logical.SourceFile, physicalMember);
-        using var connection = _factory.Open(); using var command = connection.CreateCommand();
+        using var data = OpenRecordData(logical.SourceLibrary, logical.SourceFile, members: members);
+        var connection = data.Connection; using var command = connection.CreateCommand(); command.Transaction = data.Transaction;
         var predicate = LogicalPredicate(command, logical, physical.PrimaryFormat);
         var keys = format.Fields.Where(f => f.Sequence > 0).OrderBy(f => f.Sequence).ToArray();
         if (prefix is not null)
@@ -105,7 +106,7 @@ public sealed partial class SqliteFileStore
         command.CommandText = string.Join(" UNION ALL ", members.Select((m, index) => $"SELECT {fields},{RowIdentitySql(physical.PrimaryFormat)} AS __ipc_record_number__,{index} AS __ipc_member_order__ FROM {Quote(MemberTable(logical.SourceLibrary, logical.SourceFile, m))} WHERE {predicate}"));
         command.CommandText = "SELECT * FROM (" + command.CommandText + ") ORDER BY " + (keyed && keys.Length > 0 ? string.Join(',', keys.Select(OrderKey)) + "," : "") + "__ipc_member_order__,__ipc_record_number__";
         var rows = new List<IReadOnlyDictionary<string, object?>>();
-        using var reader = command.ExecuteReader();
+        data.Prepare(command); using var reader = command.ExecuteReader();
         while (reader.Read())
         {
             for (var index = 0; index < format.Fields.Count; index++)

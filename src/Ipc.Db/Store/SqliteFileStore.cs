@@ -55,7 +55,7 @@ public sealed partial class SqliteFileStore
         if (definition.Attribute != FileAttribute.Physical || definition.Logical is not null)
             throw new CpfException("IPC0138", "Physical file creation requires a physical definition.");
         if (maximumMembers is { } maximum) definition.MaximumMembers = maximum;
-        if (definition.MaximumMembers is < 1 or > 32767 || definition.Unique && !definition.PrimaryFormat.Fields.Any(f => f.Sequence > 0) || !definition.Unique && definition.ExcludeNullKeys)
+        if (definition.RecordLockWaitSeconds is < 0 or > 32767 || definition.MaximumMembers is < 1 or > 32767 || definition.Unique && !definition.PrimaryFormat.Fields.Any(f => f.Sequence > 0) || !definition.Unique && definition.ExcludeNullKeys)
             throw LogicalError("Invalid physical member limit or key uniqueness definition.");
         CreateFileCore(library, name, PhysicalAttribute, definition, source, description, member);
     }
@@ -147,6 +147,7 @@ public sealed partial class SqliteFileStore
         }
 
         CreatePhysicalAccessPath(connection, transaction, libraryName, fileName, memberName, definition);
+        JournalHooks.InstallMember(connection, transaction, libraryName, fileName, memberName);
         using var touch = connection.CreateCommand(); touch.Transaction = transaction;
         touch.CommandText = "UPDATE sys_objects SET changed=$now WHERE lib=$lib AND name=$name AND type='*FILE'";
         touch.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O")); touch.Parameters.AddWithValue("$lib", libraryName); touch.Parameters.AddWithValue("$name", fileName);
@@ -158,7 +159,9 @@ public sealed partial class SqliteFileStore
 
     public void ClearMember(string library, string name, string member)
     {
+        using var recordLocks = new Ipc.Services.Work.JobLockStore(_factory).EnterRecordWrite(default);
         library = ResolveLibrary(library);
+        RequireUnenlisted(library, name, "CLRPFM");
         Authorize(library, name, AuthorityBit.Delete);
         new Ipc.Services.Work.JobLockStore(_factory).RequireObjectMutation(library.ToUpperInvariant(), name.ToUpperInvariant(), FileType);
         EnsureMember(library, name, member);
@@ -174,13 +177,17 @@ public sealed partial class SqliteFileStore
         new ObjectCatalogOperations(_factory).Delete(new QualifiedName(library.ToUpperInvariant(), name.ToUpperInvariant()), FileType);
     }
 
-    public void Insert(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values)
+    public void Insert(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken = default)
+        => InsertCore(library, name, member, format, values, cancellationToken);
+    private void InsertCore(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values,
+        CancellationToken cancellationToken, Action? validateAfterWait = null)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Add);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
-        if (definition.Logical is not null) { MutateLogical(definition, member, format, values, "INSERT"); return; }
+        if (definition.Logical is not null) { MutateLogical(definition, member, format, values, "INSERT", cancellationToken, validateAfterWait); return; }
         var recordFormat = definition.Formats.First(f => string.Equals(f.Name, format, StringComparison.OrdinalIgnoreCase));
         var columns = new List<string>();
         var placeholders = new List<string>();
@@ -195,8 +202,9 @@ public sealed partial class SqliteFileStore
             parameters.Add(("$v" + (parameters.Count), RecordSqlValue(field, raw)));
         }
 
-        using var connection = _factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
+        using var data = OpenRecordData(library, name, write: true, cancellationToken, members: [member]);
+        validateAfterWait?.Invoke();
+        var connection = data.Connection; var transaction = data.Transaction!;
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         EnsureExactDecimalStorage(connection, transaction, MemberTable(library, name, member), recordFormat);
@@ -207,10 +215,10 @@ public sealed partial class SqliteFileStore
             cmd.Parameters.AddWithValue(parameterName, value ?? DBNull.Value);
         }
 
-        cmd.ExecuteNonQuery();
+        data.Prepare(cmd); Ipc.Services.Sqlite.SqliteCancellation.Run(connection, cancellationToken, cmd.ExecuteNonQuery);
         cmd.CommandText = "SELECT last_insert_rowid()";
         new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), Convert.ToInt64(cmd.ExecuteScalar()), write: true);
-        transaction.Commit();
+        cancellationToken.ThrowIfCancellationRequested(); data.Complete();
     }
 
     private IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadAllCore(string library, string name, string member)
@@ -224,11 +232,12 @@ public sealed partial class SqliteFileStore
         var columns = string.Join(", ", format.Fields.Select(f => Quote(f.Name)));
 
         var rows = new List<IReadOnlyDictionary<string, object?>>();
-        using (var connection = _factory.Open())
+        using (var data = OpenRecordData(library, name, members: [member]))
         {
-            using var cmd = connection.CreateCommand();
+            var connection = data.Connection;
+            using var cmd = connection.CreateCommand(); cmd.Transaction = data.Transaction;
             cmd.CommandText = "SELECT " + columns + "," + RowIdentitySql(format) + " FROM " + Quote(MemberTable(library, name, member)) + " ORDER BY _rowid_";
-            using var reader = cmd.ExecuteReader();
+            data.Prepare(cmd); using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
                 new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(format.Fields.Count), write: false);
@@ -253,12 +262,13 @@ public sealed partial class SqliteFileStore
             : " ORDER BY _rowid_";
 
         var rows = new List<IReadOnlyDictionary<string, object?>>();
-        using (var connection = _factory.Open())
+        using (var data = OpenRecordData(library, name, members: [member]))
         {
-            using var cmd = connection.CreateCommand();
+            var connection = data.Connection;
+            using var cmd = connection.CreateCommand(); cmd.Transaction = data.Transaction;
             cmd.CommandText = "SELECT " + string.Join(", ", format.Fields.Select(f => Quote(f.Name))) + "," + RowIdentitySql(format) +
                 " FROM " + Quote(MemberTable(library, name, member)) + orderBy;
-            using var reader = cmd.ExecuteReader();
+            data.Prepare(cmd); using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
                 new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(format.Fields.Count), write: false);
@@ -306,13 +316,14 @@ public sealed partial class SqliteFileStore
         var orderBy = " ORDER BY " + string.Join(", ", keys.Select(k => OrderKey(k)));
 
         var rows = new List<IReadOnlyDictionary<string, object?>>();
-        using (var connection = _factory.Open())
+        using (var data = OpenRecordData(library, name, members: [member]))
         {
-            using var cmd = connection.CreateCommand();
+            var connection = data.Connection;
+            using var cmd = connection.CreateCommand(); cmd.Transaction = data.Transaction;
             cmd.CommandText = "SELECT " + string.Join(", ", format.Fields.Select(f => Quote(f.Name))) + "," + RowIdentitySql(format) +
                 " FROM " + Quote(MemberTable(library, name, member)) + " WHERE " + string.Join(" AND ", conditions) + orderBy;
             AddKeyParameters(cmd, format, keys, prefix);
-            using var reader = cmd.ExecuteReader();
+            data.Prepare(cmd); using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
                 new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(format.Fields.Count), write: false);
@@ -366,8 +377,8 @@ public sealed partial class SqliteFileStore
             return;
         }
 
-        using var connection = _factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
+        using var data = OpenRecordData(library, name, write: true, members: [member]);
+        var connection = data.Connection; var transaction = data.Transaction!;
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         EnsureExactDecimalStorage(connection, transaction, MemberTable(library, name, member), recordFormat);
@@ -380,9 +391,10 @@ public sealed partial class SqliteFileStore
 
         var mutation = cmd.CommandText;
         cmd.CommandText = "SELECT " + RowIdentitySql(recordFormat) + " FROM " + Quote(MemberTable(library, name, member)) + " WHERE " + string.Join(" AND ", whereColumns);
+        data.Prepare(cmd);
         using (var reader = cmd.ExecuteReader()) while (reader.Read())
             new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(0), write: true);
-        cmd.CommandText = mutation; cmd.ExecuteNonQuery(); transaction.Commit();
+        cmd.CommandText = mutation; data.Prepare(cmd); cmd.ExecuteNonQuery(); data.Complete();
     }
 
     public void Delete(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> keyValues)
@@ -419,8 +431,8 @@ public sealed partial class SqliteFileStore
             throw new CpfException("CPF3201", $"No key values were supplied for file {name}.");
         }
 
-        using var connection = _factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
+        using var data = OpenRecordData(library, name, write: true, members: [member]);
+        var connection = data.Connection; var transaction = data.Transaction!;
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = "DELETE FROM " + Quote(MemberTable(library, name, member)) +
@@ -432,9 +444,10 @@ public sealed partial class SqliteFileStore
 
         var mutation = cmd.CommandText;
         cmd.CommandText = "SELECT " + RowIdentitySql(recordFormat) + " FROM " + Quote(MemberTable(library, name, member)) + " WHERE " + string.Join(" AND ", whereColumns);
+        data.Prepare(cmd);
         using (var reader = cmd.ExecuteReader()) while (reader.Read())
             new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(0), write: true);
-        cmd.CommandText = mutation; cmd.ExecuteNonQuery(); transaction.Commit();
+        cmd.CommandText = mutation; data.Prepare(cmd); cmd.ExecuteNonQuery(); data.Complete();
     }
 
     public long RowCount(string library, string name, string member)
@@ -443,10 +456,11 @@ public sealed partial class SqliteFileStore
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         if (GetDefinition(library, name) is { Logical: not null } logical) return ReadLogical(library, name, member, logical, keyed: false).Count;
-        using var connection = _factory.Open();
-        using var cmd = connection.CreateCommand();
+        using var data = OpenRecordData(library, name, members: [member]);
+        var connection = data.Connection;
+        using var cmd = connection.CreateCommand(); cmd.Transaction = data.Transaction;
         cmd.CommandText = "SELECT count(*) FROM " + Quote(MemberTable(library, name, member));
-        return Convert.ToInt64(cmd.ExecuteScalar());
+        data.Prepare(cmd); return Convert.ToInt64(cmd.ExecuteScalar());
     }
 
     private void Authorize(string library, string name, AuthorityBit permission)
@@ -495,6 +509,7 @@ public sealed partial class SqliteFileStore
                 .Replace("IF NOT EXISTS ", "", StringComparison.Ordinal);
             cmd.ExecuteNonQuery();
             CreatePhysicalAccessPath(connection, transaction, libraryName, fileName, member, definition);
+            JournalHooks.InstallMember(connection, transaction, libraryName, fileName, member);
         }
         transaction.Commit();
     }

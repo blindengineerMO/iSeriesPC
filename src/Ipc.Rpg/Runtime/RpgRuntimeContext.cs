@@ -4,22 +4,41 @@ using Ipc.Rpg.Parsing;
 
 namespace Ipc.Rpg.Runtime;
 
-public sealed class RpgRuntimeContext
+public sealed partial class RpgRuntimeContext
 {
     private readonly RpgProgram _program;
     private readonly HashSet<string> _externalCharacters;
     private RpgHost _host;
     internal int Ccsid => _host.Ccsid();
     internal RpgWorkstationState WorkstationState { get; } = new();
-    public void CloseWorkstations() => WorkstationState.Dispose();
+    internal RpgDiskState DiskState { get; } = new();
+    public void CloseDiskFiles()
+    { try { DiskState.Dispose(); } finally { foreach (var file in _program.DiskFiles) RefreshFeedbackFlags(file.Request.Name); } }
+    public void CloseWorkstations()
+    { try { WorkstationState.Dispose(); } finally { foreach (var file in _program.Workstations) RefreshFeedbackFlags(file.Request.Name); } }
     private sealed record FileStatus(bool Found, bool EndOfFile, bool Error);
     private readonly Dictionary<string, FileStatus> _fileStatus = new(StringComparer.OrdinalIgnoreCase);
     private FileStatus _lastFileStatus = new(false, false, false);
+    private readonly Dictionary<string, int> _numericFileStatus = new(StringComparer.OrdinalIgnoreCase);
+    private int _numericStatus;
+    private bool _error;
+    internal void BeginErrorOperation(string? file)
+    {
+        _error = false; _numericStatus = 0;
+        if (file is not null) { _numericFileStatus[file] = 0; RecordFileFeedback(file, 0); }
+    }
+    internal void RecordStatus(int status, string? file = null, bool errorExtender = false)
+    {
+        _numericStatus = status;
+        if (file is not null) { _numericFileStatus[file] = status; RecordFileFeedback(file, status); }
+        if (errorExtender && status >= 100) _error = true;
+    }
     internal void SetFileStatus(string file, bool? found = null, bool? eof = null, bool error = false, bool clearFileEof = false)
     {
         var previous = _fileStatus.GetValueOrDefault(file, new(false, false, false));
         _lastFileStatus = new(found ?? _lastFileStatus.Found, eof ?? _lastFileStatus.EndOfFile, error);
         _fileStatus[file] = new(found ?? previous.Found, clearFileEof ? false : eof ?? previous.EndOfFile, error);
+        RefreshFeedbackFlags(file);
     }
     internal void RebindHost(RpgHost host) => _host = host;
     private readonly Dictionary<string, object?> _slots = new(StringComparer.OrdinalIgnoreCase);
@@ -68,13 +87,16 @@ public sealed class RpgRuntimeContext
     private readonly Dictionary<string, string?> _dsStorage = new(StringComparer.OrdinalIgnoreCase);
 
     public bool[] Indicators { get; } = new bool[100];
+    public bool IsCancelled { get; internal set; }
 
     public RpgRuntimeContext(RpgProgram program, RpgHost host)
     {
         _program = program;
         _externalCharacters = program.Workstations.SelectMany(w => w.Layout.Records).SelectMany(r => r.Fields)
-            .Where(f => f.Kind == RpgFieldKind.Character && !f.Opaque).Select(f => f.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Where(f => f.Kind == RpgFieldKind.Character && !f.Opaque).Select(f => f.Name)
+            .Concat(program.DiskFiles.SelectMany(f => f.Layout.Fields).Where(f => f.Kind == RpgFieldKind.Character).Select(f => f.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _host = host;
+        NativeCcsid = host.Ccsid();
         Initialize();
     }
 
@@ -108,11 +130,14 @@ public sealed class RpgRuntimeContext
 
         foreach (var ds in _program.DataStructures)
         {
+            if (ds.NativeStorage) continue;
             for (var dim = 0; dim < ds.Dimension; dim++)
             {
                 _dsStorage[DsKey(ds.Name, dim)] = new string(' ', ds.Length);
             }
         }
+        InitializeNativeStructures();
+        InitializeFeedback();
     }
 
     private object InitialValue(RpgField field)
@@ -173,6 +198,7 @@ public sealed class RpgRuntimeContext
 
     public object? ReadValue(string name)
     {
+        if (TryNativeReference(new RpgFieldRef(name), out var native)) return ReadNative(native);
         var element = _program.FindDsElement(name);
         if (element is not null)
         {
@@ -199,6 +225,7 @@ public sealed class RpgRuntimeContext
 
     private void WriteValue(string name, object? value, bool literalCharacter)
     {
+        if (TryNativeReference(new RpgFieldRef(name), out var native)) { WriteNative(native, value); return; }
         var element = _program.FindDsElement(name);
         if (element is not null)
         {
@@ -224,8 +251,10 @@ public sealed class RpgRuntimeContext
     }
 
     internal object? NormalizeWorkstationValue(string name, object? value)
+        => NormalizeFileValue(name, value);
+    internal object? NormalizeFileValue(string name, object? value)
     {
-        var field = _program.FindField(name) ?? throw new RpgRuntimeException("Missing display field: " + name);
+        var field = _program.FindField(name) ?? throw new RpgRuntimeException("Missing external field: " + name);
         var converted = Coerce(field, value);
         if (_references.TryGetValue(name, out var reference)) _ = reference.Normalize(converted);
         return converted;
@@ -233,6 +262,7 @@ public sealed class RpgRuntimeContext
 
     public object? ReadArrayValue(string name, long index)
     {
+        if (TryNativeReference(new RpgFieldRef(name), out var native)) return ReadNative(NativeIndex(native, index));
         var element = _program.FindDsElement(name);
         if (element is not null)
         {
@@ -250,7 +280,7 @@ public sealed class RpgRuntimeContext
 
         if (index < 1 || index > field.Dimension)
         {
-            throw new RpgRuntimeException($"Array index {index} out of range for '{name}' [{field.Dimension}].");
+            throw new RpgRuntimeException($"Array index {index} out of range for '{name}' [{field.Dimension}].") { StatusCode = 121 };
         }
 
         return _arrays[field.Name][index - 1];
@@ -258,6 +288,7 @@ public sealed class RpgRuntimeContext
 
     public void WriteArrayValue(string name, long index, object? value)
     {
+        if (TryNativeReference(new RpgFieldRef(name), out var native)) { WriteNative(NativeIndex(native, index), value); return; }
         var element = _program.FindDsElement(name);
         if (element is not null)
         {
@@ -274,7 +305,7 @@ public sealed class RpgRuntimeContext
 
         if (index < 1 || index > field.Dimension)
         {
-            throw new RpgRuntimeException($"Array index {index} out of range for '{name}' [{field.Dimension}].");
+            throw new RpgRuntimeException($"Array index {index} out of range for '{name}' [{field.Dimension}].") { StatusCode = 121 };
         }
 
         _arrays[field.Name][index - 1] = Coerce(field, value);
@@ -282,6 +313,7 @@ public sealed class RpgRuntimeContext
 
     public void ClearValue(string name)
     {
+        if (TryClearNative(name)) return;
         if (_program.FindField(name) is { OpaqueBytes: true } opaque)
         {
             WriteValue(opaque.Name, new Ipc.Core.Work.ProgramBuffer(Ipc.Core.Text.CodePage.FromCcsid(_host.Ccsid()).GetBytes(new string(' ', opaque.Length)), _host.Ccsid()));
@@ -492,6 +524,7 @@ public sealed class RpgRuntimeContext
         var slice = sliceFromBuffer(buffer, element.Offset, element.Length);
         return CoerceRead(element, slice);
     }
+    internal object? ReadKeySubfield(RpgDsElement element) => TryNativeReference(new RpgFieldRef(element.Name), out var native) ? ReadNative(native) : ReadDsElementBuffer(element, element.Name);
 
     private void WriteDsElementBuffer(RpgDsElement element, string name, int dsIndex, object? value)
     {
@@ -579,8 +612,8 @@ public sealed class RpgRuntimeContext
         {
             if (arguments.Count == 0) return _lastFileStatus;
             if (arguments.Count != 1 || arguments[0] is not RpgFieldRef file) throw new RpgRuntimeException("File status requires a file name.");
-            if (!_program.Workstations.Any(w => w.Request.Name.Equals(file.Name, StringComparison.OrdinalIgnoreCase)))
-                throw new RpgRuntimeException("Unknown workstation status file: " + file.Name);
+            if (!_fileStatus.ContainsKey(file.Name) && !_program.Workstations.Any(w => w.Request.Name.Equals(file.Name, StringComparison.OrdinalIgnoreCase)) && !_program.DiskFiles.Any(f => f.Request.Name.Equals(file.Name, StringComparison.OrdinalIgnoreCase)))
+                throw new RpgRuntimeException("Unknown status file: " + file.Name);
             return _fileStatus.GetValueOrDefault(file.Name, new(false, false, false));
         }
         var upper = name.ToUpperInvariant();
@@ -591,14 +624,29 @@ public sealed class RpgRuntimeContext
                 return EvalSubstring(arguments);
             case "LEN":
                 RequireArgCount(name, arguments, 1);
+                if (TryNativeReference(arguments[0], out var nativeLength)) return nativeLength.Element?.Kind is RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Integer ? nativeLength.Element.Length : nativeLength.UnitWidth;
+                if (arguments[0] is RpgFieldRef numericLength && Program.FindField(numericLength.Name) is { Kind: RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Decimal or RpgFieldKind.Integer or RpgFieldKind.Binary } nf) return nf.Length;
                 return arguments[0] is RpgFieldRef fr0 && Program.FindField(fr0.Name) is { Kind: RpgFieldKind.Character, IsArray: false } cf
                     ? (object)cf.Length
-                    : (object)(RpgValues.ToText(arguments[0].Eval(this)).Length);
+                    : ValueLength(arguments[0].Eval(this));
             case "SIZE":
-                RequireArgCount(name, arguments, 1);
+                RequireArgCount(name, arguments, 1, 2);
+                var all = arguments.Count == 2;
+                if (all && (arguments[1] is not RpgFieldRef sizeAll || !sizeAll.Name.Equals("*ALL", StringComparison.OrdinalIgnoreCase))) throw new RpgRuntimeException("The second %SIZE argument must be *ALL.");
+                if (TryNativeReference(arguments[0], out var nativeSize))
+                {
+                    if (all && !nativeSize.IsArray) throw new RpgRuntimeException("%SIZE(*ALL) requires an array.");
+                    return nativeSize.UnitWidth * (all ? nativeSize.Count : 1);
+                }
+                if (all && (arguments[0] is not RpgFieldRef arraySize || Program.FindField(arraySize.Name)?.IsArray != true)) throw new RpgRuntimeException("%SIZE(*ALL) requires an array.");
                 return arguments[0] is RpgFieldRef fr1 && Program.FindField(fr1.Name) is { } sf
-                    ? (object)(sf.IsArray ? sf.Length * sf.Dimension : sf.Length)
-                    : (object)RpgValues.ToText(arguments[0].Eval(this)).Length;
+                    ? ScalarStorageWidth(sf) * (all ? sf.Dimension : 1)
+                    : ValueLength(arguments[0].Eval(this));
+            case "ELEM":
+                RequireArgCount(name, arguments, 1);
+                if (TryNativeReference(arguments[0], out var nativeElements) && nativeElements.IsArray) return nativeElements.Count;
+                if (arguments[0] is RpgFieldRef array && Program.FindField(array.Name) is { IsArray: true } arrayField) return arrayField.Dimension;
+                throw new RpgRuntimeException("%ELEM requires an array.");
             case "TRIM":
                 RequireArgCount(name, arguments, 1);
                 return RpgValues.ToText(arguments[0].Eval(this)).Trim();
@@ -629,15 +677,23 @@ public sealed class RpgRuntimeContext
             case "TIMESTAMP":
                 RequireArgCount(name, arguments, 1);
                 return RpgValues.ToDate(arguments[0].Eval(this));
+            case "OPEN":
+                if (arguments.Count != 1 || arguments[0] is not RpgFieldRef openFile) throw new RpgRuntimeException("%OPEN requires one declared file name.");
+                if (_program.DiskFiles.Any(f => f.Request.Name.Equals(openFile.Name, StringComparison.OrdinalIgnoreCase))) return DiskState.Files.ContainsKey(openFile.Name.ToUpperInvariant());
+                if (_program.Workstations.Any(f => f.Request.Name.Equals(openFile.Name, StringComparison.OrdinalIgnoreCase))) return WorkstationState.Files.ContainsKey(openFile.Name.ToUpperInvariant());
+                throw new RpgRuntimeException("Unknown open-status file: " + openFile.Name);
             case "FOUND":
                 return Status().Found;
             case "EOF":
                 return Status().EndOfFile;
             case "ERROR":
-                return _lastFileStatus.Error;
+                RequireArgCount(name, arguments, 0); return _error;
             case "STATUS":
-                return string.Empty;
+                if (arguments.Count == 0) return _numericStatus;
+                _ = Status();
+                return _numericFileStatus.GetValueOrDefault(((RpgFieldRef)arguments[0]).Name);
             case "PARMS":
+                RequireArgCount(name, arguments, 0); return ParameterCount;
             case "PARMNUM":
                 return 0;
             default:
@@ -648,37 +704,37 @@ public sealed class RpgRuntimeContext
     private object? EvalSubstring(IReadOnlyList<RpgExpr> arguments)
     {
         RequireArgCount("%SUBST", arguments, 2, 3);
-        var value = arguments[0].Eval(this);
+        if (TryNativeReference(arguments[0], out var substringArray) && substringArray.IsArray) throw new RpgRuntimeException("Array %SUBST requires an indexed element in the current subset.");
+        var value = TryNativeReference(arguments[0], out var native) && (native.Element is null || native.Element.Kind == RpgFieldKind.Character)
+            ? NativeBuffer(native) : arguments[0].Eval(this);
         if (value is Ipc.Core.Work.ProgramBuffer buffer)
         {
             var from = RpgValues.ToLong(arguments[1].Eval(this));
             var count = arguments.Count == 3 ? RpgValues.ToLong(arguments[2].Eval(this)) : buffer.Length - from + 1;
             if (from < 1 || from > buffer.Length + 1 || count < 0 || count > buffer.Length - from + 1)
-                throw new RpgRuntimeException("Byte-buffer substring is outside the character field.");
+                throw new RpgRuntimeException("Byte-buffer substring is outside the character field.") { StatusCode = 100 };
             return new Ipc.Core.Work.ProgramBuffer(buffer.ToArray().AsSpan((int)from - 1, (int)count), buffer.Ccsid);
         }
         var text = RpgValues.ToText(value);
-        var start = (int)RpgValues.ToLong(arguments[1].Eval(this));
-        if (start < 1 || start > text.Length + 1)
-        {
-            return string.Empty;
-        }
-
+        var startValue = RpgValues.ToLong(arguments[1].Eval(this));
+        if (startValue < 1 || startValue > text.Length + 1)
+            throw new RpgRuntimeException("Substring is outside the character field.") { StatusCode = 100 };
+        var start = (int)startValue;
         var remaining = text.Length - start + 1;
-        var length = arguments.Count == 3
-            ? (int)Math.Min(remaining, Math.Max(0, RpgValues.ToLong(arguments[2].Eval(this))))
-            : remaining;
-        return text.Substring(start - 1, length);
+        var length = arguments.Count == 3 ? RpgValues.ToLong(arguments[2].Eval(this)) : remaining;
+        if (length < 0 || length > remaining) throw new RpgRuntimeException("Substring is outside the character field.") { StatusCode = 100 };
+        return text.Substring(start - 1, (int)length);
     }
 
     internal void WriteSubstring(IReadOnlyList<RpgExpr> arguments, object? value)
     {
         RequireArgCount("%SUBST", arguments, 2, 3);
+        if (TryWriteNativeSubstring(arguments, value)) return;
         if (arguments[0] is not RpgFieldRef field || _program.FindField(field.Name) is not { IsArray: false, Kind: RpgFieldKind.Character or RpgFieldKind.VaryingChar })
             throw new RpgRuntimeException("Writable %SUBST requires a scalar character field.");
         var target = ReadValue(field.Name); var size = target is Ipc.Core.Work.ProgramBuffer raw ? raw.Length : RpgValues.ToText(target).Length;
         var from = RpgValues.ToLong(arguments[1].Eval(this)); var count = arguments.Count == 3 ? RpgValues.ToLong(arguments[2].Eval(this)) : size - from + 1;
-        if (from < 1 || from > size + 1 || count < 0 || count > size - from + 1) throw new RpgRuntimeException("Writable substring is outside the character field.");
+        if (from < 1 || from > size + 1 || count < 0 || count > size - from + 1) throw new RpgRuntimeException("Writable substring is outside the character field.") { StatusCode = 100 };
         if (target is Ipc.Core.Work.ProgramBuffer buffer)
         {
             byte[] source;
@@ -703,9 +759,18 @@ public sealed class RpgRuntimeContext
         }
     }
 
+    private static int ValueLength(object? value) => value is Ipc.Core.Work.ProgramBuffer buffer ? buffer.Length : RpgValues.ToText(value).Length;
+    private static int ScalarStorageWidth(RpgField field) => field.Kind switch
+    {
+        RpgFieldKind.Packed or RpgFieldKind.Decimal => (field.Length + 2) / 2,
+        RpgFieldKind.Integer => field.Length switch { 3 => 1, 5 => 2, 10 => 4, 20 => 8, _ => throw new RpgRuntimeException("Unsupported integer precision.") },
+        RpgFieldKind.Binary => field.Length <= 4 ? 2 : 4,
+        _ => field.Length,
+    };
+
     private static void RequireArgCount(string name, IReadOnlyList<RpgExpr> arguments, int min, int? max = null)
     {
-        if (arguments.Count < min || (max.HasValue && arguments.Count > max.Value))
+        if (arguments.Count < min || arguments.Count > (max ?? min))
         {
             throw new RpgRuntimeException($"%{name} expects {(max.HasValue ? $"{min} to {max.Value}" : min.ToString())} arguments.");
         }

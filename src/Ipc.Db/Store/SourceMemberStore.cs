@@ -18,6 +18,7 @@ public sealed partial class SqliteFileStore
     {
         library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
+        RequireUnenlisted(library, name, "Source editing");
         if (!ObjectName.IsValid(member)) throw new ArgumentException("Invalid source member.");
         Authorize(library, name, AuthorityBit.Read);
         new JobLockStore(_factory).RequireStableRead(library, name, FileType);
@@ -29,8 +30,10 @@ public sealed partial class SqliteFileStore
     }
     public SourceMemberSnapshot SaveSourceMember(string library, string name, string member, string source, string? expectedRevision)
     {
+        using var recordLocks = new JobLockStore(_factory).EnterRecordWrite(default);
         library = ResolveLibrary(library);
         library = library.ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
+        RequireUnenlisted(library, name, "Source editing");
         if (!ObjectName.IsValid(member)) throw new ArgumentException("Invalid source member.");
         Authorize(library, name, AuthorityBit.Read | AuthorityBit.Add | AuthorityBit.Update | AuthorityBit.Delete);
         new JobLockStore(_factory).RequireObjectMutation(library, name, FileType);
@@ -54,6 +57,7 @@ public sealed partial class SqliteFileStore
             create.Parameters.AddWithValue("$lib", library); create.Parameters.AddWithValue("$name", name); create.Parameters.AddWithValue("$member", member);
             create.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O")); create.ExecuteNonQuery();
             create.CommandText = CreateMemberTableSql(definition.PrimaryFormat, MemberTable(library, name, member)).Replace("IF NOT EXISTS ", "", StringComparison.Ordinal); create.ExecuteNonQuery();
+            Ipc.Services.Sqlite.JournalHooks.InstallMember(connection, transaction, library, name, member);
         }
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "DELETE FROM " + Quote(MemberTable(library, name, member)); command.ExecuteNonQuery();

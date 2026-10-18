@@ -95,6 +95,8 @@ public sealed class Migrator
         new SchemaMigration(27, "Native immediate message payload capacity", new[] { NativeMessagePayloadMigration.Sql }),
         new SchemaMigration(28, "Native job identifiers and list cursors", new[] { NativeJobIdentityMigration.Sql }),
         new SchemaMigration(29, "Job-owned encrypted cryptographic key contexts", new[] { CryptoContextMigration.Sql }),
+        new SchemaMigration(30, "Journal receivers, entries and physical-file bindings", new[] { JournalMigration.Sql }),
+        new SchemaMigration(31, "Journal commitment cycle identity", new[] { "ALTER TABLE sys_journal_entries ADD COLUMN commit_cycle TEXT; CREATE INDEX ipc_journal_commit_cycle ON sys_journal_entries(commit_cycle,journal_id,sequence);" }),
     };
 
     public Migrator(SqliteConnectionFactory factory) : this(factory, Migrations) { }

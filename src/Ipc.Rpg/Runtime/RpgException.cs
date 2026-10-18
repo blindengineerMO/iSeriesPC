@@ -30,6 +30,13 @@ public sealed class RpgCompileFailedException : RpgException
 
 public sealed class RpgRuntimeException : RpgException
 {
+    internal bool FeedbackRecorded { get; set; }
+    internal HashSet<object> ErrorHandlerInvocations { get; init; } = [];
+    internal bool SuppressErrorSubroutines { get; init; }
+    public int? StatusCode { get; init; }
+    public bool FileError { get; init; }
+    public string? StatusFile { get; init; }
+    public Exception? ServiceError { get; init; }
     public Ipc.Core.Compilation.SourceLocation? Location { get; }
     public RpgRuntimeException(string? message) : base(message)
     {

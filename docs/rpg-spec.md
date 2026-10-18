@@ -18,10 +18,11 @@ and display-file runtime described in §12.
 
 1. **Preprocess** — expand the bounded [RPG directive grammar](source-preprocessing.md#rpg-directives)
    and retain original source snapshots and include locations.
-2. **ReadSpecs** — preserve physical line positions while masking blanks and `*` comments (except `**free`).
+2. **ReadSpecs** — preserve physical line positions while masking blanks and `*` comments (except `**free` and free-form `*N` declarations).
 3. **Free-form detection** — true if any line starts with `**free`; repeated/malformed markers fail.
-4. **ParseDeclarations** — collect supported fixed F/D specs, free DCL-F/DCL-S declarations,
-   external display fields, and data structures. WORKSTN compilation requires a display resolver;
+4. **ParseDeclarations** — collect supported fixed F/D specs, free DCL-F/DCL-S/DCL-DS declarations,
+   external display/database input fields, and data structures. WORKSTN compilation requires a display resolver;
+   DISK input compilation requires a database resolver;
    CRTBNDRPG saves the source-bound external layouts alongside the program.
 5. **ParseStatements** — distinguish fixed layouts from free text. Unsupported operations,
    specifications and D-spec types fail explicitly with original source locations.
@@ -70,6 +71,12 @@ non-blank (Zoned/Packed) regardless of the value; otherwise it is character.
 Conditions gate execution (inverted when prefixed with `N`). For parameter lists, `PLIST` is
 marked via Factor 1 (`*ENTRY`) with `PARM` targets in Factor 1.
 
+KLIST/KFLD declarations additionally accept standard RPG IV C-spec positions:
+`C` in column 6, factor 1 in 12–25, opcode in 26–35 and result in 50–63. A compiler
+declaration pass binds scalar fields in source/procedure order and removes these
+declarations from executable statements. This does not add standard layouts for
+every calculation operation. See [RPG file keys](rpg-file-keys.md).
+
 ## 4. Free form
 
 Free statements accept any indentation, including column 1 and column 7. `**free` begins global free-form source and
@@ -80,8 +87,10 @@ make the whole program free). `/FREE` and `/END-FREE` must balance, cannot nest 
 cannot appear in a `**free` program. Each statement ends with `;` (the interpreter's
 legacy optional final semicolon remains accepted). Operands are bound per opcode:
 `IF`/`WHEN` keep the whole expression as the condition; `MOVE`/`MOVEL`/`MOVA` bind Factor 1 = first
-operand, result = remaining operand(s); `CHAIN`, `READ*`, `SETLL`, `SETGT` parse `(key) file` or
-`key file` into Factor 1 (key) / Factor 2 (file). `EVAL`, `CALLP`, `FOR`, `DO`/`DOU`/`DOW`,
+operand, result = remaining operand(s). Keyed operations parse a scalar, KLIST,
+parenthesized expression list or `%KDS` followed by a file name. Nested functions
+and quoted separators remain intact. READ/READP/READC accept just the file/record
+name; READE/READPE can use `*KEY`. Extra operands fail compilation. `EVAL`, `CALLP`, `FOR`, `DO`/`DOU`/`DOW`,
 block delimiters, `RETURN`, `WRITE`, `UPDATE`, `DELETE`, `CLEAR`, `SETON`/`SETOFF`, `BITON`/
 `BITOFF`, `DSPLY`, `SNDMSG`, `RCVMSG`, `EXSR`, `ON-ERROR`, `GOTO`/`TAG` are all recognized
 (case-insensitive; `ZADD`/`ZSUB` are free synonyms). `CALLP proc(a:b:c)` and built-in calls use
@@ -104,9 +113,9 @@ Block tokens: `IF…ELSE…ENDIF`, `SELECT…WHEN…OTHER…ENDSL`, `DO`/`DOU`/`
 ### Flow control
 `IF`, `WHEN`, `ELSE`, `ENDIF`, `SELECT`, `OTHER`, `ENDSL`, `DO`, `DOU`, `DOW`, `FOR`, `ENDDO`,
 `ITER`, `LEAVE`, `GOTO`, `TAG`, `EXSR`, `BEGSR`, `ENDSR`, `RETURN`, `RETRN`, `CALL`, `CALLB`, `CALLP`,
-`ON-ERROR`.
+`MONITOR`, `ON-ERROR`, `ENDMON`.
 
-- `ON-ERROR` is a runtime error tail-trap (see §10). `SETON`/`SETOFF`/`*INLR` semantics in
+- `MONITOR`/`ON-ERROR`/`ENDMON` provide structured numeric status handling; bare `ON-ERROR` retains a tail-trap extension (see §10). `SETON`/`SETOFF`/`*INLR` semantics in
   Indicators below.
 - **Subprocedures**: P-specs (`P name` with `B`/`E` markers in column 24) delimit a subprocedure;
   the `B` and `E` marks become `BegProc`/`EndProc` sentinel statements and the block between them is
@@ -130,11 +139,33 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
 
 - File name resolves from Factor 2 (keyed ops) or Factor 1 (block ops), then the result; the
   runtime matches against opened file members by name.
-- `CHAIN`/`READ*` copy the current record's fields into the context; `UpdateOpcode` requires a
-  record to have been read (`cursor.Current`) and re-inserts preserving key values.
+- `CHAIN`/`READ*` copy the current record's fields into the context. SQLite `UPDATE`
+  and current-record `DELETE` require a successful read and target its physical
+  member/RRN, including duplicate keys and unkeyed files. UPDATE uses current
+  program values, including changed keys. A successful mutation consumes the
+  target; stale before images are rejected and require another read.
 - `WRITE` builds values from the named format (default `*FILE`'s primary format).
 - WORKSTN operations use the separate format/RRN contract in §12. EXFMT requires
   a declared workstation record; it no longer treats a database row as a display.
+
+SQLite disk file operations now use the shared bounded database cursor for
+forward/reverse navigation, CHAIN, lower/upper limits and adjacent equal reads.
+Only one record and a sort tuple remain in the RPG adapter. Reload validates
+live authority/schema without replacing the input buffer. Exact keys, nulls,
+descending order, cancellation and service commit/rollback positions share the
+CL/database backend. Disk EOF/FOUND status follows these operations. Custom
+non-SQLite providers may retain the older materialized fallback. See
+[cursor navigation and acceptance limits](cursor-navigation.md).
+
+Compound search arguments and keyed DELETE are described in
+[RPG file keys](rpg-file-keys.md). Keyed deletion selects one physical record and
+updates `%FOUND`, preserving program input fields and the prior position on a
+miss. Its search/mutation/position update share the commitment gate. Native null
+attributes, disk commitment declarations/open flags, RRN allocation/writeback, complete DS layouts and
+strict-key/extender/golden acceptance remain open. Unkeyed CHAIN/SETLL/SETGT/DELETE
+now use physical RRNs, including sparse slots, typed zero-decimal operands,
+explicit host arrival mode and job commitment positions. See
+[relative record access and remaining native declarations/allocator work](relative-records.md).
 
 ### Messaging
 `DSPLY`, `SNDMSG`, `SNDPGMMSG`, `RCVMSG`.
@@ -191,10 +222,11 @@ coded indicators default to `*IN01` (found / not-EOF) and `*IN02` (not found / E
 
 ## 8. Files
 
-`RpgFileCursor` wraps the store's keyed reader: `ReadNext`/`ReadPrior` (plain and keyed variants),
+`RpgFileCursor` uses the bounded SQLite navigation protocol (or a custom provider's
+legacy keyed reader): `ReadNext`/`ReadPrior` (plain and keyed variants),
 `Chain(search)`, `SetLowerBound`/`SetUpperBound` (`*INxx`-free; used by `SETLL`/`SETGT`), and
-`Reload()` after writes. Key fields are `Sequence > 0` fields of the primary format (from the DDS
-`K`-row markers). `_host.Files` (`ISqlFileStore`) provides `Insert`, `RowCount`, and
+`Reload()` validates the live binding after writes. Key fields are `Sequence > 0` fields of the primary format (from the DDS
+`K`-row markers). `_host.Files` (`IRpgFileAccess`) provides `Insert`, `RowCount`, and
 `ReadKeyPrefix` used by the interpreter.
 
 ## 9. Program object model
@@ -228,14 +260,12 @@ main stream, and subprocedures are P-spec blocks re-parented into `Subprocedures
 - Bit fields initialize to blanks (`0x20`) in the emulation's ASCII representation; `BITON` ORs
   into the existing value.
 - `IF` without a matching `ENDIF`, and missing `ENDDO`/`ENDSL`, are compile-time errors.
-- **`ON-ERROR` uses tail-trap semantics, not IBM's error-handler subroutines.** A runtime error
-  (`RpgRuntimeException`, e.g. division by zero) jumps to the first `ON-ERROR` that follows it in
-  the current statement list; the statements until the next `ON-ERROR` (or the list end) run as the
-  handler; in normal flow an `ON-ERROR` statement bypasses its own handler, so multiple
-  `ON-ERROR` partitions partition the block. No `ON-ERROR` present (or an error raised inside a
-  handler) propagates the exception.
-  Status filters on `ON-ERROR` and return-value operands on `RETURN`/`RETRN` are
-  unsupported and fail compilation rather than being silently ignored.
+- **Structured MONITOR and legacy ON-ERROR are distinct.** MONITOR/ON-ERROR/ENDMON
+  support bounded numeric filters, nested handlers and file/program error groups.
+  E or an ER indicator handles expected file errors before MONITOR. An unfiltered
+  ON-ERROR outside MONITOR retains the earlier tail-trap extension. See
+  [numeric status and monitor rules](rpg-file-status.md). RETURN/RETRN value
+  operands remain unsupported.
 - **Subprocedures share the program's field namespace**: procedure D-specs are registered in
   `program.Fields` and mirrored as the procedure's `Parameters`, so a global field and a
   procedure-local of the same name collide.
@@ -252,7 +282,7 @@ The [generated opcode table](compatibility-matrix.md#observed-rpg-opcode-parser-
 records fixed and free parser recognition separately. Unknown spellings produce
 `RpgCompileException`, including code after RETURN and other unreachable source.
 The fixed operation field is seven columns wide; `ON-ERROR` and `SNDPGMMSG` are
-free-only extensions. F/H/I/E/O specifications, free declarations, MONITOR/ENDMON,
+free-only extensions. Unsupported F/H/I/E/O specifications, declaration variants,
 embedded SQL, COMMIT/ROLBK and unimplemented operation variants fail explicitly.
 This reports missing implementation; these release requirements remain open.
 
@@ -373,8 +403,9 @@ SFLNXTCHG updates behind the current position are available on the next scan.
 Subfile clear/initialize resets the affected position. `%FOUND`/`%FOUND(file)` and
 `%EOF`/`%EOF(file)` report the implemented retrieval operations; successful CHAIN
 clears the named file's EOF without clearing the unqualified EOF. These statuses
-are scoped to this workstation implementation. Exact native numeric status codes,
-full subfile-full status behavior and complete database status parity remain open.
+are scoped to this workstation implementation. Numeric statuses now cover a bounded subset described in
+[status rules](rpg-file-status.md); complete native display/database status parity
+remains open.
 
 Files auto-open at invocation initialization, unless USROPN is specified. Explicit
 OPEN/CLOSE operates on the file name. RETURN retains open files, rows and storage
@@ -434,3 +465,83 @@ RpgNativeStorageTests covers two CCSIDs, invalid ranges, raw bytes, tails and
 literal text. Compiled CL/direct RPG [crypto callers](cryptography-apis.md) use
 these writes to construct real native descriptors. Array/nested substring lvalues
 and the broader C09 storage/language contracts remain open.
+
+## 13. Declared database input files
+
+Externally described input DISK F-specs and free DCL-F now bind saved field/format
+layouts, explicit keyed/arrival modes, EXTDESC/EXTFILE, RENAME/PREFIX and USROPN.
+Hosted calls retain file position/open state until LR or activation cleanup;
+%OPEN, live format/authority checks and external-name overrides are covered.
+Declared update/output modes are described below; native commitment flags remain open. See
+[the disk file contract and evidence](rpg-disk-files.md).
+
+## 14. Declared noncommit update files
+
+DISK USAGE(*UPDATE) and USAGE(*DELETE), plus fixed U files, now use retained
+update input. N on CHAIN/READ/READP/READE/READPE retrieves inquiry input; UNLOCK
+releases input without moving position. UPDATE requires the record format and
+maps prefixed fields back to columns; delete access is explicit. Saved access
+modes preserve earlier input snapshots and mode-compatible ODP sharing. See
+[declared database files](rpg-disk-files.md). COMMIT flags/isolation,
+Complete native status coverage, SQL/trigger coordination and independent
+native acceptance remain open.
+
+
+## 15. Declared database output
+
+USAGE(*OUTPUT), alone or combined with input/update/delete, enables record-format
+WRITE using all imported fields and RENAME/PREFIX mapping. Fixed O files and
+column-20 A on I/U files permit addition. Output-only handles require Add and
+object-operation authority without reading existing rows. Open/close, retained
+calls, mode-compatible sharing, overrides, logical selection/uniqueness and
+job-attributed journal capture use the shared file services. Version-3 bindings
+preserve prior input/update metadata and reject output privileges in old versions.
+See [declared database files](rpg-disk-files.md#output-and-record-addition).
+RECNO-directed output, initialized/deleted slots, reuse/generation policy,
+commitment flags, DS output buffers and full native error/status behavior remain open.
+
+
+## 16. Database record-wait policy
+
+Declared update/delete DISK opens now use the runtime file or OVRDBF WAITRCD.
+Timed and immediate input, cancellable indefinite overrides, all five update
+input operations and physical mutation waits share the lock service. File/LF
+attributes default to 60 seconds; the legacy explicit service API defaults to
+zero. Open paths retain their policy and share only compatible modes/waits.
+See [record waits](record-waits.md) for command values, persistence and limits.
+Numeric status 1218, E/%ERROR/%STATUS and structured MONITOR are implemented as
+a bounded subset; see [status rules and limits](rpg-file-status.md). Commitment
+isolation/open flags and complete SQL/trigger locking remain open.
+
+
+## 17. Native free-form data structures
+
+DCL-DS/END-DS now supplies native byte storage, qualified fields, POS/OVERLAY,
+arrays and LIKEDS. INT/packed/zoned/float and default ISO datetime fields share
+live byte images; uninitialized numeric storage remains blank and can raise 907.
+Borrowed API receivers support structures and typed subfields with range-aware
+alias protection. See [the native structure contract](rpg-native-structures.md).
+The historical fixed D-spec text overlays remain a separate extension. Nested
+structures, native fixed D/C, full entry/prototype ABI, extended feedback and
+INDDS population remain open.
+
+## 18. Native feedback structures
+
+Free file declarations now support INFDS with the 80-byte file feedback area.
+One PSDS supports reserved and positional fields for program errors, previous
+status, entry parameter count, last-file snapshots and initial job identity.
+Feedback uses the same native bytes as ordinary fields and overlays. E/ER and
+MONITOR handlers see the updated feedback; EXSR preserves original error details
+and CALL failures identify the caller line and called target. See
+[the feedback contract](rpg-feedback-structures.md) for populated fields and
+limits. Extended INFDS/PSDS areas, INDDS, INFSR/*PSSR, native fixed D-specs and
+complete cycle/error semantics remain open.
+
+## 19. Error subroutines
+
+INFSR and procedure-local *PSSR now dispatch after E/ER and matching MONITOR
+groups. Explicit EXSR, automatic default failure, RETURN/GOTO recovery,
+six-byte main ENDSR return points and *CANCL cancellation are supported.
+Abnormal exit closes retained file owners and discards failed activation state.
+See [the error-subroutine contract](rpg-error-subroutines.md) for scope, bounds,
+source diagnostics and native cycle/ILE requirements that remain open.

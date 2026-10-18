@@ -34,6 +34,9 @@ internal sealed class LockCatalog : IDisposable
             );
             CREATE INDEX IF NOT EXISTS waiter_resource ON waiters(library,name,type,member,row_number);
             CREATE INDEX IF NOT EXISTS waiter_job ON waiters(job_number);
+            CREATE TABLE IF NOT EXISTS record_transactions (
+              job_number INTEGER PRIMARY KEY,job_name TEXT NOT NULL,job_user TEXT NOT NULL,owner TEXT NOT NULL,pid INTEGER NOT NULL,started INTEGER NOT NULL
+            );
             """;
         command.ExecuteNonQuery(); command.CommandText = "SELECT version FROM ipc_lock_version";
         if (Convert.ToInt32(command.ExecuteScalar()) != 1) throw new InvalidDataException("Unsupported lock catalog version.");

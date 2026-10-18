@@ -118,6 +118,8 @@ public sealed class FileDefinition
 
     public int MaximumMembers { get; set; } = 32767;
 
+    public int RecordLockWaitSeconds { get; set; } = 60;
+
     public List<RecordFormat> Formats { get; set; } = new();
 
     [JsonIgnore]

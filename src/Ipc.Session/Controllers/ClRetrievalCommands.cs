@@ -18,13 +18,14 @@ public sealed partial class CommandService
     private CommandResult? RunClContextCommand(CommandCall call, ClCommandContext context)
     {
         var name = BuiltinContract.CanonicalName(call.Name.Split('/')[^1]);
-        if (name is not ("RTVJOBA" or "RTVDTAARA" or "CHGDTAARA" or "CRTDTAARA" or "SNDMSG" or "RCVMSG" or "SNDRPY" or "RMVMSG" or "RTVMSG" or "SNDDTAQ" or "RCVDTAQ" or "CLRDTAQ")) return null;
+        if (name is not ("RTVJOBA" or "RTVDTAARA" or "CHGDTAARA" or "CRTDTAARA" or "SNDMSG" or "RCVMSG" or "SNDRPY" or "RMVMSG" or "RTVMSG" or "SNDDTAQ" or "RCVDTAQ" or "CLRDTAQ" or "SNDJRNE")) return null;
         var key = ResolveCommandObject(call.Name);
         var definition = new CommandDefinitionStore(_system.Connections).Load(key.Library, key.Name.Value);
         if (definition.Builtin != name) return null; // A user command keeps ordinary CPP dispatch.
         var canonical = new CommandCall { Name = name, Keywords = call.Keywords, Positional = call.Positional };
         if (BuiltinContract.Validate(canonical) is { } error) return CommandResult.Error(error);
         var bound = CommandBinder.Bind(definition, canonical).Call;
+        if (name == "SNDJRNE") return SendJournalEntry(bound, context);
         if (_job is null) throw new CpfException("CPF1241", "A job context is required.");
         new JobDataAreaStore(_system.Connections).RequireOwner(_job.Key);
         if (name is "SNDDTAQ" or "RCVDTAQ" or "CLRDTAQ") return ExecuteDataQueueCommand(bound, context);

@@ -101,7 +101,8 @@
         "SRCMBR",
         "TEXT",
         "MBR",
-        "MAXMBRS"
+        "MAXMBRS",
+        "WAITRCD"
       ],
       "maxPositional": 0
     },
@@ -122,7 +123,8 @@
         "SRCSTMF",
         "MBR",
         "DTAMBRS",
-        "MAXMBRS"
+        "MAXMBRS",
+        "WAITRCD"
       ],
       "maxPositional": 0
     },
@@ -567,7 +569,8 @@
       ],
       "keywords": [
         "FILE",
-        "MAXMBRS"
+        "MAXMBRS",
+        "WAITRCD"
       ],
       "maxPositional": 0
     },
@@ -576,11 +579,16 @@
       "kind": "command",
       "category": "file",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "FILE",
+        "WAITRCD"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "CLRPFM",
@@ -661,7 +669,8 @@
         "TOFILE",
         "MBR",
         "SHARE",
-        "OVRSCOPE"
+        "OVRSCOPE",
+        "WAITRCD"
       ],
       "maxPositional": 0
     },
@@ -2237,77 +2246,117 @@
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRN",
+        "JRNRCV",
+        "MNGRCV",
+        "DLTRCV",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "CRTJRNRCV",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRNRCV",
+        "THRESHOLD",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "CHGJRN",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRN",
+        "JRNRCV"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "DLTJRN",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRN"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "DLTJRNRCV",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRNRCV",
+        "DLTOPT"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "STRJRNPF",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "FILE",
+        "JRN",
+        "IMAGES"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "ENDJRNPF",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "FILE"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "STRJRN",
@@ -2336,11 +2385,48 @@
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRN",
+        "FILE",
+        "RCVRNG",
+        "FROMENT",
+        "TOENT",
+        "FROMENTLRG",
+        "TOENTLRG",
+        "CMTBDY",
+        "OBJERROPT",
+        "OUTPUT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RMVJRNCHG",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JRN",
+        "FILE",
+        "RCVRNG",
+        "FROMENT",
+        "TOENT",
+        "FROMENTLRG",
+        "TOENTLRG",
+        "CMTBDY",
+        "OBJERROPT",
+        "OUTPUT"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "RCVJRNE",
@@ -2365,15 +2451,39 @@
       ]
     },
     {
+      "name": "SNDJRNE",
+      "kind": "command",
+      "category": "data",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "JRN",
+        "TYPE",
+        "ENTDTA"
+      ],
+      "maxPositional": 0
+    },
+    {
       "name": "DSPJRN",
       "kind": "command",
       "category": "data",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "JRN",
+        "FROMENT",
+        "TOENT",
+        "NBRENT"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "PGM",

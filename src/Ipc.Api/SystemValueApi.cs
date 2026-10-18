@@ -22,7 +22,7 @@ public sealed class SystemValueApi(SqliteConnectionFactory factory, int ccsid = 
         cancellationToken.ThrowIfCancellationRequested();
         if (parameters.Count != 5) throw new CpfException("CPF3C36", "QWCRSVAL requires five parameters.");
         var error = new ApiArguments.ErrorReceiver(_arguments, parameters[4]);
-        if (error.Target is { } errorTarget && parameters.Take(4).Any(value => ReferenceEquals(value, errorTarget)))
+        if (error.Target is { } errorTarget && parameters.Take(4).Any(value => Ipc.Core.Work.ProgramArgument.Overlaps(value, errorTarget)))
             throw ApiArguments.Bad("API error receiver cannot alias another parameter.");
         try
         {

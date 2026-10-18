@@ -3,11 +3,25 @@ using Ipc.Db.Store;
 
 namespace Ipc.Rpg.Runtime;
 
-public sealed class RpgSqliteFileAccess : IRpgFileAccess
+public sealed class RpgSqliteFileAccess : IRpgFileAccess, IRpgCursorFileAccess
 {
     private readonly SqliteFileStore _store;
 
     public RpgSqliteFileAccess(SqliteFileStore store) => _store = store;
+
+    public DatabaseRecordWriter OpenWriter(string library, string name, string member, CancellationToken cancellationToken = default) =>
+        _store.OpenRecordWriter(library, name, member, cancellationToken);
+
+    public DatabaseRecordCursor OpenCursor(string library, string name, string member, CancellationToken cancellationToken = default) =>
+        _store.OpenSequentialCursor(library, name, member, cancellationToken: cancellationToken);
+    public DatabaseRecordCursor OpenCursor(string library, string name, string member, bool keyed, CancellationToken cancellationToken = default) =>
+        _store.OpenSequentialCursor(library, name, member, keyed, cancellationToken);
+
+    public DatabaseRecordCursor OpenUpdateCursor(string library, string name, string member, bool keyed, bool deleteAccess, CancellationToken cancellationToken = default) =>
+        _store.OpenUpdateCursor(library, name, member, keyed, cancellationToken: cancellationToken, deleteAccess: deleteAccess);
+
+    public DatabaseRecordCursor OpenUpdateCursor(string library, string name, string member, bool keyed, bool deleteAccess, TimeSpan recordWait, CancellationToken cancellationToken = default) =>
+        _store.OpenUpdateCursor(library, name, member, keyed, recordWait, cancellationToken, deleteAccess);
 
     public FileDefinition? GetDefinition(string library, string name) =>
         _store.GetDefinition(library, name);

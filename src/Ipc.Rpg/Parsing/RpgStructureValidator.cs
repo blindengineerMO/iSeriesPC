@@ -37,8 +37,22 @@ internal static class RpgStructureValidator
                 case RpgOpcode.DoU:
                 case RpgOpcode.DoW:
                 case RpgOpcode.For:
+                case RpgOpcode.Monitor:
                     if (blocks.Count >= 256) throw Error(statement, "RPG control nesting exceeds 256 blocks.");
                     blocks.Push(new(statement)); break;
+                case RpgOpcode.OnError:
+                    if (blocks.Any(b => b.Opening.Opcode == RpgOpcode.Monitor))
+                    {
+                        var monitor = Matching(b => b.Opening.Opcode == RpgOpcode.Monitor, "ON-ERROR crosses an unclosed control block.");
+                        monitor.AlternateSeen = true;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(statement.Factor1))
+                        throw Error(statement, "Operands are unsupported on ON-ERROR outside a MONITOR group.");
+                    break;
+                case RpgOpcode.EndMon:
+                    var endedMonitor = Matching(b => b.Opening.Opcode == RpgOpcode.Monitor, "ENDMON without a matching MONITOR.");
+                    if (!endedMonitor.AlternateSeen) throw Error(statement, "MONITOR requires an ON-ERROR block.");
+                    blocks.Pop(); break;
                 case RpgOpcode.Else:
                     var conditional = Matching(b => b.Opening.Opcode == RpgOpcode.If, "ELSE without a matching IF in this block.");
                     if (conditional.AlternateSeen) throw Error(statement, "Repeated ELSE in an IF block.");
@@ -64,10 +78,11 @@ internal static class RpgStructureValidator
                 case RpgOpcode.BegSr:
                     Boundary();
                     if (routine is not null) throw Error(statement, "Nested BEGSR is unsupported.");
-                    if (!routines.Add(Name(statement))) throw Error(statement, "Duplicate RPG subroutine " + Name(statement) + ".");
+                    if (!routines.Add((procedure?.Factor1 ?? "") + "/" + Name(statement))) throw Error(statement, "Duplicate RPG subroutine " + Name(statement) + ".");
                     routine = statement; break;
                 case RpgOpcode.EndSr:
-                    if (routine is null) throw Error(statement, "ENDSR without a matching BEGSR.");
+                    if (routine is null) throw Error(statement, string.IsNullOrWhiteSpace(statement.Factor2) ?
+                        "ENDSR without a matching BEGSR." : "Operands are unsupported for ENDSR without a matching BEGSR.");
                     Boundary(); routine = null; break;
                 case RpgOpcode.BegProc:
                     Boundary();
@@ -90,6 +105,7 @@ internal static class RpgStructureValidator
             throw Error(remaining.Opening, remaining.Opening.Opcode switch {
                 RpgOpcode.If => "IF without a matching ENDIF.",
                 RpgOpcode.Select => "SELECT without a matching ENDSL.",
+                RpgOpcode.Monitor => "MONITOR without a matching ENDMON.",
                 _ => "DO/FOR without a matching ENDDO."
             });
         if (routine is not null) throw Error(routine, "BEGSR without a matching ENDSR.");

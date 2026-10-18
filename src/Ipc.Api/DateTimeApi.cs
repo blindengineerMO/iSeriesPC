@@ -19,7 +19,7 @@ public sealed partial class DateTimeApi(SqliteConnectionFactory factory, int ccs
         cancellationToken.ThrowIfCancellationRequested();
         if (p.Count is not (5 or 10 or 11)) throw new CpfException("CPF3C36", "QWCCVTDT requires five, ten or eleven parameters.");
         var error = new ApiArguments.ErrorReceiver(_arguments, p[4]);
-        if (error.Target is { } target && p.Where((_, index) => index != 4).Any(value => ReferenceEquals(value, target)))
+        if (error.Target is { } target && p.Where((_, index) => index != 4).Any(value => Ipc.Core.Work.ProgramArgument.Overlaps(value, target)))
             throw ApiArguments.Bad("Error storage cannot alias another argument.");
         try
         {

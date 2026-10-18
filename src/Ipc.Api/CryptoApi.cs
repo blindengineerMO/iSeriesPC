@@ -18,7 +18,7 @@ public sealed class CryptoApi(SqliteConnectionFactory factory, int ccsid = 37, J
         var count = name switch { "QC3CALHA" => 9, "QC3CALHM" => 11, "QC3ENCDT" => 13, "QC3DECDT" => 12, "QC3CRTKX" => 9, "QC3DESKX" => 2, _ => -1 };
         if (p.Count != count) throw new CpfException("CPF3C36", "Invalid cryptographic API parameter count.");
         var error = new ApiArguments.ErrorReceiver(_arguments, p[^1]);
-        if (error.Target is { } target && p.Take(p.Count - 1).Any(value => ReferenceEquals(value, target))) throw ApiArguments.Bad("Error storage cannot alias another argument.");
+        if (error.Target is { } target && p.Take(p.Count - 1).Any(value => Ipc.Core.Work.ProgramArgument.Overlaps(value, target))) throw ApiArguments.Bad("Error storage cannot alias another argument.");
         try
         {
             if (name == "QC3CRTKX") { Create(p, error); return; }

@@ -4,6 +4,7 @@ using Ipc.Core.Security;
 using Ipc.Core.System;
 using Ipc.Services.Events;
 using Ipc.Services.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Security;
 
@@ -119,18 +120,26 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
 
     private (UserProfile Profile, IReadOnlyList<string> Groups) Caller(string name)
     {
-        if (OperationIdentity.Current?.AuthSessionId is { } session &&
-            !new SessionTokenStore(factory, TimeProvider.System).IsActive(session, name))
-            throw new CpfException("CPF9802", "The authentication session is expired or revoked.");
-        // Internal identity lookup must not recursively authorize the lookup itself.
+        using var connection = factory.Open();
+        var profile = RequireCaller(connection, null, name);
         var profiles = new UserProfileStore(factory, new PasswordPolicy(new SystemValueRegistry()));
-        var profile = profiles.TryGetForAuthentication(name);
+        return (profile, profiles.EffectiveGroups(name));
+    }
+
+    // Recheck time-dependent credentials on a publisher's existing connection.
+    // Opening another connection after transactional DDL would self-block in shared cache.
+    internal UserProfile RequireCaller(SqliteConnection connection, SqliteTransaction? transaction, string name)
+    {
+        if (OperationIdentity.Current?.AuthSessionId is { } session &&
+            !new SessionTokenStore(factory, TimeProvider.System).IsActive(connection, transaction, session, name))
+            throw new CpfException("CPF9802", "The authentication session is expired or revoked.");
+        var profile = UserProfileStore.ReadForAuthentication(connection, transaction, name);
         if (profile is null || profile.Status != ProfileStatus.Enabled ||
             profile.PasswordExpires is { } expiry && expiry <= DateTimeOffset.UtcNow)
             throw new CpfException("CPF9802", "The executing profile is unavailable or requires a password change.");
-        if (new EimMappingStore(factory).GetInternal(name) is { } mapping && !mapping.AllowsExecution(DateTimeOffset.UtcNow))
+        if (EimMappingStore.ReadInternal(connection, transaction, name) is { } mapping && !mapping.AllowsExecution(DateTimeOffset.UtcNow))
             throw new CpfException("CPF9802", "The mapped directory account is disabled, unavailable or requires revalidation.");
-        return (profile, profiles.EffectiveGroups(name));
+        return profile;
     }
 
     private void Deny(string library, string name, string type, AuthorityBit required)

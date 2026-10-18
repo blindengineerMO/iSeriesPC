@@ -65,6 +65,10 @@ public sealed class RpgUnary : RpgExpr
     public override object? Eval(RpgRuntimeContext ctx)
     {
         var value = Operand.Eval(ctx);
+        return value is object?[] array ? array.Select(Apply).ToArray() : Apply(value);
+    }
+    private object? Apply(object? value)
+    {
         return Op switch
         {
             "-" => RpgValues.Negate(value),
@@ -94,7 +98,20 @@ public sealed class RpgBinary : RpgExpr
     {
         var left = Lhs.Eval(ctx);
         var right = Rhs.Eval(ctx);
-
+        if (left is object?[] || right is object?[])
+        {
+            if (Op is not ("+" or "-" or "*" or "/")) throw new RpgRuntimeException("Whole-array comparisons and logical expressions are not yet supported; select an element.");
+            var lhs = left as object?[]; var rhs = right as object?[];
+            var count = Math.Min(lhs?.Length ?? int.MaxValue, rhs?.Length ?? int.MaxValue);
+            return Enumerable.Range(0, count).Select(i => Apply(lhs is null ? left : lhs[i], rhs is null ? right : rhs[i])).ToArray();
+        }
+        return Apply(left, right);
+    }
+    private object? Apply(object? left, object? right)
+    {
+        if ((left is Ipc.Core.Work.ProgramBuffer || right is Ipc.Core.Work.ProgramBuffer) &&
+            (Op is "-" or "*" or "/" || Op == "+" && left is not string && right is not string))
+            throw new RpgRuntimeException("Arithmetic on raw character storage requires an explicit conversion.");
         switch (Op)
         {
             case "+":
@@ -164,10 +181,25 @@ public sealed class RpgDynamicIndexRef : RpgExpr
     public override object? Eval(RpgRuntimeContext ctx) => ctx.ReadArrayValue(Name, RpgValues.ToLong(Index.Eval(ctx)));
 }
 
+public sealed class RpgMemberRef(RpgExpr target, string name) : RpgExpr
+{
+    public RpgExpr Target { get; } = target;
+    public string Name { get; } = name.ToUpperInvariant();
+    public override object? Eval(RpgRuntimeContext ctx) => ctx.ReadNativeReference(this);
+}
+
+public sealed class RpgElementRef(RpgExpr target, RpgExpr index) : RpgExpr
+{
+    public RpgExpr Target { get; } = target;
+    public RpgExpr Index { get; } = index;
+    public override object? Eval(RpgRuntimeContext ctx) => ctx.ReadNativeReference(this);
+}
+
 public sealed class RpgExpressionParser
 {
     private readonly string _text;
     private int _position;
+    private int _unaryDepth;
 
     private RpgExpressionParser(string text) => _text = text;
 
@@ -284,7 +316,8 @@ public sealed class RpgExpressionParser
                     string.Compare(_text, _position, candidate, 0, candidate.Length, StringComparison.OrdinalIgnoreCase) == 0)
                 {
                     var after = _position + candidate.Length;
-                    if (after < _text.Length && (char.IsLetterOrDigit(_text[after]) || _text[after] == '%'))
+                    if (char.IsAsciiLetter(candidate[^1]) && after < _text.Length &&
+                        (char.IsLetterOrDigit(_text[after]) || _text[after] is '_' or '%' or '#' or '$' or '@'))
                     {
                         continue;
                     }
@@ -304,6 +337,12 @@ public sealed class RpgExpressionParser
     };
 
     private RpgExpr ParseUnary()
+    {
+        if (++_unaryDepth > 128) throw new RpgCompileException(0, "Expression nesting exceeds 128 levels.");
+        try { return ParseUnaryCore(); }
+        finally { _unaryDepth--; }
+    }
+    private RpgExpr ParseUnaryCore()
     {
         SkipWhitespace();
         if (Match("NOT"))
@@ -390,10 +429,36 @@ public sealed class RpgExpressionParser
 
         if (name.Length > 0)
         {
-            return ParseNamed(name);
+            return ParsePostfix(ParseNamed(name));
         }
 
         return ParseLiteral();
+    }
+
+    private RpgExpr ParsePostfix(RpgExpr target)
+    {
+        var depth = 0;
+        while (true)
+        {
+            SkipWhitespace();
+            if (Peek() == '.')
+            {
+                if (++depth > 128) throw new RpgCompileException(0, "Qualified reference nesting exceeds 128 levels.");
+                _position++;
+                var member = ReadIdentifier();
+                if (member.Length == 0) throw new RpgCompileException(0, "Expected a qualified subfield name.");
+                target = new RpgMemberRef(target, member);
+            }
+            else if (Peek() == '(')
+            {
+                if (++depth > 128) throw new RpgCompileException(0, "Qualified reference nesting exceeds 128 levels.");
+                _position++;
+                var indexes = ParseArguments();
+                if (indexes.Count != 1) throw new RpgCompileException(0, "An array subscript requires one index.");
+                target = new RpgElementRef(target, indexes[0]);
+            }
+            else return target;
+        }
     }
 
     private string ReadIdentifier()
@@ -444,6 +509,8 @@ public sealed class RpgExpressionParser
             case "%EOF":
             case "%FOUND":
             case "%ERROR":
+            case "%STATUS":
+            case "%PARMS":
                 return new RpgBuiltin(upper[1..], Array.Empty<RpgExpr>());
             case "*BLANK":
             case "*BLANKS":
@@ -541,13 +608,20 @@ public sealed class RpgExpressionParser
         }
 
         var start = _position;
-        while (!AtEnd && (char.IsDigit(Peek()) || Peek() == '.' || Peek() == '+' || Peek() == '-'))
+        while (!AtEnd && (char.IsAsciiDigit(Peek()) || Peek() == '.'))
         {
             _position++;
         }
+        if (!AtEnd && Peek() is 'e' or 'E')
+        {
+            _position++;
+            if (Peek() is '+' or '-') _position++;
+            while (!AtEnd && char.IsAsciiDigit(Peek())) _position++;
+        }
 
         var token = _text[start.._position];
-        if (token.Length > 0 && (char.IsDigit(token[0]) || (token.Length > 1 && (token[0] == '+' || token[0] == '-') && char.IsDigit(token[1]))))
+        if (token.Length > 0 && (char.IsDigit(token[0]) || token.Length > 1 && token[0] == '.' && char.IsDigit(token[1]) ||
+            token.Length > 1 && (token[0] == '+' || token[0] == '-') && char.IsDigit(token[1])))
         {
             return new RpgLiteral(RpgNumbers.ParseLiteral(token));
         }
@@ -582,11 +656,17 @@ public static class RpgNumbers
 {
     public static object ParseLiteral(string token)
     {
-        return decimal.TryParse(token, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedDouble)
-                ? parsedDouble
-                : throw new RpgCompileException(0, $"Invalid numeric literal '{token}'.");
+        if (token.Contains('e', StringComparison.OrdinalIgnoreCase))
+            return double.TryParse(token, NumberStyles.Float, CultureInfo.InvariantCulture, out var floating) && double.IsFinite(floating)
+                ? floating : throw new RpgCompileException(0, "Invalid floating-point literal.");
+        if (!decimal.TryParse(token, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var parsed))
+            throw new RpgCompileException(0, "Numeric literal exceeds supported decimal precision.");
+        var parts = token.TrimStart('+', '-').Split('.'); var integral = parts[0].TrimStart('0');
+        var fraction = parts.Length == 2 ? parts[1].TrimEnd('0') : "";
+        var canonical = (parsed < 0 ? "-" : "") + (integral.Length == 0 ? "0" : integral) + (fraction.Length == 0 ? "" : "." + fraction);
+        if (canonical != parsed.ToString("0.############################", CultureInfo.InvariantCulture))
+            throw new RpgCompileException(0, "Numeric literal exceeds supported decimal precision.");
+        return parsed;
     }
 
     public static decimal Pow10(int exponent) => new decimal(1, 0, 0, false, (byte)exponent);

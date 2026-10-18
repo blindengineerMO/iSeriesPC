@@ -23,27 +23,37 @@ public sealed partial class RpgInterpreter
     public RpgRuntimeContext Run(RpgProgram program, IReadOnlyList<object?>? parameters = null, RpgRuntimeContext? existingContext = null)
     {
         _host.CancellationToken.ThrowIfCancellationRequested();
-        var context = existingContext ?? new RpgRuntimeContext(program, _host);
+        var context = existingContext is { IsCancelled: false } ? existingContext : new RpgRuntimeContext(program, _host);
         context.RebindHost(_host);
+        _context = context;
         _files.Clear();
         _programEnded = false;
         _returned = false;
         _handlingError = false;
         _depth = 0;
+        _procedure = null; _procedureInvocation = new object(); _executionFrames.Clear(); _errorSubroutineCalls.Clear();
         try
         {
+            context.BeginFeedbackCall(parameters?.Count ?? 0);
             BindEntryParameters(program, context, parameters);
-            InitializeWorkstations(context);
+            InitializeExternalFiles(context);
             Execute(program.MainStatements, context, new RpgBlockState());
             return context;
         }
+        catch (RpgRuntimeException error) when (error.ServiceError is Ipc.Core.Messages.CpfException service)
+        { context.IsCancelled = true; throw LocatedService(service, error.Location); }
+        catch { context.IsCancelled = true; throw; }
         finally
         {
             try { foreach (var handle in _fileHandles.Values) handle.Dispose(); }
             finally
             {
-                try { if (!_host.RetainWorkstations || context.Indicators[0]) context.CloseWorkstations(); }
-                finally { _fileHandles.Clear(); _files.Clear(); context.ReleaseReferences(); }
+                try { if (!_host.RetainWorkstations || context.Indicators[0] || context.IsCancelled) context.CloseWorkstations(); }
+                finally
+                {
+                    try { if (!_host.RetainFiles || context.Indicators[0] || context.IsCancelled) context.CloseDiskFiles(); }
+                    finally { _fileHandles.Clear(); _files.Clear(); _context = null; context.ReleaseReferences(); }
+                }
             }
         }
     }
@@ -132,69 +142,125 @@ public sealed partial class RpgInterpreter
         return true;
     }
 
-    private void Execute(IReadOnlyList<RpgStatement> statements, RpgRuntimeContext context, RpgBlockState state)
+    private void Execute(IReadOnlyList<RpgStatement> statements, RpgRuntimeContext context, RpgBlockState state, string routine = "*DETC")
     {
+        var frame = new ExecutionFrame(statements, state, _procedureInvocation); _executionFrames.Push(frame);
         var pc = 0;
-        while (pc < statements.Count && !_programEnded && !_returned && !context.Indicators[0])
+        try
         {
-            _host.CancellationToken.ThrowIfCancellationRequested();
-            Ipc.Core.Work.JobExecutionBudget.Checkpoint();
-            var statement = statements[pc];
-            if (!ConditionsMet(statement, context))
+            while (pc < statements.Count && !_programEnded && !_returned && !context.Indicators[0])
             {
-                pc++;
-                continue;
-            }
-
-            if (statement.Opcode == RpgOpcode.OnError)
-            {
-                if (_handlingError)
+                frame.Pc = pc;
+                try
                 {
-                    pc++;
-                    continue;
+                    _host.CancellationToken.ThrowIfCancellationRequested();
+                    Ipc.Core.Work.JobExecutionBudget.Checkpoint();
+                    var statement = statements[pc];
+                    if (!ConditionsMet(statement, context))
+                    {
+                        pc = statement.Opcode is RpgOpcode.Monitor or RpgOpcode.Select ? statement.End + 1 : pc + 1;
+                        continue;
+                    }
+
+                    if (statement.Opcode == RpgOpcode.OnError)
+                    {
+                        if (statement.End >= 0) { pc = statement.End + 1; continue; }
+                        if (_handlingError)
+                        {
+                            pc++;
+                            continue;
+                        }
+
+                        pc = statements.Count;
+                        continue;
+                    }
+
+                    var jump = 0;
+                    context.SetFeedbackOperation(statement, routine);
+                    if (statement.ErrorExtender) context.BeginErrorOperation(StatusFile(statement));
+                    if (IsFileOperation(statement.Opcode) && DeclaredFile(statement) && statement.Indicator2 != 0) context.Indicators[statement.Indicator2] = false;
+                    try
+                    {
+                        jump = ExecuteOp(statement, statements, context, state);
+                    }
+                    catch (RpgRuntimeException error)
+                    {
+                        if (statement.Opcode is RpgOpcode.Call or RpgOpcode.CallB or RpgOpcode.CallP && (error.StatusCode != 202 || error.FeedbackRecorded))
+                            error = new(error.Message) { StatusCode = 202, ServiceError = error.ServiceError, StatusFile = error.StatusFile };
+                        if (!error.FeedbackRecorded) context.SetFeedbackOperation(statement, routine, preserveCallTarget: true);
+                        if (HandleOperationError(error, statement, context)) { pc++; continue; }
+                        if (error.StatusCode is { } status && MonitorHandler(statements, pc, status, state) is var monitored && monitored >= 0)
+                        { pc = monitored; continue; }
+                        if (HasEnclosingMonitor(error)) throw Located(error, statement);
+                        if (InvokeErrorSubroutine(error, context)) { pc++; continue; }
+                        if (_handlingError)
+                        {
+                            throw Located(error, statement);
+                        }
+
+                        var handler = NextOnError(statements, pc);
+                        if (handler < 0)
+                        {
+                            throw Located(error, statement);
+                        }
+
+                        _handlingError = true;
+                        pc = handler;
+                        continue;
+                    }
+                    catch (Ipc.Core.Messages.CpfException error) when (error.MessageId != "CPF1241" && statement.Location is { })
+                    {
+                        if (statement.Opcode is RpgOpcode.Call or RpgOpcode.CallB or RpgOpcode.CallP)
+                        {
+                            context.SetFeedbackOperation(statement, routine, preserveCallTarget: true);
+                            context.RecordStatus(202);
+                            context.RecordFeedbackError(new RpgRuntimeException(error.Message) { StatusCode = 202, ServiceError = error });
+                            var handler = MonitorHandler(statements, pc, 202, state);
+                            if (handler >= 0) { pc = handler; continue; }
+                            var programError = new RpgRuntimeException(error.Message) { StatusCode = 202, ServiceError = error, FeedbackRecorded = true };
+                            if (HasEnclosingMonitor(programError)) throw Located(programError, statement);
+                            if (InvokeErrorSubroutine(programError, context)) { pc++; continue; }
+                            throw Located(programError, statement);
+                        }
+                        throw LocatedService(error, statement.Location);
+                    }
+
+                    if (jump >= 0)
+                    {
+                        while (state.Loops.TryPeek(out var loop) && (jump < loop.Start || jump > loop.End)) state.Loops.Pop();
+                        while (state.Selects.TryPeek(out var select) && (jump < select.Start || jump > select.End)) state.Selects.Pop();
+                    }
+                    pc = jump >= 0 ? jump : pc + 1;
                 }
-
-                pc = statements.Count;
-                continue;
-            }
-
-            var jump = 0;
-            try
-            {
-                jump = ExecuteOp(statement, statements, context, state);
-            }
-            catch (RpgRuntimeException error)
-            {
-                if (_handlingError)
+                catch (ErrorRoutineBranch branch) when (ReferenceEquals(branch.Target, frame))
                 {
-                    throw Located(error, statement);
+                    pc = branch.Index;
+                    while (state.Loops.TryPeek(out var loop) && (pc < loop.Start || pc > loop.End)) state.Loops.Pop();
+                    while (state.Selects.TryPeek(out var select) && (pc < select.Start || pc > select.End)) state.Selects.Pop();
                 }
-
-                var handler = NextOnError(statements, pc);
-                if (handler < 0)
-                {
-                    throw Located(error, statement);
-                }
-
-                _handlingError = true;
-                pc = handler;
-                continue;
             }
-            catch (Ipc.Core.Messages.CpfException error) when (statement.Location is { })
-            { throw new Ipc.Core.Messages.CpfException(error.MessageId, $"{statement.Location}: {error.Message}", error.MessageType, error.Severity); }
-
-            pc = jump >= 0 ? jump : pc + 1;
         }
+        finally { _executionFrames.Pop(); }
     }
 
     private static RpgRuntimeException Located(RpgRuntimeException error, RpgStatement statement)
-        => error.Location is null && statement.Location is { } location ? new(location, error.Message) : error;
+        => error.Location is null && statement.Location is { } location ? new(location, error.Message)
+            { StatusCode = error.StatusCode, FileError = error.FileError, StatusFile = error.StatusFile, ServiceError = error.ServiceError,
+                FeedbackRecorded = error.FeedbackRecorded, ErrorHandlerInvocations = error.ErrorHandlerInvocations,
+                SuppressErrorSubroutines = error.SuppressErrorSubroutines } : error;
+    private static Ipc.Core.Messages.CpfException LocatedService(Ipc.Core.Messages.CpfException error, Ipc.Core.Compilation.SourceLocation? location)
+    {
+        if (location is null) return error;
+        var result = new Ipc.Core.Messages.CpfException(error.MessageId, $"{location}: {error.Message}", error.MessageType, error.Severity);
+        foreach (System.Collections.DictionaryEntry entry in error.Data) result.Data[entry.Key] = entry.Value;
+        return result;
+    }
 
     private static int NextOnError(IReadOnlyList<RpgStatement> statements, int after)
     {
         for (var index = after + 1; index < statements.Count; index++)
         {
-            if (statements[index].Opcode == RpgOpcode.OnError)
+            if (statements[index].Opcode == RpgOpcode.OnError && statements[index].End < 0)
             {
                 return index;
             }
@@ -207,6 +273,12 @@ public sealed partial class RpgInterpreter
     {
         switch (stmt.Opcode)
         {
+            case RpgOpcode.Monitor:
+            case RpgOpcode.EndMon:
+                return -1;
+            case RpgOpcode.Klist:
+            case RpgOpcode.Kfld:
+                throw new RpgRuntimeException("Key declarations must be bound by the compiler before execution.");
             case RpgOpcode.Add:
                 return AssignResult(stmt, ctx, RpgValues.Add(EvalLeft(stmt, ctx), Eval(stmt.Factor2, ctx)));
             case RpgOpcode.Subtract:
@@ -258,14 +330,14 @@ public sealed partial class RpgInterpreter
             case RpgOpcode.EndIf:
                 return -1;
             case RpgOpcode.Select:
-                state.SelectEnd = -1;
+                state.Selects.Push(new RpgSelectFrame { Start = SelfIndex(statements, stmt), End = stmt.End });
                 return -1;
             case RpgOpcode.When:
                 return WhenOpcode(stmt, ctx, state);
             case RpgOpcode.Other:
                 return OtherOpcode(stmt, state);
             case RpgOpcode.EndSl:
-                state.SelectEnd = -1;
+                if (state.Selects.Count > 0) state.Selects.Pop();
                 return -1;
             case RpgOpcode.Do:
                 return DoOpcode(stmt, statements, ctx, state);
@@ -303,12 +375,16 @@ public sealed partial class RpgInterpreter
 
                 return -1;
             case RpgOpcode.Open:
-                if (OpenWorkstation(stmt, ctx)) return -1;
-                OpenOpcode(stmt);
+                FileIo(StatusFile(stmt), () => { if (!OpenWorkstation(stmt, ctx) && !OpenDisk(stmt, ctx)) OpenOpcode(stmt); }, 1217);
+                ctx.RecordStatus(0, StatusFile(stmt));
                 return -1;
             case RpgOpcode.Close:
-                if (CloseWorkstation(stmt, ctx)) return -1;
-                CloseOpcode(stmt);
+                FileIo(StatusFile(stmt), () => { if (!CloseWorkstation(stmt, ctx) && !CloseDisk(stmt, ctx)) CloseOpcode(stmt); }, 1217);
+                ctx.RecordStatus(0, StatusFile(stmt));
+                return -1;
+            case RpgOpcode.Unlock:
+                FileIo(StatusFile(stmt), () => UnlockOpcode(stmt, ctx));
+                ctx.RecordStatus(0, StatusFile(stmt));
                 return -1;
             case RpgOpcode.Force:
                 _ = GetCursor(FirstFile(stmt));
@@ -470,6 +546,9 @@ public sealed partial class RpgInterpreter
             case RpgDynamicIndexRef indexRef:
                 ctx.WriteArrayValue(indexRef.Name, RpgValues.ToLong(indexRef.Index.Eval(ctx)), value);
                 break;
+            case RpgMemberRef or RpgElementRef:
+                ctx.WriteNativeReference(expr, value);
+                break;
             case RpgIndicatorRef indicatorRef:
                 ctx.Indicators[indicatorRef.Indicator] = RpgValues.ToBool(value);
                 break;
@@ -590,17 +669,16 @@ public sealed partial class RpgInterpreter
 
     private int WhenOpcode(RpgStatement stmt, RpgRuntimeContext ctx, RpgBlockState state)
     {
-        if (state.SelectEnd >= 0)
+        var frame = state.Selects.TryPeek(out var current) ? current : throw new RpgRuntimeException("WHEN outside an active SELECT.");
+        if (frame.Matched)
         {
-            var jump = state.SelectEnd;
-            state.SelectEnd = -1;
-            return jump;
+            return frame.End;
         }
 
         var condition = RpgValues.ToBool(Eval(stmt.Factor1 ?? stmt.Value, ctx));
         if (condition)
         {
-            state.SelectEnd = stmt.End;
+            frame.Matched = true;
             return -1;
         }
 
@@ -609,14 +687,13 @@ public sealed partial class RpgInterpreter
 
     private int OtherOpcode(RpgStatement stmt, RpgBlockState state)
     {
-        if (state.SelectEnd >= 0)
+        var frame = state.Selects.TryPeek(out var current) ? current : throw new RpgRuntimeException("OTHER outside an active SELECT.");
+        if (frame.Matched)
         {
-            var jump = state.SelectEnd;
-            state.SelectEnd = -1;
-            return jump;
+            return frame.End;
         }
 
-        state.SelectEnd = stmt.End;
+        frame.Matched = true;
         return -1;
     }
 
@@ -693,6 +770,7 @@ public sealed partial class RpgInterpreter
         var start = RpgValues.ToDecimal(Eval(startExpr, ctx));
         var end = RpgValues.ToDecimal(Eval(endExpr, ctx));
         ctx.WriteValue(counter, start);
+        if (step > 0 && start > end || step < 0 && start < end) return stmt.End + 1;
         state.Loops.Push(new RpgLoopFrame
         {
             Start = SelfIndex(statements, stmt),
@@ -768,11 +846,10 @@ public sealed partial class RpgInterpreter
             throw new RpgRuntimeException("LEAVE outside of a loop.");
         }
 
-        state.Loops.Pop();
-        return -1;
+        return state.Loops.Pop().End + 1;
     }
 
-    private static int GotoOpcode(RpgStatement stmt, IReadOnlyList<RpgStatement> statements)
+    private int GotoOpcode(RpgStatement stmt, IReadOnlyList<RpgStatement> statements)
     {
         var label = stmt.Factor1;
         for (var index = 0; index < statements.Count; index++)
@@ -784,6 +861,7 @@ public sealed partial class RpgInterpreter
             }
         }
 
+        BranchFromErrorRoutine(label, statements);
         throw new RpgRuntimeException($"GOTO label '{label}' not found.");
     }
 
@@ -791,9 +869,9 @@ public sealed partial class RpgInterpreter
     {
         var name = stmt.Factor1
             ?? throw new RpgRuntimeException("EXSR requires a subroutine name.");
-        var subroutine = ctx.Program.FindSubroutine(name.Trim('\''))
+        var subroutine = ctx.Program.FindSubroutine(name.Trim('\''), _procedure)
             ?? throw new RpgRuntimeException($"Subroutine '{name}' not found.");
-        Execute(subroutine.Statements, ctx, new RpgBlockState());
+        ExecuteSubroutine(subroutine, ctx);
         return -1;
     }
 
@@ -817,6 +895,7 @@ public sealed partial class RpgInterpreter
     private RpgFileCursor GetCursor(string fileName)
     {
         var key = fileName.Trim().ToUpperInvariant();
+        if (DeclaredDisk(key) is { } declared) return declared;
         if (_files.TryGetValue(key, out var existing))
         {
             return _fileHandles.TryGetValue(key, out var handle) ? handle.Cursor : existing;
@@ -835,7 +914,7 @@ public sealed partial class RpgInterpreter
         }
 
         var library = ResolveLibrary(fileName);
-        var cursor = new RpgFileCursor(_host.Files, library, fileName, fileMember(fileName));
+        var cursor = new RpgFileCursor(_host.Files, library, fileName, fileMember(fileName), _host.CancellationToken);
         _files[key] = cursor;
         _fileHandles[key] = new RpgFileHandle(() => cursor, cursor.Dispose);
         return cursor;
@@ -847,25 +926,20 @@ public sealed partial class RpgInterpreter
 
     private static string fileMember(string fileName) => fileName.Trim().ToUpperInvariant();
 
-    private IReadOnlyDictionary<string, object?> CurrentKeys(RpgFileCursor cursor) =>
-        cursor.Current?.Where(kv => cursor.Definition.PrimaryFormat.Find(kv.Key) is { Sequence: > 0 })
-            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-        ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-    private IReadOnlyDictionary<string, object?> SearchFromValue(string keyName, object? value) =>
-        new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase) { [keyName] = value };
-
     private int ChainOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
-        var cursor = GetCursor(FirstFile(stmt));
-        var keyName = cursor.Definition.PrimaryFormat.Fields.First(f => f.Sequence > 0).Name;
-        var search = SearchFromValue(keyName, Eval(stmt.Factor1, ctx));
-        var found = cursor.Chain(search);
-        var indicator1 = stmt.Indicator1 != 0 ? stmt.Indicator1 : 1;
-        var indicator2 = stmt.Indicator2 != 0 ? stmt.Indicator2 : stmt.Indicator1 == 0 ? 2 : 0;
+        var cursor = IoCursor(stmt);
+        var search = cursor.IsKeyed ? FileSearchValues(stmt, ctx, cursor) ?? throw new RpgRuntimeException("CHAIN requires a search argument.") : null;
+        var number = cursor.IsKeyed ? 0 : FileRecordNumber(stmt, ctx);
+        var found = FileIo(StatusFile(stmt), () => cursor.IsKeyed ? cursor.Chain(search!, !stmt.NoLock) : cursor.ChainRecord(number, !stmt.NoLock));
+        ctx.RecordStatus(found ? 0 : 12, StatusFile(stmt));
+        ctx.SetFileStatus(StatusFile(stmt), found: found, clearFileEof: found);
+        var declared = DiskBinding(ctx, stmt) is not null;
+        var indicator1 = declared ? stmt.Indicator1 : stmt.Indicator1 != 0 ? stmt.Indicator1 : 1;
+        var indicator2 = declared ? 0 : stmt.Indicator2 != 0 ? stmt.Indicator2 : stmt.Indicator1 == 0 ? 2 : 0;
         if (indicator1 != 0)
         {
-            ctx.Indicators[indicator1] = found;
+            ctx.Indicators[indicator1] = declared ? !found : found;
         }
 
         if (indicator2 != 0)
@@ -875,7 +949,7 @@ public sealed partial class RpgInterpreter
 
         if (found)
         {
-            CopyRecordToContext(ctx, cursor.Current!);
+            CopyDiskRecord(ctx, stmt, cursor.Current!, cursor);
         }
 
         return -1;
@@ -883,48 +957,43 @@ public sealed partial class RpgInterpreter
 
     private int ReadOpcode(RpgStatement stmt, RpgRuntimeContext ctx, bool prior, bool keyed)
     {
-        var cursor = GetCursor(FirstFile(stmt));
-        IReadOnlyDictionary<string, object?>? record;
-        bool eof;
+        var cursor = IoCursor(stmt);
+        IReadOnlyDictionary<string, object?>? record = null;
+        bool eof = false;
         if (keyed)
         {
-            IReadOnlyDictionary<string, object?> prefix;
-            if (!string.IsNullOrWhiteSpace(stmt.Factor1))
-            {
-                var keyName = cursor.Definition.PrimaryFormat.Fields.First(f => f.Sequence > 0).Name;
-                prefix = SearchFromValue(keyName, Eval(stmt.Factor1, ctx));
-            }
-            else
-            {
-                prefix = CurrentKeys(cursor);
-            }
+            if (!cursor.IsKeyed) throw new RpgRuntimeException("READE/READPE requires a keyed file.");
+            var prefix = string.IsNullOrWhiteSpace(stmt.Factor2) && stmt.FileSearch is null ? null : FileSearchValues(stmt, ctx, cursor);
 
-            if (prefix.Count == 0)
+            if (prefix is { Count: 0 })
             {
                 record = null;
                 eof = true;
             }
             else if (prior)
             {
-                cursor.ReadPriorKeyed(prefix, out record, out eof);
+                FileIo(StatusFile(stmt), () => { cursor.ReadPriorKeyed(prefix, out record, out eof, !stmt.NoLock); });
             }
             else
             {
-                cursor.ReadNextKeyed(prefix, out record, out eof);
+                FileIo(StatusFile(stmt), () => { cursor.ReadNextKeyed(prefix, out record, out eof, !stmt.NoLock); });
             }
         }
         else if (prior)
         {
-            cursor.ReadPrior(out record, out eof);
+            FileIo(StatusFile(stmt), () => { cursor.ReadPrior(out record, out eof, !stmt.NoLock); });
         }
         else
         {
-            cursor.ReadNext(out record, out eof);
+            FileIo(StatusFile(stmt), () => { cursor.ReadNext(out record, out eof, !stmt.NoLock); });
         }
 
-        var indicator1 = stmt.Indicator1 != 0 ? stmt.Indicator1 : 1;
-        var indicator2 = stmt.Indicator2 != 0 ? stmt.Indicator2 : stmt.Indicator1 == 0 ? 2 : 0;
-        if (indicator1 != 0)
+        ctx.RecordStatus(eof ? 11 : 0, StatusFile(stmt));
+        ctx.SetFileStatus(StatusFile(stmt), eof: eof);
+        var declared = DiskBinding(ctx, stmt) is not null;
+        var indicator1 = declared ? stmt.Indicator1 : stmt.Indicator1 != 0 ? stmt.Indicator1 : 1;
+        var indicator2 = declared ? 0 : stmt.Indicator2 != 0 ? stmt.Indicator2 : stmt.Indicator1 == 0 ? 2 : 0;
+        if (indicator1 != 0 && !declared)
         {
             ctx.Indicators[indicator1] = !eof;
         }
@@ -934,9 +1003,10 @@ public sealed partial class RpgInterpreter
             ctx.Indicators[indicator2] = eof;
         }
 
+        if (declared && stmt.Indicator3 != 0) ctx.Indicators[stmt.Indicator3] = eof;
         if (record is not null)
         {
-            CopyRecordToContext(ctx, record);
+            CopyDiskRecord(ctx, stmt, record, cursor);
         }
 
         return -1;
@@ -944,12 +1014,14 @@ public sealed partial class RpgInterpreter
 
     private int SetLimitOpcode(RpgStatement stmt, RpgRuntimeContext ctx, bool lower)
     {
-        var cursor = GetCursor(FirstFile(stmt));
-        var keyName = cursor.Definition.PrimaryFormat.Fields.First(f => f.Sequence > 0).Name;
-        var search = SearchFromValue(keyName, Eval(stmt.Factor1, ctx));
+        var cursor = IoCursor(stmt);
+        var search = cursor.IsKeyed ? FileSearchValues(stmt, ctx, cursor) ?? throw new RpgRuntimeException("SETLL/SETGT requires a search argument.") : null;
+        var number = cursor.IsKeyed ? 0 : FileRecordNumber(stmt, ctx);
         if (lower)
         {
-            var equal = cursor.SetLowerBound(search);
+            var equal = FileIo(StatusFile(stmt), () => cursor.IsKeyed ? cursor.SetLowerBound(search!) : cursor.SetRecordLowerBound(number));
+            ctx.RecordStatus(cursor.AtEnd ? 12 : 0, StatusFile(stmt));
+            ctx.SetFileStatus(StatusFile(stmt), found: !cursor.AtEnd, clearFileEof: !cursor.AtEnd);
             if (stmt.Indicator1 != 0)
             {
                 ctx.Indicators[stmt.Indicator1] = equal;
@@ -957,7 +1029,9 @@ public sealed partial class RpgInterpreter
         }
         else
         {
-            cursor.SetUpperBound(search);
+            FileIo(StatusFile(stmt), () => { if (cursor.IsKeyed) cursor.SetUpperBound(search!); else cursor.SetRecordUpperBound(number); });
+            ctx.RecordStatus(cursor.AtEnd ? 12 : 0, StatusFile(stmt));
+            ctx.SetFileStatus(StatusFile(stmt), found: !cursor.AtEnd, clearFileEof: !cursor.AtEnd);
         }
 
         return -1;
@@ -965,7 +1039,18 @@ public sealed partial class RpgInterpreter
 
     private int WriteOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
-        var cursor = GetCursor(FirstFile(stmt));
+        var binding = DiskBinding(ctx, stmt);
+        if (binding is not null)
+        {
+            if (!binding.Request.Output || !FirstFile(stmt).Equals(binding.Layout.Record, StringComparison.OrdinalIgnoreCase))
+                throw new RpgRuntimeException("WRITE requires an output-capable DISK record format.");
+            var target = IoCursor(stmt);
+            var mapped = binding.Layout.Fields.ToDictionary(field => field.External, field => ctx.ReadValue(field.Name), StringComparer.OrdinalIgnoreCase);
+            FileIo(binding.Request.Name, () => target.Write(mapped));
+            ctx.RecordStatus(0, binding.Request.Name);
+            return -1;
+        }
+        var cursor = IoCursor(stmt);
         var format = stmt.Factor1;
         if (string.IsNullOrWhiteSpace(format))
         {
@@ -973,39 +1058,42 @@ public sealed partial class RpgInterpreter
         }
 
         var values = BuildRecordValues(ctx, cursor.Definition.Formats.First(f => string.Equals(f.Name, format, StringComparison.OrdinalIgnoreCase)));
-        _host.Files!.Insert(cursor.Library, cursor.Name, cursor.Member, format, values);
+        FileIo(StatusFile(stmt), () => _host.Files!.Insert(cursor.Library, cursor.Name, cursor.Member, format, values));
         cursor.Reload();
+        ctx.RecordStatus(0, StatusFile(stmt));
         return -1;
     }
 
     private int UpdateOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
-        var cursor = GetCursor(FirstFile(stmt));
-        var record = cursor.Current
-            ?? throw new RpgRuntimeException("UPDATE requires a record to have been read.");
-        var keys = CurrentKeys(cursor);
-        var values = BuildRecordValues(ctx, cursor.Definition.PrimaryFormat);
-        foreach (var key in keys)
-        {
-            values[key.Key] = key.Value;
-        }
-
-        _host.Files!.Update(cursor.Library, cursor.Name, cursor.Member, cursor.Format, values);
-        cursor.Reload();
+        var binding = DiskBinding(ctx, stmt);
+        if (binding is not null && (!binding.Request.Update || !FirstFile(stmt).Equals(binding.Layout.Record, StringComparison.OrdinalIgnoreCase)))
+            throw new RpgRuntimeException("UPDATE requires an update-capable DISK record format.");
+        var cursor = IoCursor(stmt);
+        var values = binding is null ? BuildRecordValues(ctx, cursor.Definition.PrimaryFormat) :
+            binding.Layout.Fields.ToDictionary(field => field.External, field => ctx.ReadValue(field.Name), StringComparer.OrdinalIgnoreCase);
+        FileIo(StatusFile(stmt), () => cursor.UpdateCurrent(values));
+        ctx.RecordStatus(0, StatusFile(stmt));
         return -1;
     }
 
     private int DeleteOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
-        var cursor = GetCursor(FirstFile(stmt));
-        var keys = CurrentKeys(cursor);
-        if (keys.Count == 0)
+        var binding = DiskBinding(ctx, stmt);
+        if (binding is not null && !binding.Request.Delete)
+            throw new RpgRuntimeException("DELETE requires delete access in the DISK usage declaration.");
+        var cursor = IoCursor(stmt);
+        bool found;
+        if (stmt.FileSearch is null) { FileIo(StatusFile(stmt), cursor.DeleteCurrent); found = true; }
+        else
         {
-            throw new RpgRuntimeException("DELETE requires a record to have been read.");
+            var search = cursor.IsKeyed ? FileSearchValues(stmt, ctx, cursor) ?? throw new RpgRuntimeException("DELETE requires a search argument.") : null;
+            var number = cursor.IsKeyed ? 0 : FileRecordNumber(stmt, ctx);
+            found = FileIo(StatusFile(stmt), () => cursor.IsKeyed ? cursor.DeleteKey(search!) : cursor.DeleteRecord(number));
         }
-
-        _host.Files!.Delete(cursor.Library, cursor.Name, cursor.Member, cursor.Format, keys);
-        cursor.Reload();
+        ctx.SetFileStatus(StatusFile(stmt), found: found);
+        ctx.RecordStatus(0, StatusFile(stmt));
+        if (stmt.Indicator1 != 0) ctx.Indicators[stmt.Indicator1] = !found;
         return -1;
     }
 
@@ -1053,6 +1141,7 @@ public sealed partial class RpgInterpreter
         Func<IReadOnlyList<object?>>? prepareSemantic = null)
     {
         RpgArgumentScope? scope = null;
+        context?.SetFeedbackCallTarget(name);
         using var semantic = prepareSemantic is null ? null : new SemanticArguments(prepareSemantic);
         var active = true;
         try
@@ -1060,7 +1149,8 @@ public sealed partial class RpgInterpreter
             IReadOnlyList<object?> Borrow()
             {
                 ObjectDisposedException.ThrowIf(!active, this);
-                return (scope ??= new RpgArgumentScope(context!, arguments!, parameters, _host.Ccsid(), prototype)).Arguments;
+                Func<int, RpgRuntimeContext.NativeView?>? captured = parameters is ArgumentSnapshots snapshots ? snapshots.NativeAt : null;
+                return (scope ??= new RpgArgumentScope(context!, arguments!, parameters, _host.Ccsid(), prototype, captured)).Arguments;
             }
             var legacy = _host.TypedProgramCaller is null ? prepareSemantic?.Invoke() ?? parameters : parameters;
             var result = _host.TypedProgramCaller is { } typed
@@ -1087,6 +1177,40 @@ public sealed partial class RpgInterpreter
         public void Dispose() => _prepare = null;
     }
 
+    private sealed class ArgumentSnapshots : IReadOnlyList<object?>, IDisposable
+    {
+        private readonly object?[] _values;
+        private readonly RpgRuntimeContext.NativeView?[] _nativeViews;
+        private readonly Dictionary<int, System.Runtime.ExceptionServices.ExceptionDispatchInfo> _errors = new();
+        internal ArgumentSnapshots(IEnumerable<RpgExpr> expressions, RpgRuntimeContext context)
+        {
+            var source = expressions.ToArray(); _values = new object?[source.Length];
+            _nativeViews = new RpgRuntimeContext.NativeView?[source.Length]; long nativeBytes = 0;
+            for (var index = 0; index < source.Length; index++)
+                if (context.TryNativeReference(source[index], out var view))
+                {
+                    _nativeViews[index] = view; nativeBytes += view.Width;
+                    if (source.Length > 256 || nativeBytes > 1048576) throw new Ipc.Core.Messages.CpfException("CPF3C3A", "Native call arguments exceed 256 parameters or 1 MiB.");
+                }
+            for (var index = 0; index < source.Length; index++)
+            {
+                // A borrowed output receiver need not contain valid numeric data before the call.
+                if (_nativeViews[index] is { } native)
+                {
+                    try { _values[index] = context.ReadNative(native); }
+                    catch (RpgRuntimeException error) { _errors.Add(index, System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(error)); }
+                }
+                else _values[index] = source[index].Eval(context);
+            }
+        }
+        public int Count => _values.Length;
+        internal RpgRuntimeContext.NativeView? NativeAt(int index) => _nativeViews[index];
+        public object? this[int index] { get { if (_errors.TryGetValue(index, out var error)) error.Throw(); return _values[index]; } }
+        public IEnumerator<object?> GetEnumerator() { for (var index = 0; index < Count; index++) yield return this[index]; }
+        global::System.Collections.IEnumerator global::System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        public void Dispose() => Array.Clear(_nativeViews);
+    }
+
     private int CallOpcode(RpgStatement stmt, RpgRuntimeContext ctx)
     {
         var programName = Unquote(stmt.Factor1 ?? string.Empty);
@@ -1102,6 +1226,7 @@ public sealed partial class RpgInterpreter
 
         var plistName = stmt.Factor2;
         var parameters = CollectParameters(stmt, ctx);
+        using var snapshots = parameters as ArgumentSnapshots;
         var result = CallExternal(stmt, programName, parameters, ctx,
             string.IsNullOrWhiteSpace(plistName) ? [] : CollectPlistFieldNames(ctx.Program, plistName).Select(RpgExpressionParser.Parse).ToArray());
         if (result is null)
@@ -1171,10 +1296,16 @@ public sealed partial class RpgInterpreter
             var savedHandling = _handlingError;
             _returned = false;
             _depth++;
-            Execute(subroutine.Statements, ctx, new RpgBlockState());
-            _depth--;
-            _returned = savedReturned;
-            _handlingError = savedHandling;
+            var savedCount = ctx.ParameterCount; ctx.ParameterCount = arguments.Count;
+            var savedProcedure = _procedure; var savedInvocation = _procedureInvocation;
+            _procedure = subroutine.Name; _procedureInvocation = new object();
+            try { Execute(subroutine.Statements, ctx, new RpgBlockState(), subroutine.Name); }
+            finally
+            {
+                ctx.ParameterCount = savedCount; _depth--;
+                _procedure = savedProcedure; _procedureInvocation = savedInvocation;
+                _returned = savedReturned; _handlingError = savedHandling;
+            }
             return -1;
         }
 
@@ -1192,6 +1323,7 @@ public sealed partial class RpgInterpreter
         if (!string.IsNullOrWhiteSpace(plistName))
         {
             var parameters = CollectPlistValues(ctx.Program, plistName, ctx);
+            using var snapshots = parameters as ArgumentSnapshots;
             var result = CallExternal(stmt, name, parameters, ctx,
                 CollectPlistFieldNames(ctx.Program, plistName).Select(n => (RpgExpr)new RpgFieldRef(n)).ToArray());
             if (result is not null)
@@ -1207,7 +1339,7 @@ public sealed partial class RpgInterpreter
             return -1;
         }
 
-        var evaluated = arguments.Select(a => a.Eval(ctx)).ToList();
+        using var evaluated = new ArgumentSnapshots(arguments, ctx);
 
         var prototype = ctx.Program.FindPrototype(name);
         if (prototype is not null)
@@ -1246,7 +1378,7 @@ public sealed partial class RpgInterpreter
                         ctx.Indicators[stmt.Indicator1] = true;
                     }
 
-                    WriteBackArguments(arguments, result.UpdatedParameters, ctx);
+                    WriteBackArguments(arguments, result.UpdatedParameters, ctx, evaluated);
                 }
             }
 
@@ -1259,7 +1391,7 @@ public sealed partial class RpgInterpreter
             ctx.Indicators[stmt.Indicator1] = true;
         }
 
-        WriteBackArguments(arguments, external?.UpdatedParameters, ctx);
+        WriteBackArguments(arguments, external?.UpdatedParameters, ctx, evaluated);
         return -1;
     }
 
@@ -1301,7 +1433,7 @@ public sealed partial class RpgInterpreter
         }
     }
 
-    private static void WriteBackArguments(IReadOnlyList<RpgExpr> arguments, IReadOnlyList<object?>? updated, RpgRuntimeContext ctx)
+    private static void WriteBackArguments(IReadOnlyList<RpgExpr> arguments, IReadOnlyList<object?>? updated, RpgRuntimeContext ctx, ArgumentSnapshots? snapshots = null)
     {
         if (updated is null)
         {
@@ -1310,10 +1442,12 @@ public sealed partial class RpgInterpreter
 
         for (var index = 0; index < arguments.Count && index < updated.Count; index++)
         {
-            if (arguments[index] is RpgFieldRef field && updated[index] is not null)
+            if (updated[index] is not null && snapshots?.NativeAt(index) is { } native) ctx.WriteCapturedNative(native, updated[index]);
+            else if (arguments[index] is RpgFieldRef field && updated[index] is not null)
             {
                 ctx.WriteValue(field.Name, updated[index]);
             }
+            else if (updated[index] is not null && ctx.TryNativeReference(arguments[index], out _)) ctx.WriteNativeReference(arguments[index], updated[index]);
         }
     }
 
@@ -1340,7 +1474,7 @@ public sealed partial class RpgInterpreter
     private static IReadOnlyList<object?> CollectPlistValues(RpgProgram program, string plistName, RpgRuntimeContext ctx)
     {
         var names = CollectPlistFieldNames(program, plistName);
-        return names.Select(n => ctx.ReadValue(n)).ToList();
+        return new ArgumentSnapshots(names.Select(n => (RpgExpr)new RpgFieldRef(n)), ctx);
     }
 
     private static IReadOnlyList<string> CollectPlistFieldNames(RpgProgram program, string plistName)
@@ -1403,7 +1537,7 @@ public sealed partial class RpgInterpreter
             return Array.Empty<object?>();
         }
 
-        var parameters = new List<object?>();
+        var parameters = new List<RpgExpr>();
         bool collecting = false;
         foreach (var candidate in ctx.Program.MainStatements)
         {
@@ -1421,11 +1555,11 @@ public sealed partial class RpgInterpreter
                     break;
                 }
 
-                parameters.Add(Eval(candidate.Factor1, ctx));
+                parameters.Add(RpgExpressionParser.Parse(candidate.Factor1 ?? ""));
             }
         }
 
-        return parameters;
+        return new ArgumentSnapshots(parameters, ctx);
     }
 
     private void CopyRecordToContext(RpgRuntimeContext ctx, IReadOnlyDictionary<string, object?> record)
@@ -1524,57 +1658,39 @@ public sealed partial class RpgInterpreter
     private static bool TryParseFor(string text, out string counter, out string start,
         out string end, out string? by)
     {
-        counter = string.Empty;
-        start = string.Empty;
-        end = string.Empty;
-        by = null;
-
-        var tokens = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-        var index = 0;
-        if (tokens.Length < 4 || tokens[index + 1] != "=")
+        counter = start = end = ""; by = null;
+        var header = System.Text.RegularExpressions.Regex.Match(text, @"\A\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*");
+        if (!header.Success) return false;
+        counter = header.Groups[1].Value;
+        var remainder = text[header.Length..];
+        static int Keyword(string expression, string keyword)
         {
-            return false;
-        }
-
-        counter = tokens[index];
-        index += 2;
-        var startTokens = new List<string>();
-        while (index < tokens.Length && !string.Equals(tokens[index], "TO", StringComparison.OrdinalIgnoreCase))
-        {
-            startTokens.Add(tokens[index]);
-            index++;
-        }
-
-        if (index >= tokens.Length)
-        {
-            return false;
-        }
-
-        index++;
-        var endTokens = new List<string>();
-        while (index < tokens.Length && !string.Equals(tokens[index], "BY", StringComparison.OrdinalIgnoreCase))
-        {
-            endTokens.Add(tokens[index]);
-            index++;
-        }
-
-        if (index < tokens.Length)
-        {
-            index++;
-            var byTokens = new List<string>();
-            while (index < tokens.Length)
+            var depth = 0; var quoted = false;
+            for (var i = 0; i < expression.Length; i++)
             {
-                byTokens.Add(tokens[index]);
-                index++;
+                var c = expression[i];
+                if (c == '\'')
+                {
+                    if (quoted && i + 1 < expression.Length && expression[i + 1] == '\'') { i++; continue; }
+                    quoted = !quoted; continue;
+                }
+                if (quoted) continue;
+                if (c == '(') depth++;
+                if (c == ')') depth--;
+                if (depth != 0 || i == 0 || !char.IsWhiteSpace(expression[i - 1]) ||
+                    i + keyword.Length >= expression.Length || !char.IsWhiteSpace(expression[i + keyword.Length])) continue;
+                if (expression.AsSpan(i, keyword.Length).Equals(keyword, StringComparison.OrdinalIgnoreCase)) return i;
             }
-
-            by = string.Join(" ", byTokens);
+            return -1;
         }
-
-        start = string.Join(" ", startTokens);
-        end = string.Join(" ", endTokens);
-        return start.Length > 0 && end.Length > 0;
+        var to = Keyword(remainder, "TO"); if (to < 0) return false;
+        start = remainder[..to].Trim(); remainder = remainder[(to + 2)..].Trim();
+        var increment = Keyword(remainder, "BY");
+        if (increment >= 0) { by = remainder[(increment + 2)..].Trim(); remainder = remainder[..increment].Trim(); }
+        end = remainder;
+        return start.Length > 0 && end.Length > 0 && (by is null || by.Length > 0);
     }
+
 }
 
 internal enum RpgLoopKind
@@ -1604,7 +1720,12 @@ internal sealed class RpgLoopFrame
 
 internal sealed class RpgBlockState
 {
-    public int SelectEnd { get; set; } = -1;
-
+    public Stack<RpgSelectFrame> Selects { get; } = new();
     public Stack<RpgLoopFrame> Loops { get; } = new();
+}
+internal sealed class RpgSelectFrame
+{
+    public required int Start { get; init; }
+    public required int End { get; init; }
+    public bool Matched { get; set; }
 }

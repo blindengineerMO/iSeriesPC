@@ -23,6 +23,7 @@ public sealed partial class CommandService
                 return (new QualifiedName(sourceLibrary, sourceFile), _files.GetDefinition(sourceLibrary, sourceFile) ?? throw new CpfException("CPF9801", "PFILE not found."));
             });
             var definition = compiler.Compile(name, source, CommandParser.Unquote(call.GetOption("SRCFILE") ?? "*SOURCE") + "(" + options["SRCMBR"] + ")");
+            definition.RecordLockWaitSeconds = ParseRecordWait(call.GetOption("WAITRCD"))!.Value;
             var maximum = CommandParser.Unquote(call.GetOption("MAXMBRS") ?? "1").ToUpperInvariant();
             if (maximum == "*NOMAX") maximum = "256";
             if (!int.TryParse(maximum, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var maximumMembers) || maximumMembers is < 1 or > 256)

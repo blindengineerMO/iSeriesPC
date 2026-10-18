@@ -69,6 +69,11 @@ public enum RpgOpcode
     BegProc,
     EndProc,
     ReadC,
+    Klist,
+    Kfld,
+    Unlock,
+    Monitor,
+    EndMon,
 }
 
 public enum RpgFieldKind
@@ -128,6 +133,17 @@ public sealed class RpgField
 
 public sealed class RpgDsElement
 {
+    public string? FeedbackKeyword { get; init; }
+    public int DeclarationLine { get; init; }
+    public bool Anonymous { get; init; }
+    public string? LocalName { get; init; }
+    public int StorageLength { get; init; }
+    public int Stride { get; init; }
+    public int Dimension { get; init; } = 1;
+    public bool IsArray { get; init; }
+    public bool OpaqueBytes { get; init; }
+    public string? InitialValue { get; init; }
+    public bool HasInitialValue { get; init; }
     public required string Name { get; init; }
 
     public required RpgFieldKind Kind { get; init; }
@@ -145,6 +161,15 @@ public sealed class RpgDsElement
 
 public sealed class RpgDataStructure
 {
+    public string? LikeDataStructure { get; init; }
+    public bool ProgramStatus { get; init; }
+    public int DeclarationLine { get; init; }
+    public bool ExplicitLength { get; init; }
+    public bool NativeStorage { get; init; }
+    public bool Qualified { get; init; }
+    public bool Anonymous { get; init; }
+    public bool InitializeSubfields { get; init; }
+    public bool IsArray { get; init; }
     public required string Name { get; init; }
 
     public int Length { get; set; }
@@ -154,11 +179,14 @@ public sealed class RpgDataStructure
     public List<RpgDsElement> Elements { get; } = new();
 
     public RpgDsElement? Find(string name) =>
-        Elements.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+        Elements.FirstOrDefault(e => !e.Anonymous && (string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(e.LocalName, name, StringComparison.OrdinalIgnoreCase)));
 }
 
 public sealed class RpgSubroutine
 {
+    public string? Procedure { get; init; }
+    public RpgStatement? Ending { get; set; }
     public required string Name { get; init; }
 
     public List<RpgStatement> Statements { get; } = new();
@@ -188,6 +216,13 @@ public sealed class RpgCondition
 
 public sealed class RpgStatement
 {
+    public bool IsFreeForm { get; init; }
+    public bool NoLock { get; init; }
+    public bool ErrorExtender { get; init; }
+    public int Monitor { get; set; } = -1;
+    public IReadOnlyList<int> ErrorStatuses { get; set; } = Array.Empty<int>();
+    public IReadOnlyList<int> ErrorHandlers { get; set; } = Array.Empty<int>();
+    public RpgFileSearch? FileSearch { get; set; }
     public Ipc.Core.Compilation.SourceLocation? Location { get; set; }
     public required RpgOpcode Opcode { get; init; }
 
@@ -237,6 +272,8 @@ public sealed class RpgProgram
     public List<RpgField> Fields { get; } = new();
 
     public List<RpgDataStructure> DataStructures { get; } = new();
+    public List<RpgFileInformation> FileInformation { get; } = new();
+    public List<RpgFileErrorHandler> FileErrorHandlers { get; } = new();
 
     public List<RpgSubroutine> Subroutines { get; } = new();
 
@@ -250,6 +287,7 @@ public sealed class RpgProgram
 
     public List<string> FileSpecs { get; } = new();
     public List<RpgWorkstationBinding> Workstations { get; } = new();
+    public List<RpgDiskBinding> DiskFiles { get; } = new();
 
     public RpgField? FindField(string name) =>
         Fields.FirstOrDefault(f => string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -261,7 +299,7 @@ public sealed class RpgProgram
     {
         foreach (var ds in DataStructures)
         {
-            var element = ds.Find(name);
+            var element = ds.Elements.FirstOrDefault(e => !e.Anonymous && string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
             if (element is not null)
             {
                 return element;
@@ -271,8 +309,9 @@ public sealed class RpgProgram
         return null;
     }
 
-    public RpgSubroutine? FindSubroutine(string name) =>
-        Subroutines.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+    public RpgSubroutine? FindSubroutine(string name) => FindSubroutine(name, null);
+    public RpgSubroutine? FindSubroutine(string name, string? procedure) => Subroutines.FirstOrDefault(s =>
+        string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase) && string.Equals(s.Procedure, procedure, StringComparison.OrdinalIgnoreCase));
 
     public RpgSubprocedure? FindSubprocedure(string name) =>
         Subprocedures.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));

@@ -1,5 +1,17 @@
 # Catalog migrations and recovery
 
+Schema 31 adds nullable journal commitment-cycle identity and an indexed cycle
+lookup. Existing receiver bytes, sequence numbers, entries and accounting remain
+unchanged. Schema-30 upgrade and injected post-ALTER failure/retry preserve data
+and migration history. See the [record transaction foundation](record-transactions.md)
+for the internal service contract and remaining native commitment requirements.
+
+Schema 30 adds durable journal/receiver identities, receiver chains, file bindings,
+managed trigger ownership and versioned record images. Receiver accounting and
+retention guards commit with file data. Existing schema-29 history is preserved;
+the normal protected pre-upgrade backup and transactional rollback apply.
+See [journal storage and commands](journals.md) for the current finite contract.
+
 Schema 29 adds encrypted, job-owned cryptographic key contexts with opaque
 8-byte IDs, a job index and active-job/cleanup triggers. Raw key bytes are wrapped
 by the existing private AES-GCM key ring and authenticated to job/token/type.

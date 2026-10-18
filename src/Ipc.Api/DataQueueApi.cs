@@ -26,7 +26,7 @@ public sealed class DataQueueApi(SqliteConnectionFactory factory, Func<string, I
         var errorIndex = program == "QRCVDTAQ" && parameters.Count >= 13 ? 12 : program == "QCLRDTAQ" && parameters.Count == 6 ? 5 : -1;
         var errors = errorIndex < 0 ? null : new ApiArguments.ErrorReceiver(_arguments, parameters[errorIndex]);
         // An error receiver must not overwrite another argument when reporting a failure.
-        if (errors?.Target is { } errorTarget && parameters.Where((_, index) => index != errorIndex).Any(value => ReferenceEquals(value, errorTarget)))
+        if (errors?.Target is { } errorTarget && parameters.Where((_, index) => index != errorIndex).Any(value => Ipc.Core.Work.ProgramArgument.Overlaps(value, errorTarget)))
             throw ApiArguments.Bad("API error receiver cannot alias another parameter.");
         try
         {

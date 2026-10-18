@@ -44,6 +44,8 @@ public sealed class MigrationTests : IDisposable
     [InlineData(26)]
     [InlineData(27)]
     [InlineData(28)]
+    [InlineData(29)]
+    [InlineData(30)]
     public void Modern_catalog_upgrade_preserves_history_and_adds_new_features(int version)
     {
         var factory = Factory();
@@ -81,6 +83,50 @@ public sealed class MigrationTests : IDisposable
         Assert.Equal("ok", Scalar(restored, "PRAGMA integrity_check"));
         new Migrator(restored).MigrateToLatest();
         Assert.Equal("customer data", Scalar(restored, "SELECT value FROM preserved_records"));
+    }
+
+    [Fact]
+    public void Failed_journal_upgrade_rolls_back_all_tables_triggers_and_history_before_retry()
+    {
+        var factory = Factory(); new Migrator(factory, Migrator.Migrations.Take(29).ToArray()).MigrateToLatest();
+        using (var connection = factory.Open()) using (var command = connection.CreateCommand())
+        { command.CommandText = "CREATE TABLE journal_preserved(value TEXT); INSERT INTO journal_preserved VALUES('unchanged')"; command.ExecuteNonQuery(); }
+        var history = Scalar(factory, "SELECT group_concat(checksum) FROM sys_migrations");
+        var failing = new SchemaMigration(30, "Injected journal failure", [JournalMigration.Sql, "SELECT * FROM missing_journal_upgrade"]);
+        Assert.Throws<SqliteException>(() => new Migrator(factory, Migrator.Migrations.Take(29).Append(failing).ToArray()).MigrateToLatest());
+        Assert.Equal(29, new Migrator(factory).CurrentVersion());
+        Assert.Equal(0L, Scalar(factory, "SELECT count(*) FROM sqlite_schema WHERE name LIKE 'sys_journal%' OR name LIKE 'ipc_journal%'"));
+        Assert.Equal(history, Scalar(factory, "SELECT group_concat(checksum) FROM sys_migrations"));
+        Assert.Equal("unchanged", Scalar(factory, "SELECT value FROM journal_preserved"));
+        new Migrator(factory).MigrateToLatest(); Assert.Equal(SystemCatalog.SchemaVersion, new Migrator(factory).CurrentVersion());
+        Assert.Equal("unchanged", Scalar(factory, "SELECT value FROM journal_preserved")); Assert.Equal("ok", Scalar(factory, "PRAGMA integrity_check"));
+    }
+
+    [Fact]
+    public void Commitment_cycle_upgrade_preserves_journal_bytes_and_rolls_back_failed_schema_changes()
+    {
+        var factory = Factory(); new Migrator(factory, Migrator.Migrations.Take(30).ToArray()).MigrateToLatest();
+        using (var connection = factory.Open()) using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                INSERT INTO sys_objects(lib,name,type,owner,created,changed) VALUES('QGPL','JRN','*JRN','QSECOFR','before','before'),('QGPL','RCV','*JRNRCV','QSECOFR','before','before');
+                INSERT INTO sys_journals(id,library,name) VALUES('j','QGPL','JRN');
+                INSERT INTO sys_journal_receivers(id,library,name,journal_id) VALUES('r','QGPL','RCV','j');
+                UPDATE sys_journals SET current_receiver='r',sequence=1 WHERE id='j';
+                INSERT INTO sys_journal_entries(journal_id,sequence,receiver_id,code,entry_type,captured_at,user_data) VALUES('j',1,'r','U','AA','before',X'0000FF4020');
+                """; command.ExecuteNonQuery();
+        }
+        var history = Scalar(factory, "SELECT group_concat(checksum) FROM sys_migrations");
+        var bytes = Scalar(factory, "SELECT bytes FROM sys_journal_receivers");
+        var failing = new SchemaMigration(31, "Injected commitment upgrade failure", Migrator.Migrations[30].Statements.Append("SELECT * FROM missing_commitment_upgrade").ToArray());
+        Assert.Throws<SqliteException>(() => new Migrator(factory, Migrator.Migrations.Take(30).Append(failing).ToArray()).MigrateToLatest());
+        Assert.Equal(30, new Migrator(factory).CurrentVersion()); Assert.Equal(history, Scalar(factory, "SELECT group_concat(checksum) FROM sys_migrations"));
+        Assert.Equal(0L, Scalar(factory, "SELECT count(*) FROM pragma_table_info('sys_journal_entries') WHERE name='commit_cycle'"));
+        new Migrator(factory).MigrateToLatest();
+        Assert.Equal("0000FF4020", Scalar(factory, "SELECT hex(user_data) FROM sys_journal_entries"));
+        Assert.Equal(1L, Scalar(factory, "SELECT sequence FROM sys_journals")); Assert.Equal(bytes, Scalar(factory, "SELECT bytes FROM sys_journal_receivers"));
+        Assert.Equal(1L, Scalar(factory, "SELECT count(*) FROM sys_journal_entries WHERE commit_cycle IS NULL"));
+        Assert.Equal("ok", Scalar(factory, "PRAGMA integrity_check"));
     }
 
     [Fact]

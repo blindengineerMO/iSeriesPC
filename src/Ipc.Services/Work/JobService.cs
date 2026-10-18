@@ -301,6 +301,7 @@ public sealed class JobService
         if (state is JobExecutionState.Queued or JobExecutionState.Running || !Enum.IsDefined(state) ||
             (state == JobExecutionState.Succeeded) != (completion != JobCompletion.Abnormal))
             throw new CpfException("IPC0122", "Invalid job completion outcome.");
+        _factory.RecordTransactions.AbortJob(key);
         using var connection = _factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT execution_state,cancel_requested,cancel_reason FROM sys_jobs WHERE number=$number AND name=$name AND user=$user";

@@ -65,6 +65,13 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         RequireAutomatic(resource, JobLockMode.ExclusiveRead, scope);
     }
 
+    internal IDisposable? EnterRecordWrite(CancellationToken cancellationToken)
+    {
+        if (OperationIdentity.Current?.Job is not { } job) return null;
+        var scope = ActiveCommand.Value;
+        if (scope is not null && scope.Job == job && scope.Store._factory.ConnectionString == _factory.ConnectionString) return null;
+        return EnterCommand(job, cancellationToken);
+    }
     public void RequireRecordAccess(string library, string name, string member, long rowNumber, bool write)
     {
         var scope = ActiveCommand.Value;
@@ -91,11 +98,12 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
     public IDisposable Acquire(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken = default)
         => AcquireWithLifetime(job, resource, mode, wait, cancellationToken, "Job", "*JOB");
 
-    internal IDisposable AcquireWithLifetime(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken, string lifetime, string scope)
+    internal IDisposable AcquireWithLifetime(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken, string lifetime, string scope, string? recordOwner = null, AuthorityBit? requiredAuthority = null)
     {
         resource = Resolve(resource);
         RequireOwner(job); resource.Validate();
-        new ServiceAuthorization(_factory).RequireObject(resource.Library, resource.Name, resource.Type, Authorities.UseBits, acquireLocks: false);
+        new ServiceAuthorization(_factory).RequireObject(resource.Library, resource.Name, resource.Type,
+            (requiredAuthority ?? Authorities.UseBits) | AuthorityBit.ObjectOperate, acquireLocks: false);
         EnsureResourceExists(resource);
         var token = Guid.NewGuid().ToString("N");
         var started = Stopwatch.GetTimestamp();
@@ -103,8 +111,8 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         {
             if (resource.Type != ObjectType.Library)
                 AcquireCore(job, new("QSYS", resource.Library, ObjectType.Library), JobLockMode.SharedRead, wait, "Parent", "Parent:" + token, cancellationToken);
-            var remaining = wait - Stopwatch.GetElapsedTime(started);
-            AcquireCore(job, resource, mode, remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, lifetime, scope, cancellationToken, token);
+            var remaining = wait == Timeout.InfiniteTimeSpan ? wait : wait - Stopwatch.GetElapsedTime(started);
+            AcquireCore(job, resource, mode, wait == Timeout.InfiniteTimeSpan || remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero, lifetime, scope, cancellationToken, token, recordOwner);
             try { EnsureResourceExists(resource); } catch { new HeldScope(this, job, token).Dispose(); throw; }
             return new HeldScope(this, job, token);
         }
@@ -130,14 +138,15 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         command.Parameters.AddWithValue("$lib", resource.Library); command.Parameters.AddWithValue("$name", resource.Name); command.Parameters.AddWithValue("$member", resource.Member);
         if (Convert.ToInt64(command.ExecuteScalar()) != 1) throw new CpfException("CPF2817", "Lock member no longer exists.");
         var table = resource.Library + "." + resource.Name + "." + resource.Member;
-        command.CommandText = "SELECT name FROM pragma_table_info($table)"; command.Parameters.AddWithValue("$table", table);
+        command.CommandText = "SELECT name FROM pragma_table_xinfo($table)"; command.Parameters.AddWithValue("$table", table);
         var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using (var reader = command.ExecuteReader()) while (reader.Read()) columns.Add(reader.GetString(0));
         var rowid = new[] { "_rowid_", "rowid", "oid" }.FirstOrDefault(x => !columns.Contains(x))
             ?? throw new CpfException("IPC0125", "Member does not expose a supported record identity.");
         command.CommandText = "SELECT count(*) FROM \"" + table + "\" WHERE " + rowid + "=$row";
         command.Parameters.AddWithValue("$row", resource.RowNumber);
-        if (Convert.ToInt64(command.ExecuteScalar()) != 1) throw new CpfException("CPF5001", "Lock record no longer exists.");
+        if (Convert.ToInt64(command.ExecuteScalar()) != 1 && !_factory.RecordTransactions.OwnsPendingRecord(resource))
+            throw new CpfException("CPF5001", "Lock record no longer exists.");
     }
 
     // Long lived allocations must be released before changing an object's identity. Runtime
@@ -151,13 +160,14 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         if (Convert.ToInt64(command.ExecuteScalar()) != 0) throw new CpfException("CPF1002", "Release persistent allocations before deleting, moving or renaming this object.");
     }
 
-    internal string AcquireCore(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, string lifetime, string scope, CancellationToken cancellationToken, string? requestToken = null)
+    internal string AcquireCore(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, string lifetime, string scope, CancellationToken cancellationToken, string? requestToken = null, string? recordOwner = null)
     {
         resource = Resolve(resource);
         resource.Validate();
-        if (!Enum.IsDefined(mode) || wait < TimeSpan.Zero || wait > TimeSpan.FromMinutes(5)) throw new CpfException("IPC0125", "Lock wait must be 0–300 seconds.");
+        if (!Enum.IsDefined(mode) || wait != Timeout.InfiniteTimeSpan && (wait < TimeSpan.Zero || wait > TimeSpan.FromSeconds(32767)))
+            throw new CpfException("IPC0125", "Lock wait must be 0–32767 seconds or an indefinite wait.");
         var token = requestToken ?? Guid.NewGuid().ToString("N"); var started = Stopwatch.GetTimestamp();
-        var expires = DateTimeOffset.UtcNow.Add(wait).ToUnixTimeMilliseconds();
+        var expires = wait == Timeout.InfiniteTimeSpan ? long.MaxValue : DateTimeOffset.UtcNow.Add(wait).ToUnixTimeMilliseconds();
         try
         {
             while (true)
@@ -172,7 +182,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
                     using var command = connection.CreateCommand(); command.Transaction = transaction;
                     command.CommandText = "DELETE FROM waiters WHERE expires_at<$now";
                     command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()); command.ExecuteNonQuery();
-                    var blockers = Conflicts(connection, transaction, job, resource, mode, token);
+                    var blockers = Conflicts(connection, transaction, job, resource, mode, token, recordOwner);
                     if (blockers.Count == 0)
                     {
                         EnsureLive(job);
@@ -187,7 +197,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
                         Bind(command, job, resource, mode, token); command.Parameters.AddWithValue("$life", lifetime); command.Parameters.AddWithValue("$scope", scope);
                         command.ExecuteNonQuery(); transaction.Commit(); return token;
                     }
-                    if (wait == TimeSpan.Zero || Stopwatch.GetElapsedTime(started) >= wait)
+                    if (wait != Timeout.InfiniteTimeSpan && (wait == TimeSpan.Zero || Stopwatch.GetElapsedTime(started) >= wait))
                         throw new CpfException("CPF1002", "Object or record is allocated to another job; lock wait expired.");
                     command.CommandText = """
                         INSERT INTO waiters(token,job_number,job_name,job_user,library,name,type,member,row_number,mode,expires_at,blockers)
@@ -205,10 +215,10 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         finally { RemoveWaiter(token); }
     }
 
-    private static HashSet<int> Conflicts(SqliteConnection connection, SqliteTransaction transaction, JobKey job, JobLockResource resource, JobLockMode mode, string token)
+    private static HashSet<int> Conflicts(SqliteConnection connection, SqliteTransaction transaction, JobKey job, JobLockResource resource, JobLockMode mode, string token, string? recordOwner)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "SELECT member,row_number,mode FROM holders WHERE library=$lib AND name=$name AND type=$type AND job_number=$job";
+        command.CommandText = "SELECT member,row_number,mode,lifetime,scope FROM holders WHERE library=$lib AND name=$name AND type=$type AND job_number=$job";
         Bind(command, job, resource, mode, token); var covered = false;
         using (var own = command.ExecuteReader()) while (own.Read())
         {
@@ -216,7 +226,20 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
             if (!resource.IsRecord && ownRecord && mode == JobLockMode.SharedRead ||
                 !ownRecord && ownMode == JobLockMode.Exclusive ||
                 ownRecord == resource.IsRecord && own.GetString(0) == resource.Member && own.GetInt64(1) == resource.RowNumber &&
-                (ownMode == mode || ownMode == JobLockMode.Exclusive || mode == JobLockMode.SharedRead)) covered = true;
+                (ownMode == mode || ownMode == JobLockMode.Exclusive || mode == JobLockMode.SharedRead ||
+                    own.GetString(3) == "UpdateRead" && own.GetString(4) == recordOwner)) covered = true;
+        }
+        // A job can own multiple independent update cursors. Only the cursor
+        // that retrieved the record may bypass its retained update-read lease.
+        var ownBlockers = new HashSet<int>();
+        command.CommandText = "SELECT member,row_number,mode FROM holders WHERE library=$lib AND name=$name AND type=$type AND job_number=$job AND lifetime='UpdateRead' AND scope<>$owner AND ($member='' OR member='' OR member=$member AND row_number=$row)";
+        command.Parameters.AddWithValue("$owner", recordOwner ?? "");
+        using (var own = command.ExecuteReader()) while (own.Read())
+        {
+            var heldMode = (JobLockMode)own.GetInt32(2); var requestedMode = mode;
+            if (resource.IsRecord != (own.GetString(0).Length != 0))
+            { if (resource.IsRecord) requestedMode = Intent(mode); else heldMode = Intent(heldMode); }
+            if (!Compatible(requestedMode, heldMode)) ownBlockers.Add(job.Number);
         }
         command.Parameters.AddWithValue("$covered", covered ? 1 : 0);
         command.CommandText = """
@@ -227,7 +250,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
               AND ($member='' OR member='' OR member=$member AND row_number=$row)
               AND $covered=0 AND sequence<coalesce((SELECT sequence FROM waiters WHERE token=$token),9223372036854775807)
             """;
-        Bind(command, job, resource, mode, token); using var reader = command.ExecuteReader(); var blockers = new HashSet<int>();
+        Bind(command, job, resource, mode, token); using var reader = command.ExecuteReader(); var blockers = ownBlockers;
         while (reader.Read())
         {
             var heldRecord = reader.GetString(1).Length != 0; var heldMode = (JobLockMode)reader.GetInt32(3);
@@ -248,7 +271,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         using (var reader = command.ExecuteReader()) while (reader.Read())
         {
             var from = reader.GetInt32(0); if (!graph.TryGetValue(from, out var edges)) graph[from] = edges = new();
-            edges.UnionWith(JsonSerializer.Deserialize<int[]>(reader.GetString(1))!);
+            edges.UnionWith(JsonSerializer.Deserialize<int[]>(reader.GetString(1))!.Where(blocker => blocker != from));
         }
         var pending = new Stack<int>(graph.GetValueOrDefault(job) ?? new()); var seen = new HashSet<int>();
         while (pending.TryPop(out var next))
@@ -290,6 +313,13 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         using var connection = _factory.Locks.Open(); using var command = connection.CreateCommand();
         command.CommandText = "DELETE FROM holders WHERE job_number=$job AND scope=$scope";
         command.Parameters.AddWithValue("$job", job.Number); command.Parameters.AddWithValue("$scope", scope); command.ExecuteNonQuery();
+    }
+    internal bool HasRetainedRead(Ipc.Core.Work.JobKey job, string scope)
+    {
+        using var connection = _factory.Locks.Open(); using var command = connection.CreateCommand();
+        command.CommandText = "SELECT count(*) FROM holders WHERE job_number=$job AND job_name=$name AND job_user=$user AND lifetime='UpdateRead' AND scope=$scope";
+        command.Parameters.AddWithValue("$job", job.Number); command.Parameters.AddWithValue("$name", job.Name); command.Parameters.AddWithValue("$user", job.User);
+        command.Parameters.AddWithValue("$scope", scope); return Convert.ToInt64(command.ExecuteScalar()) == 1;
     }
     private JobLockResource Resolve(JobLockResource resource)
     {
