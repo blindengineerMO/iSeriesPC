@@ -4,6 +4,10 @@ using Ipc.Core.Messages;
 using Ipc.Core.Objects;
 using Ipc.Db.Definitions;
 using Ipc.Services.Work;
+using Ipc.Services.Events;
+using Ipc.Services.Security;
+using Ipc.Services.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace Ipc.Db.Store;
 
@@ -11,14 +15,14 @@ public sealed partial class SqliteFileStore
 {
     /// <summary>Stages a bounded source snapshot, then copies it in one transaction.</summary>
     public int CopyRecords(QualifiedName source, string sourceMember, QualifiedName target, string targetMember,
-        bool replace = false, bool map = false, bool drop = false, CancellationToken cancellationToken = default)
+        bool? replace = false, bool map = false, bool drop = false, CancellationToken cancellationToken = default, bool createFile = false)
     {
         using var lifetime=CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,_factory.ShutdownToken);
         using var connection=_factory.Open();
         try
         {
-            var prepared=PrepareFileCopy(connection,source,sourceMember,target,targetMember,replace,map,drop,lifetime.Token);
-            return WithCapacityRecovery(token=>WriteFileCopy(prepared,replace,token),lifetime.Token,_=>ValidateFileCopy(prepared,replace));
+            var prepared=PrepareFileCopy(connection,source,sourceMember,target,targetMember,replace,map,drop,lifetime.Token,createFile);
+            return WithCapacityRecovery(token=>WriteFileCopy(prepared,token),lifetime.Token,_=>ValidateFileCopy(prepared));
         }
         finally
         {
@@ -26,23 +30,43 @@ public sealed partial class SqliteFileStore
             catch(Exception error)when(error is Microsoft.Data.Sqlite.SqliteException or ObjectDisposedException){Microsoft.Data.Sqlite.SqliteConnection.ClearPool(connection);}
         }
     }
+    private static AuthorityBit CopyWriteAuthority(bool replace) => AuthorityBit.Add |
+        (replace ? AuthorityBit.Delete | AuthorityBit.ObjectManagement : AuthorityBit.None);
     private sealed record PreparedFileCopy(Microsoft.Data.Sqlite.SqliteConnection Connection,QualifiedName Source,string SourceMember,QualifiedName Target,string TargetMember,
-        FileDefinition Input,FileDefinition Output,FileDefinition Physical,string BaseLibrary,string BaseFile,IReadOnlyDictionary<string,string> MemberIds,string TargetId,int Count);
+        FileDefinition Input,FileDefinition Output,FileDefinition Physical,string BaseLibrary,string BaseFile,IReadOnlyDictionary<string,string> MemberIds,string? TargetId,int Count,
+        bool Replace,FileCopyCreation? Creation,string SourceId);
     private PreparedFileCopy PrepareFileCopy(Microsoft.Data.Sqlite.SqliteConnection connection,QualifiedName source,string sourceMember,QualifiedName target,string targetMember,
-        bool replace,bool map,bool drop,CancellationToken cancellationToken)
+        bool? replace,bool map,bool drop,CancellationToken cancellationToken,bool createFile)
     {
         using var recordLocks = new JobLockStore(_factory).EnterRecordWrite(cancellationToken);
         var temporary = new JobTemporaryLibrary(_factory);
         source = temporary.Resolve(source, FileType); target = temporary.Resolve(target, FileType);
         RequireUnenlisted(source.Library, source.Name.Value, "CPYF"); RequireUnenlisted(target.Library, target.Name.Value, "CPYF");
-        sourceMember = sourceMember.ToUpperInvariant(); targetMember = targetMember.ToUpperInvariant();
         Authorize(source.Library, source.Name.Value, AuthorityBit.Read);
-        Authorize(target.Library, target.Name.Value, AuthorityBit.Add | (replace ? AuthorityBit.Delete : AuthorityBit.None));
         var locks = new JobLockStore(_factory);
-        if (replace) locks.RequireObjectMutation(target.Library, target.Name.Value, FileType);
         using var transaction = Ipc.Services.Sqlite.SqliteCancellation.BeginWrite(connection,cancellationToken);
-        EnsureMember(source.Library, source.Name.Value, sourceMember); EnsureMember(target.Library, target.Name.Value, targetMember);
-        var from = GetDefinition(source.Library, source.Name.Value)!; var to = GetDefinition(target.Library, target.Name.Value)!;
+        var from = ReadDefinition(connection,transaction,source.Library,source.Name.Value) ?? throw new CpfException("CPF9801","Source file not found.");
+        var to = ReadDefinition(connection,transaction,target.Library,target.Name.Value);
+        sourceMember = CopyMember(connection,transaction,source,sourceMember);
+        targetMember = CopyMember(connection,transaction,target,targetMember,to is null ? source.Name.Value : null,sourceMember);
+        FileCopyCreation? creation = null;
+        if (to is null)
+        {
+            if (!createFile) throw new CpfException("CPF9801","Target file not found; specify CRTFILE(*YES) to create it.");
+            RequireCopyCreation(connection,transaction,target);
+            var descriptor = ObjectSigningService.Read(connection,transaction,source.Library,source.Name.Value,FileType);
+            creation = new(descriptor.PublicAuthority,descriptor.UseAuthorizationListPublicAuthority,descriptor.Owner,descriptor.Description,
+                OperationIdentity.Current?.Principal ?? _owner,CopyAuthorities(connection,transaction,source));
+            to = CopyFileDefinition(from,target.Name.Value);
+        }
+        else
+        {
+            if (replace is null) throw new CpfException("IPC0139","An existing target requires MBROPT(*ADD) or MBROPT(*REPLACE).");
+            Authorize(target.Library,target.Name.Value,CopyWriteAuthority(replace.Value));
+            if (replace.Value) locks.RequireObjectMutation(target.Library,target.Name.Value,FileType);
+            EnsureCopyMember(connection,transaction,target,targetMember);
+        }
+        EnsureCopyMember(connection,transaction,source,sourceMember);
         if (to.Logical is not null || to.Formats.Count != 1 || from.Formats.Count != 1)
             throw new CpfException("IPC0139", "CPYF currently requires one source format and a physical target.");
         if ((from.Attribute == FileAttribute.Source) != (to.Attribute == FileAttribute.Source))
@@ -59,10 +83,10 @@ public sealed partial class SqliteFileStore
         var members = basedOn is null ? new[] { sourceMember } : basedOn.Members[sourceMember];
         var baseLibrary = basedOn?.SourceLibrary ?? source.Library; var baseFile = basedOn?.SourceFile ?? source.Name.Value;
         RequireUnenlisted(baseLibrary, baseFile, "CPYF");
-        var physical = basedOn is null ? from : GetDefinition(baseLibrary, baseFile) ?? throw LogicalError("Missing physical definition.");
+        var physical = basedOn is null ? from : ReadDefinition(connection,transaction,baseLibrary,baseFile) ?? throw LogicalError("Missing physical definition.");
         if (basedOn is not null && (physical.PrimaryFormat.Name != basedOn.SourceFormat || input.Fields.Any(f => physical.PrimaryFormat.Find(f.Name) is not { } original || !Same(f, original))))
             throw LogicalError("Physical format changed; recompile the logical file.");
-        foreach (var member in members) EnsureMember(baseLibrary, baseFile, member);
+        foreach (var member in members) EnsureCopyMember(connection, transaction, new(baseLibrary,baseFile), member);
         var predicate = basedOn is null ? "1" : LogicalPredicate(read, basedOn, physical.PrimaryFormat);
         var columns = string.Join(',', input.Fields.Select(f => Quote(f.Name)));
         var keys = input.Fields.Where(f => f.Sequence > 0).OrderBy(f => f.Sequence).ToArray();
@@ -101,35 +125,62 @@ public sealed partial class SqliteFileStore
             }
         }
         var identities=members.ToDictionary(member=>member,member=>Ipc.Services.Sqlite.RecordSlots.Identity(connection,transaction,baseLibrary,baseFile,member)??throw LogicalError("Source member identity not found."));
-        var targetId=Ipc.Services.Sqlite.RecordSlots.Identity(connection,transaction,target.Library,target.Name.Value,targetMember)??throw LogicalError("Target member identity not found.");
+        var targetId=creation is not null ? null : Ipc.Services.Sqlite.RecordSlots.Identity(connection,transaction,target.Library,target.Name.Value,targetMember)??throw LogicalError("Target member identity not found.");
+        var prepared = new PreparedFileCopy(connection,source,sourceMember,target,targetMember,from,to,physical,baseLibrary,baseFile,identities,targetId,count,
+            creation is null && replace == true,creation,RecordSlots.Identity(connection,transaction,source.Library,source.Name.Value,sourceMember)
+                ?? throw LogicalError("Source member identity not found."));
+        ValidateFileCopy(prepared,transaction);
         cancellationToken.ThrowIfCancellationRequested();transaction.Commit();
-        return new(connection,source,sourceMember,target,targetMember,from,to,physical,baseLibrary,baseFile,identities,targetId,count);
+        return prepared;
     }
-    private void ValidateFileCopy(PreparedFileCopy copy,bool replace,Microsoft.Data.Sqlite.SqliteTransaction? transaction=null)
+    private void ValidateFileCopy(PreparedFileCopy copy,Microsoft.Data.Sqlite.SqliteTransaction? transaction=null)
     {
-        Authorize(copy.Source.Library,copy.Source.Name.Value,AuthorityBit.Read);Authorize(copy.BaseLibrary,copy.BaseFile,AuthorityBit.Read);
-        Authorize(copy.Target.Library,copy.Target.Name.Value,AuthorityBit.Add|(replace?AuthorityBit.Delete:AuthorityBit.None));
+        if (transaction is null)
+        {
+            Authorize(copy.Source.Library,copy.Source.Name.Value,AuthorityBit.Read);Authorize(copy.BaseLibrary,copy.BaseFile,AuthorityBit.Read);
+            Authorize(copy.Target.Library,copy.Target.Name.Value,CopyWriteAuthority(copy.Replace));
+        }
+        else
+        {
+            ValidateCopyPublisher(copy.Connection,transaction);
+            var authorization = new ServiceAuthorization(_factory);
+            authorization.RequireBoundObject(copy.Connection,transaction,copy.Source.Library,copy.Source.Name.Value,Authorities.UseBits);
+            authorization.RequireBoundObject(copy.Connection,transaction,copy.BaseLibrary,copy.BaseFile,Authorities.UseBits);
+            if (copy.Creation is not null) RequireCopyCreation(copy.Connection,transaction,copy.Target,acquireAllocation:copy.TargetId is null);
+            if (copy.TargetId is not null) authorization.RequireBoundObject(copy.Connection,transaction,copy.Target.Library,copy.Target.Name.Value,
+                AuthorityBit.ObjectOperate | CopyWriteAuthority(copy.Replace));
+        }
         RequireUnenlisted(copy.Source.Library,copy.Source.Name.Value,"CPYF");RequireUnenlisted(copy.BaseLibrary,copy.BaseFile,"CPYF");RequireUnenlisted(copy.Target.Library,copy.Target.Name.Value,"CPYF");
+        if (RecordSlots.Identity(copy.Connection,transaction,copy.Source.Library,copy.Source.Name.Value,copy.SourceMember) != copy.SourceId)
+            throw LogicalError("Source member changed during CPYF.");
         foreach(var pair in copy.MemberIds)
             if(Ipc.Services.Sqlite.RecordSlots.Identity(copy.Connection,transaction,copy.BaseLibrary,copy.BaseFile,pair.Key)!=pair.Value)throw LogicalError("Source member changed during CPYF.");
         if(Ipc.Services.Sqlite.RecordSlots.Identity(copy.Connection,transaction,copy.Target.Library,copy.Target.Name.Value,copy.TargetMember)!=copy.TargetId)throw LogicalError("Target member changed during CPYF.");
-        if(GetDefinition(copy.Source.Library,copy.Source.Name.Value) is not { } source||CursorFingerprint(source)!=CursorFingerprint(copy.Input)||
-            GetDefinition(copy.Target.Library,copy.Target.Name.Value) is not { } target||CursorFingerprint(target)!=CursorFingerprint(copy.Output)||
-            GetDefinition(copy.BaseLibrary,copy.BaseFile) is not { } physical||CursorFingerprint(physical)!=CursorFingerprint(copy.Physical))
+        if(ReadDefinition(copy.Connection,transaction,copy.Source.Library,copy.Source.Name.Value) is not { } source||source.ToJson()!=copy.Input.ToJson()||
+            copy.TargetId is not null && (ReadDefinition(copy.Connection,transaction,copy.Target.Library,copy.Target.Name.Value) is not { } target||target.ToJson()!=copy.Output.ToJson())||
+            ReadDefinition(copy.Connection,transaction,copy.BaseLibrary,copy.BaseFile) is not { } physical||physical.ToJson()!=copy.Physical.ToJson())
             throw LogicalError("Source or target definition changed during CPYF.");
+        if (copy.Creation is not null && transaction is not null) ValidateCopyCreation(copy,transaction);
     }
-    private int WriteFileCopy(PreparedFileCopy copy,bool replace,CancellationToken cancellationToken)
+    private int WriteFileCopy(PreparedFileCopy copy,CancellationToken cancellationToken)
     {
         using var recordLocks=new JobLockStore(_factory).EnterRecordWrite(cancellationToken);
         var connection=copy.Connection;using var transaction=Ipc.Services.Sqlite.SqliteCancellation.BeginWrite(connection,cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();ValidateFileCopy(copy,replace,transaction);
+        cancellationToken.ThrowIfCancellationRequested();ValidateFileCopy(copy,transaction);
         if(Ipc.Services.Events.OperationIdentity.Current?.Job is { } job)new JobDataAreaStore(_factory).RequireOwner(job);
-        var target=copy.Target;var targetMember=copy.TargetMember;var to=GetDefinition(target.Library,target.Name.Value)!;var output=to.PrimaryFormat;
-        var locks=new JobLockStore(_factory);if(replace)locks.RequireObjectMutation(target.Library,target.Name.Value,FileType);
+        var target=copy.Target;var targetMember=copy.TargetMember;var to=copy.Output;var output=to.PrimaryFormat;
+        var locks=new JobLockStore(_factory);if(copy.Replace)locks.RequireObjectMutation(target.Library,target.Name.Value,FileType);
+        if (copy.Creation is not null)
+        {
+            CreateCopyFile(copy,transaction);
+            copy = copy with { TargetId = RecordSlots.Identity(connection,transaction,target.Library,target.Name.Value,targetMember)
+                ?? throw LogicalError("Created target member identity not found.") };
+            ValidateFileCopy(copy,transaction);
+        }
         EnsureExactDecimalStorage(connection,transaction,MemberTable(target.Library,target.Name.Value,targetMember),output);
         var targetTable = Quote(MemberTable(target.Library, target.Name.Value, targetMember));
         using var write = connection.CreateCommand(); write.Transaction = transaction;
-        if (replace)
+        if (copy.Replace)
         {
             RequireReferentialClear(connection,transaction,target,targetMember);
             write.CommandText = "SELECT " + RowIdentitySql(output) + " FROM " + targetTable;
@@ -155,12 +206,16 @@ public sealed partial class SqliteFileStore
                 var number = Ipc.Services.Sqlite.RecordSlots.Next(connection, transaction, target.Library, target.Name.Value,
                     targetMember, rowid, to.ReuseDeletedRecords);
                 RequireMemberCapacity(connection, transaction, target.Library, target.Name.Value, targetMember, to, number);
-                locks.RequireRecordAccess(target.Library, target.Name.Value, targetMember, number, write: true);
+                // A newly created file is already exclusively allocated before
+                // its DDL. That lease covers every record through publication;
+                // opening another main connection here would hit the schema lock.
+                if (copy.Creation is null) locks.RequireRecordAccess(target.Library, target.Name.Value, targetMember, number, write: true);
                 write.Parameters["$rrn"].Value = number;
                 for (var index = 0; index < output.Fields.Count; index++) write.Parameters["$copy" + index].Value = reader.GetValue(index);
                 Ipc.Services.Sqlite.SqliteCancellation.Run(connection,cancellationToken,write.ExecuteNonQuery);
             }
         }
+        ValidateFileCopy(copy,transaction);
         cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit(); return copy.Count;
     }

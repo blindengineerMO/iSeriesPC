@@ -3,7 +3,7 @@
 C08 referential integrity is being implemented. This is a development checkpoint;
 the foreign-key work and the broader C07/C08 requirements remain unfinished.
 The latest full regression and terminal verification for this work in progress
-passes 7,659 solution tests. Native referential-integrity acceptance remains open.
+passes 7,817 solution tests. Native referential-integrity acceptance remains open.
 
 The current SQL bridge accepts column REFERENCES and table FOREIGN KEY clauses,
 named or anonymous constraints, explicit or implicit parent keys, and ALTER ADD /
@@ -101,17 +101,22 @@ DISK and WORKSTN files; see [file definitions](rpg-file-definitions.md).
 
 Work still required before this feature can receive complete acceptance:
 
-- Finish automatic member removal, move/rename, duplicate-parent and restore/archive
-  transitions. Compatible parent creation, member addition and parent ALTER now
-  establish defined relationships. CHGPFCST can reverify pending relationships.
+- Finish restore/archive transitions and remaining native CRTDUPOBJ object/type
+  selection, trigger/access-control and logical/save-file contracts. DATA/CST
+  choices and native defaults are now covered; see [duplication](object-duplication.md).
+  Move, file/library rename and parent duplication now attempt
+  automatic establishment. Removing parent/dependent members leaves defined
+  relationships; replacement members, parent creation and ALTER establish them.
+  CHGPFCST can reverify pending relationships.
 - Finish constraint authority delegation and indirect publication in private
   record units; current private-workspace coverage enlists both files as an
   administrator. Native file/cursor publication-authority coverage remains open.
 - Complete outgoing child-key parent read allocations, native implicit child
   allocation lifetimes through parent close, and full related-resource locking
   under native commitment/isolation rules.
-- Implement CPYF CRTFILE(*YES), ensuring that newly created files omit constraints;
-  finish the remaining native error-level/partial-copy and feedback contracts.
+- Finish remaining CPYF SQL-view/query sources, member creation in existing
+  targets, native error-level/partial-copy and feedback contracts. CRTFILE(*YES)
+  now creates native output without SQL constraints; see [file copy](file-copy.md).
 - Verify old-database upgrades, restart, rollback, cancellation, competing writers
   and larger related datasets with independent fixtures.
 - Finish incompatible attribute-change and member/restore transitions around the
@@ -170,7 +175,9 @@ Tests live in `SqlForeignKeyTests.cs`, `SqlForeignLifecycleTests.cs`,
 `SqlForeignLockTests.cs`, `SqlForeignUpdateLockTests.cs` and
 `SqlForeignUpdatePublicationTests.cs`, `SqlConstraintLimitTests.cs`,
 `SqlConstraintAdministrationTests.cs`, `SqlConstraintStateLifecycleTests.cs`,
-`SqlForeignEstablishmentTests.cs` and `SqlForeignEstablishmentPublicationTests.cs`.
+`SqlForeignEstablishmentTests.cs`, `SqlForeignEstablishmentPublicationTests.cs`,
+`SqlForeignMemberRemovalTests.cs`, `SqlForeignMemberRemovalPublicationTests.cs`,
+`MemberRemovalSelectionTests.cs` and `SqlForeignRelocationEstablishmentTests.cs`.
 Existing CHECK, ALTER, compatibility and SQL/native regressions remain part of acceptance. Cancellation tests now run their controller
 and synchronous worker on dedicated tasks so xUnit's continuation queue cannot
 delay the requested cancellation until the query exhausts its work budget.
@@ -193,13 +200,103 @@ paths, and rechecks enforced rows after hooks. Explicit CHGPFCST verification al
 rechecks rows before publication, preventing hook-introduced invalid data from
 being accepted after the initial scan. CHECK(*NO) still skips verification.
 
-Development verification (2026-10-19): since SQL CHECK, 165 foreign-key/constraint
-cases, eight PREFIX cases, three factory/session shutdown cases and two job-owned
-initialization-recovery cases are added. This continuation adds twenty cases.
-All 7659 solution tests and 834 focused checks pass with zero failures/skips,
-locked restore, a warning-free Release build and 1077 unchanged source/build/cache
-inputs. Complete display PTY passes at 24x80 and 27x132, including automatic parent
-establishment, CHGPFCST pending/repair/enable and SQL-FK-CL-RPG-CASCADE. Generated
-inventory, local links and whitespace pass. The full suite uses four xUnit workers
-and completes in 11:36.04. Native referential-integrity acceptance and broader
-C07/C08/C09 requirements remain open.
+Removing the sole physical parent or dependent member changes established
+relationships to defined while preserving file-level constraints and state
+history. Parent removal retains child records and access paths without executing
+delete actions. Replacement members automatically reestablish relationships using
+their actual names, making unmatched surviving data pending. These transitions
+follow IBM's [referential CL lifecycle rules](https://www.ibm.com/docs/en/i/7.5.0?topic=constraints-referential-integrity-cl-commands).
+
+RMVM requires file *OBJEXIST and *OBJOPR plus library execute, following IBM's
+[file-command authority table](https://www.ibm.com/docs/en/i/7.5.0?topic=commands-file).
+The shared catalog operation delegates related changes without requiring related
+data/management rights. Allocation preflight precedes schema probes; exclusive
+leases span commit/rollback, enlisted resources reject removal, and publication
+checks root authority, live caller/job, definitions, owners and member/slot
+identities. Surviving indexes, RRNs, incarnations, views, unaffected/self
+references and application/journal triggers remain intact. Copying emits no
+application/journal/version side effects and preserves pending CHECK rows with
+normal enforcement restored. Unregistered SQL dependents and logical member
+bindings still prevent removal.
+
+FILE and MBR are required keyword or positional RMVM arguments. MBR accepts a
+name, a nonempty prefix followed by * or *ALL, following IBM's
+[RMVM command reference](https://www.ibm.com/docs/en/ssw_ibm_i_76/cl/rmvm.htm).
+Unsupported special values and malformed selectors reject before mutation.
+Selection snapshots names and commits each successful removal separately; a
+blocked member retains its diagnostic while later selected members are attempted.
+Partial failure reports aggregate CPF7301, which compiled CL can monitor. The
+complete native diagnostic/completion-message ABI remains an acceptance task.
+
+Move, file/library rename and parent duplication now attempt to establish defined
+relationships at the resulting parent identity, following IBM's
+[referential CL lifecycle rules](https://www.ibm.com/docs/en/i/7.5.0?topic=constraints-referential-integrity-cl-commands).
+Existing established relationships keep following relocated objects. Actual member
+names bind, valid data enforces immediately, mismatched rows become pending and
+disabled relationships remain disabled/pending. Incompatible or zero-member
+parents retain the defined state. Native CRTDUPOBJ now supports DATA/CST choices,
+defaulting to no records and copied constraints; the generic catalog copy API
+retains its record-copy default. See [duplication](object-duplication.md) for
+implemented options, pending state and remaining native command acceptance.
+
+The shared catalog writer preflights related physical/logical allocations before
+schema probes and rejects enlisted resources. Exclusive leases span publication
+or rollback. Expected definitions, owners and member/slot identities are projected
+from the pre-operation state; copy plans retain their exact prepared constraint
+names/bindings. Publication rechecks those snapshots, required root and destination
+library authority, live caller/job and enforced rows. Constraint establishment
+delegates related work without requiring related data/management rights. Late
+hook changes to identity, permissions, job state or orphan data roll back atomically.
+
+Establishment and RMVM now share a member rewrite that retains indexes, RRNs,
+incarnations, views, CHECK state, self/external references and application/journal
+hooks without copying side effects. Catalog hooks can reference the child while
+its same-name schema is replaced. The final rename temporarily uses SQLite's
+[documented legacy rename mode](https://www.sqlite.org/pragma.html#pragma_legacy_alter_table)
+to leave external references unchanged, preserves self references explicitly and
+restores the caller's rename/CHECK/foreign settings on success or failure. New
+partial SET NULL hooks refer to the newly established parent. Subsequent ordinary
+renames still propagate through catalog trigger bodies.
+
+Development verification (2026-10-20): all 7745 solution tests and 482 focused
+checks pass with zero failures/skips, locked restore, a zero-warning/error Release
+build and 1338 unchanged source/build/test inputs. This continuation adds 32
+cases; the foreign-key/constraint phase now has 236 cases, alongside the prior
+member-selection, PREFIX, shutdown and initialization-recovery regressions.
+Complete PTY passes at 24x80 and 27x132, including automatic rename/move/duplicate
+establishment, member replacement, pending repair and CL/RPG cascade flows.
+The full suite uses four xUnit workers and completes in 12:15.24. Generated inventory,
+local links and whitespace pass. Remaining native referential-integrity and broad
+C07/C08/C09 acceptance stay open.
+
+
+Native CRTDUPOBJ now uses DATA(*NO) / CST(*YES) defaults. Empty child copies
+validate empty destination data when rebinding established relationships; zero-member
+child definitions remain defined until member addition. CST(*NO) omits outgoing
+foreign constraints and referenceable primary/unique keys, so copying a parent
+without keys leaves its defined dependents awaiting a compatible key. Pending
+CHECK state/status survives both empty and record copies; trusted transfer of old
+rows does not relax subsequent I/O. Source USE plus OBJMGT is checked before
+copying and on the publishing writer. Live cancellation interrupts writer waits
+and row transfer before the final publication check.
+
+Duplication development verification (2026-10-20): 35 new cases, all 500 focused
+checks and all 7780 solution tests pass with zero failures/skips (12:24.78, four
+workers). Locked restore, zero-warning/error build, 1341 unchanged inputs and
+full 24x80/27x132 PTY pass, including CRTDUPOBJ-DATA-CST. Earlier checkpoint
+counts above remain historical. C07/C08/C09 and native acceptance remain partial.
+
+
+CPYF CRTFILE(*YES) now creates native physical/source targets without SQL
+constraints, SQL defaults, application triggers or source journal bindings.
+Copying a parent this way leaves defined dependents awaiting a referenceable SQL
+key. Shared writer-side checks cover identities, exact definitions, copied
+authorities and live caller/job state. The new target's exclusive file allocation
+spans DDL/loading/publication without record-lock reentry under the schema lock.
+Duplication and ordinary pending-state access remain separately enforced.
+
+Creation verification (2026-10-20): 37 new cases, 515 focused checks and a final
+37-case run pass; all 7817 solution tests pass with zero failures/skips (12:12.50).
+Locked restore, zero-warning/error build, 1342 unchanged full-suite inputs, a separately frozen PTY script and full PTY
+at 24x80/27x132 with CPYF-CRTFILE pass. Native partial-copy/feedback, SQL-view/member
+and broader referential acceptance remain open. Earlier counts are historical.

@@ -6,7 +6,8 @@ namespace Ipc.Services.Sqlite;
 /// <summary>Copies a set of member tables inside the owning catalog transaction.</summary>
 internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransaction transaction)
 {
-    public void Copy(IReadOnlyList<(string Source, string Target)> tables, Func<string, string>? rewriteTableSql = null, bool copySchemaObjects = true)
+    public void Copy(IReadOnlyList<(string Source, string Target)> tables, Func<string, string>? rewriteTableSql = null,
+        bool copySchemaObjects = true, bool copyData = true, Func<string, bool>? includeIndex = null)
     {
         if (tables.Count == 0) return;
         var schemas = new List<(string Type, string Name, string Table, string Sql)>();
@@ -35,9 +36,9 @@ internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransac
         Run("PRAGMA defer_foreign_keys=ON");
         foreach (var schema in schemas.Where(s => s.Type == "table")) Run(rewriteTableSql?.Invoke(schema.Sql) ?? schema.Sql);
         // Explicit indexes can provide FK parent uniqueness, so create them before loading.
-        foreach (var schema in schemas.Where(s => copySchemaObjects && s.Type == "index" && !IsLogicalConstraint(s.Name)))
+        foreach (var schema in schemas.Where(s => copySchemaObjects && s.Type == "index" && !IsLogicalConstraint(s.Name) && includeIndex?.Invoke(s.Name) != false))
             Run(RenameSchemaObject(schema.Sql, "INDEX", $"{schema.Table}.index.{schema.Name}"));
-        foreach (var table in tables)
+        foreach (var table in tables.Where(_ => copyData))
         {
             var columns = Columns(table.Source);
             using var kind = Command("SELECT wr FROM pragma_table_list WHERE schema='main' AND name=$table");

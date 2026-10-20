@@ -17,7 +17,7 @@ The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
 Latest [completion checkpoint](docs/completion-progress.md): 36/106 checklist items
-complete, 7659 tests passing, and real sign-on/display PTY acceptance passing.
+complete, 7817 tests passing, and real sign-on/display PTY acceptance passing.
 RPG [RECNO feedback and relative WRITE](docs/rpg-recno.md) now support numeric
 record positions and directed output into allocated deleted slots.
 Job [inquiry policies and the system reply list](docs/inquiry-replies.md) now
@@ -31,7 +31,13 @@ atomic column/key changes and dependent view/index rebinding.
 SQL, native records, RPG, copies and private record workspaces.
 [Searched SQL mutations](docs/sql-mutations.md) add atomic UPDATE/DELETE, exact
 arithmetic and selected-record locks.
-[Referential integrity](docs/sql-foreign-keys-progress.md) is in progress.
+[Referential integrity](docs/sql-foreign-keys-progress.md) is in progress, with
+member removal/replacement, RMVM prefix/*ALL selection and automatic establishment
+after rename, move and parent duplication now covered.
+[CRTDUPOBJ](docs/object-duplication.md) now supports DATA/CST choices and native
+empty-copy defaults.
+[CPYF CRTFILE](docs/file-copy.md) now creates native physical/source targets
+with copied records and authorities while omitting SQL constraints and defaults.
 [RUNSQLSTM scripts](docs/sql-scripts.md) now process members and UTF-8 streams,
 with mixed CL, syntax checking and located job-log diagnostics.
 The shared [typed SELECT service](docs/sql-queries.md) adds joins, grouping,

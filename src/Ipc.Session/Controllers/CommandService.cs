@@ -93,7 +93,7 @@ public sealed partial class CommandService
         _catalog.Register("CRTDTADCT", ExecuteObjectManagement);
         _catalog.Register("RNMOBJ", ExecuteObjectManagement);
         _catalog.Register("MOVOBJ", ExecuteObjectManagement);
-        _catalog.Register("CRTDUPOBJ", ExecuteObjectManagement);
+        _catalog.Register("CRTDUPOBJ", ExecuteDuplicateObject);
         _catalog.Register("DLTOBJ", ExecuteObjectManagement);
         _catalog.Register("ADDLIBLE", ExecuteLibraryList);
         _catalog.Register("RMVLIBLE", ExecuteLibraryList);
@@ -792,53 +792,25 @@ public sealed partial class CommandService
     {
         var (fromLibrary, fromName) = ResolveFileReference(CommandParser.Unquote(call.GetOption("FROMFILE")));
         var (toLibrary, toName) = ResolveFileReference(CommandParser.Unquote(call.GetOption("TOFILE")));
-        string CopyMember(string? option, string library, string file, string? from = null)
-        {
-            var member = CommandParser.Unquote(option ?? "*FIRST").ToUpperInvariant();
-            if (member == "*FIRST") return _files.FirstMember(library, file);
-            if (member == "*FROMMBR" && from is not null) return from;
-            if (!ObjectName.IsValid(member)) throw new CpfException("IPC0139", "CPYF requires an explicit member, *FIRST, or TOMBR(*FROMMBR).");
-            return member;
-        }
-        var fromMember = CopyMember(call.GetOption("FROMMBR"), fromLibrary, fromName);
-        var toMember = CopyMember(call.GetOption("TOMBR"), toLibrary, toName, fromMember);
-
-        if (fromLibrary.Length == 0 || toLibrary.Length == 0)
-        {
+        if (fromLibrary.Length == 0 || toLibrary.Length == 0 || fromName.Length == 0 || toName.Length == 0)
             return CommandResult.Error("CPYF requires FROMFILE and TOFILE.");
-        }
-
-        var sourceDefinition = _files.GetDefinition(fromLibrary, fromName);
-        var targetDefinition = _files.GetDefinition(toLibrary, toName);
-        if (sourceDefinition is null)
-        {
-            return CommandResult.Error($"File {fromLibrary}/{fromName} not found.");
-        }
-
-        if (targetDefinition is null)
-        {
-            return CommandResult.Error($"File {toLibrary}/{toName} not found.");
-        }
-
-        if (!_files.MemberExists(fromLibrary, fromName, fromMember))
-        {
-            return CommandResult.Error($"Member {fromMember} not found in file {fromName}.");
-        }
-
-        if (!_files.MemberExists(toLibrary, toName, toMember))
-        {
-            return CommandResult.Error($"Member {toMember} not found in file {toName}.");
-        }
-
+        var fromMember = CommandParser.Unquote(call.GetOption("FROMMBR") ?? "*FIRST");
+        var toMember = CommandParser.Unquote(call.GetOption("TOMBR") ?? "*FIRST");
+        var create = CommandParser.Unquote(call.GetOption("CRTFILE") ?? "*NO").ToUpperInvariant();
+        if (create is not ("*NO" or "*YES")) return CommandResult.Error("IPC0139: CRTFILE requires *NO or *YES.");
         var option = CommandParser.Unquote(call.GetOption("MBROPT") ?? "*NONE").ToUpperInvariant();
-        if (option is not ("*ADD" or "*REPLACE")) return CommandResult.Error("IPC0139: CPYF requires MBROPT(*ADD) or MBROPT(*REPLACE) for an existing physical target.");
+        if (option is not ("*NONE" or "*ADD" or "*REPLACE" or "*UPDADD")) return CommandResult.Error("IPC0139: Invalid MBROPT choice.");
+        if (create == "*YES" && !_files.FileExists(toLibrary,toName) &&
+            SplitQualified(CommandParser.Unquote(call.GetOption("TOFILE")),"*LIBL").Library == "*LIBL")
+            return CommandResult.Error("IPC0139: Creating a CPYF target requires an explicit target library or *CURLIB.");
         var formats = CommandParser.Tokenize(call.GetOption("FMTOPT") ?? "*NONE").Select(v => v.ToUpperInvariant()).ToArray();
         if (formats.Length == 0 || formats.Length > 2 || formats.Distinct().Count() != formats.Length ||
             formats.Any(v => v is not ("*NONE" or "*MAP" or "*DROP")) || formats.Contains("*NONE") && formats.Length != 1)
             return CommandResult.Error("IPC0139: Supported FMTOPT values are *NONE or *MAP/*DROP.");
         int count;
         try { count = _files.CopyRecords(new(fromLibrary, fromName), fromMember, new(toLibrary, toName), toMember,
-            replace: option == "*REPLACE", map: formats.Contains("*MAP"), drop: formats.Contains("*DROP"), cancellationToken: _cancellationToken); }
+            replace: option is "*NONE" or "*UPDADD" ? null : option == "*REPLACE", map: formats.Contains("*MAP"), drop: formats.Contains("*DROP"),
+            cancellationToken: _cancellationToken, createFile: create == "*YES"); }
         catch (Microsoft.Data.Sqlite.SqliteException error) when (error.SqliteExtendedErrorCode == 275)
         { throw new CpfException("CPF502F", "Check constraint violation on file member."); }
         catch (Microsoft.Data.Sqlite.SqliteException error) when (Ipc.Db.Store.DatabaseRecordErrors.IsReferentialConstraintFailure(error))

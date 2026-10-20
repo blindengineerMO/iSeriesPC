@@ -21,7 +21,7 @@ public class CommandContractTests
 
     [Theory]
     [InlineData("CPYF FROMFILE(A) TOFILE(B) FROMKEY(1 10)")]
-    [InlineData("CPYF A B")]
+    [InlineData("CPYF A B C D E F G")]
     public void Unsupported_parameters_never_reach_the_handler(string line)
     {
         var invoked = false;

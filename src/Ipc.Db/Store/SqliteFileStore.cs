@@ -585,7 +585,7 @@ public sealed partial class SqliteFileStore
 
     private void CreateFileImage(SqliteConnection connection, SqliteTransaction transaction, string libraryName, string fileName,
         string attribute, FileDefinition definition, string? source, string? description, string member,
-        Ipc.Db.Sql.SqlNaming? sqlNaming = null, AuthorityBit? publicAuthority = null, string? owner = null)
+        Ipc.Db.Sql.SqlNaming? sqlNaming = null, AuthorityBit? publicAuthority = null, string? owner = null, bool authorizationListPublic = false)
     {
         using (var exists = connection.CreateCommand())
         {
@@ -603,6 +603,7 @@ public sealed partial class SqliteFileStore
             Description = description, Format = definition.PrimaryFormat.Name,
             PublicAuthority = publicAuthority ?? Authorities.UseBits,
         };
+        if (authorizationListPublic) descriptor.UseAuthorizationListPublicAuthority = true;
         if (sqlNaming is { } naming) CreateSqlTableDescriptor(connection, transaction, descriptor, naming);
         else _objects.Create(descriptor, connection, transaction);
         using var cmd = connection.CreateCommand();

@@ -161,8 +161,12 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         command.Parameters.AddWithValue("$lib", file.Library); command.Parameters.AddWithValue("$name", file.Name.Value); return Convert.ToInt64(command.ExecuteScalar()) == 1;
     }
 
-    public void Relocate(QualifiedName source, string type, QualifiedName target, bool copy = false, string? newOwner = null)
+    public void Relocate(QualifiedName source, string type, QualifiedName target, bool copy = false, string? newOwner = null,
+        bool copyData = true, bool copyConstraints = true, CancellationToken cancellationToken = default)
     {
+        if (!copy && (!copyData || !copyConstraints)) throw new ArgumentException("Copy options require a copy operation.");
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, factory.ShutdownToken);
+        var token = lifetime.Token; token.ThrowIfCancellationRequested();
         var temporary = new Ipc.Services.Work.JobTemporaryLibrary(factory);
         source = temporary.Resolve(source, type); target = temporary.Resolve(target, type);
         if (type == ObjectType.Library) { temporary.RequirePermanentLibrary(source.Name.Value); temporary.RequirePermanentLibrary(target.Name.Value); }
@@ -175,7 +179,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
             if (newOwner != identity.Principal) authorization.RequireSpecial(Ipc.Core.Security.SpecialAuthority.SecurityAdministrator);
         }
         authorization.RequireObject(source.Library, source.Name.Value, type,
-            copy ? AuthorityBit.ObjectOperate | AuthorityBit.Read : AuthorityBit.ObjectManagement);
+            copy ? AuthorityBit.ObjectOperate | AuthorityBit.Read | AuthorityBit.ObjectManagement : AuthorityBit.ObjectManagement);
         if (!copy) new Ipc.Services.Work.JobLockStore(factory).RequireNoPersistentAllocation(new(source.Library, source.Name.Value, type));
         new Ipc.Services.Work.JobLockStore(factory).RequireObjectMutation(target.Library, target.Name.Value, type);
         authorization.RequireObject("QSYS", target.Library, ObjectType.Library, AuthorityBit.ObjectOperate | AuthorityBit.Add, checkLibrary: false);
@@ -192,8 +196,9 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
             throw new ArgumentException("A new owner is supported only for a copy and must be a valid profile name.");
         if (type == ObjectType.UserProfile)
             throw new CpfException("IPC0003", "Profile identities cannot be renamed, moved, or copied through generic object operations.");
+        using var referential = new SqlForeignRelocationEstablishment(factory, token);
         using var connection = factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
+        using var transaction = SqliteCancellation.BeginWrite(connection, token);
         if (!copy && type is ObjectType.File or ObjectType.Library)
         {
             using var dependents = connection.CreateCommand(); dependents.Transaction = transaction;
@@ -210,14 +215,25 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 locks.RequireObjectMutation(logicalFile.Library, logicalFile.Name, ObjectType.File);
             }
         }
+        referential.Prepare(connection, transaction, source, target, type, copy, newOwner, copyData, copyConstraints);
         if (type == ObjectType.Library) RenameLibrary(connection, transaction, source, target, copy);
-        else RelocateOne(connection, transaction, source, type, target, copy, newOwner);
+        else RelocateOne(connection, transaction, source, type, target, copy, newOwner,
+            preparedSqlDefinition: referential.CopyDefinition, sqlPrepared: copy && type == ObjectType.File,
+            copyData: copyData, copyConstraints: copyConstraints, cancellationToken: token);
+        referential.Complete(connection, transaction);
         if (type is ObjectType.File or ObjectType.Library) SqlForeignCatalog.ValidateBindings(connection,transaction);
-        transaction.Commit();
+        authorization.RequireBoundObject(connection, transaction, copy ? source.Library : target.Library,
+            copy ? source.Name.Value : target.Name.Value, copy ? AuthorityBit.ObjectOperate | AuthorityBit.Read | AuthorityBit.ObjectManagement : AuthorityBit.ObjectManagement,
+            objectType: type, checkDataState: false);
+        authorization.RequireBoundObject(connection, transaction, "QSYS", target.Library,
+            AuthorityBit.ObjectOperate | AuthorityBit.Add, objectType: ObjectType.Library, checkLibrary: false);
+        token.ThrowIfCancellationRequested(); transaction.Commit();
     }
 
     internal static void RelocateOne(SqliteConnection connection, SqliteTransaction transaction,
-        QualifiedName source, string type, QualifiedName target, bool copy, string? newOwner = null, bool allowRestrictedUserSpaceArchive = false)
+        QualifiedName source, string type, QualifiedName target, bool copy, string? newOwner = null, bool allowRestrictedUserSpaceArchive = false,
+        string? preparedSqlDefinition = null, bool sqlPrepared = false, bool copyData = true, bool copyConstraints = true,
+        CancellationToken cancellationToken = default)
     {
         var op = new Operation(connection, transaction, source, target, type, newOwner);
         if (op.Number("SELECT count(*) FROM sys_objects WHERE lib=$lib AND name=$name AND type=$type") != 1)
@@ -248,7 +264,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         if (!copy && op.Number("SELECT count(*) FROM sys_object_dependencies WHERE source_type='*CMD' AND target_lib=$lib AND target_name=$name AND target_type=$type") > 0)
             throw new CpfException("IPC0201", "Object is bound by a command definition; remove or recompile its commands before relocation.");
         if (!copy) ValidateWorkOperation(op, type);
-        var sqlDefinition = type == ObjectType.File ? SqlConstraintCatalog.PrepareRelocation(connection, transaction, source, target, copy) : null;
+        var sqlDefinition = type == ObjectType.File ? sqlPrepared ? preparedSqlDefinition : SqlConstraintCatalog.PrepareRelocation(connection, transaction, source, target, copy, copyConstraints, copyData, cancellationToken) : null;
         if (type == ObjectType.File)
         {
             var related = SqlForeignCatalog.Files(connection,transaction).Where(file => file.Key == source && (file.Definition.SqlTable?.ForeignKeys?.Count ?? 0) != 0 ||
@@ -258,7 +274,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         }
         var tables = op.Members().Select(member =>
             (Source: $"{source.Library}.{source.Name}.{member}", Target: $"{target.Library}.{target.Name}.{member}")).ToArray();
-        if (copy) new MemberTableCopy(connection, transaction).Copy(tables, SqlConstraintCatalog.CheckCopySql(connection, transaction, source, target, sqlDefinition));
+        if (copy) CopyMembers(connection, transaction, source, target, tables, sqlDefinition, copyData, copyConstraints, cancellationToken);
         else foreach (var table in tables) op.Run($"ALTER TABLE {Quote(table.Source)} RENAME TO {Quote(table.Target)}");
 
         if (copy)
@@ -283,7 +299,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 updateSql.Parameters.AddWithValue("$def", sqlDefinition); updateSql.Parameters.AddWithValue("$lib", target.Library); updateSql.Parameters.AddWithValue("$name", target.Name.Value); updateSql.ExecuteNonQuery();
             }
             op.Run("INSERT INTO sys_file_members SELECT $targetLib,$targetName,type,mbr,$now FROM sys_file_members WHERE lib=$lib AND name=$name AND type=$type");
-            if (type == ObjectType.File) RecordSlots.CopyState(connection, transaction, source.Library, source.Name.Value, target.Library, target.Name.Value);
+            if (type == ObjectType.File) RecordSlots.CopyState(connection, transaction, source.Library, source.Name.Value, target.Library, target.Name.Value, copyData);
             op.Run("INSERT INTO sys_authorities SELECT $targetLib,$targetName,type,holder,is_authl,bits FROM sys_authorities WHERE lib=$lib AND name=$name AND type=$type");
             op.Run("""
                 INSERT INTO sys_object_dependencies

@@ -85,14 +85,14 @@ internal static class RecordSlots
         if (high >= MaximumNumber) throw new CpfException("CPF5030", "The physical member has no further relative record positions.");
         return high+1;
     }
-    internal static void CopyState(SqliteConnection connection, SqliteTransaction transaction, string sourceLibrary, string sourceFile, string targetLibrary, string targetFile)
+    internal static void CopyState(SqliteConnection connection, SqliteTransaction transaction, string sourceLibrary, string sourceFile, string targetLibrary, string targetFile, bool copyData = true)
     {
         if (!Available(connection,transaction)) return;
         using var command = Command(connection,transaction,"SELECT t.mbr,s.high_water FROM sys_record_slots t JOIN sys_record_slots s ON s.lib=$sourceLib AND s.name=$sourceFile AND s.type=t.type AND s.mbr=t.mbr JOIN sqlite_schema x ON x.type='table' AND x.name=t.lib||'.'||t.name||'.'||t.mbr WHERE t.lib=$targetLib AND t.name=$targetFile AND t.type='*FILE'");
         command.Parameters.AddWithValue("$sourceLib",sourceLibrary); command.Parameters.AddWithValue("$sourceFile",sourceFile); command.Parameters.AddWithValue("$targetLib",targetLibrary); command.Parameters.AddWithValue("$targetFile",targetFile);
         var members=new List<(string Member,long High)>(); using(var reader=command.ExecuteReader())while(reader.Read())members.Add((reader.GetString(0),reader.GetInt64(1)));
         foreach(var item in members)
-        { InstallMember(connection,transaction,targetLibrary,targetFile,item.Member); var id=Identity(connection,transaction,targetLibrary,targetFile,item.Member)!; Reserve(connection,transaction,id,item.High); }
-        MemberCapacity.Copy(connection,transaction,sourceLibrary,sourceFile,targetLibrary,targetFile);
+        { InstallMember(connection,transaction,targetLibrary,targetFile,item.Member); if (copyData) { var id=Identity(connection,transaction,targetLibrary,targetFile,item.Member)!; Reserve(connection,transaction,id,item.High); } }
+        if (copyData) MemberCapacity.Copy(connection,transaction,sourceLibrary,sourceFile,targetLibrary,targetFile);
     }
 }

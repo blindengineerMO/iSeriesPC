@@ -4262,3 +4262,248 @@ contracts and independent native goldens remain open. C07/C08/C09 stay partial;
 checklist stays 36 complete / 70 open. Main schema stays 35, coordination stays 2
 and catalog stays 325 entries / 182 defined adapters.
 See docs/sql-foreign-keys-progress.md.
+
+SQL constraint member removal and RMVM selection development checkpoint (2026-10-20)
+
+C08 now changes established foreign relationships to defined when the sole parent
+or dependent member is removed, preserving file-level definitions and disabled/
+pending history. Parent removal retains surviving child rows, indexes, RRNs,
+record incarnations, views, unaffected/self references and application/journal
+triggers without running cascading row deletion. Dependent removal preserves its
+parent. Replacement members automatically reestablish relationships using their
+actual names and mark unmatched surviving data pending. Defined relationships
+permit ordinary I/O even when pending history remains recorded.
+
+The shared catalog path serves RMVM, the database facade and direct callers.
+Related physical/logical allocation checks precede schema probes; exclusive leases
+last through commit/rollback and enlisted resources reject removal. Publication
+rechecks root authority, live caller/job, related definitions/owners and member/
+slot identities, compiles surviving write paths and rejects late allocations.
+State-only copying preserves pending CHECK rows and restores CHECK/foreign
+enforcement without application/journal/version side effects. Unregistered SQL
+dependents and logical member bindings still prevent removal.
+
+RMVM now accepts required FILE/MBR arguments by keyword or position, prefix*
+member selectors and *ALL. Selectors reject malformed wildcards and unsupported
+special values before mutation. Selection snapshots member names and publishes
+each removal separately: blocked members preserve their diagnostics while later
+selected members are still attempted, with aggregate CPF7301 on failure. Exact
+member success messages remain available. The former management-only removal
+permission is corrected to file OBJEXIST+OBJOPR and library execute at entry and
+publication, without extra READ or related data/management grants. Compiled CL
+can monitor aggregate failures after partial success.
+
+The inherited member-removal implementation contributes 37 cases; this continuation
+adds 17 selector/CL/referential cases. All 359 focused checks and all 7713 solution
+tests pass with zero failures/skips. The full suite uses four xUnit workers and
+completes in 11:47.83. Locked restore, a zero-warning/error Release build and
+1335 unchanged source/build/test inputs pass. Complete display PTY passes
+at 24x80 and 27x132, including prefix/positional and *ALL removal, replacement
+member names, pending rejection, repair and restored enforcement. Generated
+inventory, local links and phase whitespace pass. Logs remain under
+/tmp/iseriespc-member-final-; the original five member-removal probes and expanded
+186/188 run are retained under /tmp/iseriespc-sqlrmvm-. The new selection probes
+failed 14/14 before the handler change; the expanded 254-case run and final
+359-case/full/PTY repeats pass.
+
+This is development verification. Full native diagnostic/feedback and lock-mode
+acceptance, relocation/duplicate-parent/restore/archive transitions, mismatching
+referenced-type ALTER, private-unit delegation/publication, outgoing parent reads,
+implicit child allocation lifetimes, CPYF CRTFILE, restart/large-scale/cancellation
+acceptance, journal/commitment/delete-path contracts and independent native goldens
+remain open. C07/C08/C09 stay partial; checklist stays 36 complete / 70 open.
+Main schema stays 35, coordination stays 2 and catalog stays 325 entries /
+182 defined adapters. See docs/sql-foreign-keys-progress.md.
+
+SQL automatic relocation establishment development checkpoint (2026-10-20)
+
+C08 now attempts to establish defined foreign relationships when a parent is
+moved or renamed into its expected identity, a parent is duplicated, or a library
+rename supplies the missing parent namespace. The shared catalog writer owns the
+transition, so direct callers and MOVOBJ/RNMOBJ/CRTDUPOBJ share the same behavior.
+Existing established references continue following relocated objects. Actual
+member names are bound; valid rows enforce immediately, unmatched rows become
+pending, disabled relations stay disabled/pending, and incompatible or zero-member
+parents leave the relation defined until a compatible member/definition arrives.
+
+Related physical/logical allocations are checked before schema probes, enlisted
+resources reject relocation, and exclusive leases remain through commit/rollback.
+Expected definitions, ownership and member/slot identities are projected from the
+pre-operation state, then rechecked after relocation and after delegated metadata
+hooks. Copy plans use the exact prepared constraint names/bindings. Live caller/job
+and required root/destination-library authority are checked on the publishing
+writer; related data/management rights are not required. Late identity, authority,
+job-state or orphan-data changes roll back the root and related changes together.
+
+A shared same-name member rewrite now serves establishment and RMVM. It preserves
+physical layouts, RRNs/incarnations, indexes, views, unaffected/self references,
+CHECK state and application/journal hooks without copying side effects. Its final
+same-name rename leaves external hook references intact, explicitly preserves
+self references and restores normal SQLite rename/CHECK/foreign settings. This
+fixes catalog hooks referencing a child during its temporary schema replacement.
+Managed partial SET NULL hooks are recreated against the newly bound parent.
+
+Thirty-two new cases cover service/native commands, library rename, actual member
+names, disabled/pending/incompatible/zero-member states, retained child/index
+queries, record enlistment, delegated authority, revocation, live cancellation/job
+end, pre/post-plan identity changes, orphan-data publication, successful catalog
+hooks, normal later rename propagation, composite SET NULL, self/external references
+and record/index/view/journal preservation. All 482 focused checks and all 7745
+solution tests pass with zero failures/skips. The full suite uses four xUnit
+workers and completes in 12:15.24. Locked restore, a zero-warning/error Release
+build and 1338 unchanged source/build/test inputs pass. Full display PTY passes
+at 24x80 and 27x132, including rename, move and duplicate-parent establishment
+(SQL-RELOCATE-ESTABLISH), prior member transitions, pending repair and CL/RPG
+cascades. Generated inventory, local links and whitespace pass.
+
+The original five probes failed. The first expanded run passed 218/222: three
+fixtures expected restriction from explicitly cascading relationships and one
+attempted a move into a schema already holding the same constraint name. Those
+fixtures now assert the actual cascade and use an isolated holding library. The
+next 442/444 run retained the old library fixture and exposed the real SQLite
+catalog-trigger rename gap; the shared rewrite fix makes all 43 targeted and final
+482 focused/full/PTY checks pass. An initial compilation error assigned an
+init-only definition name; projected definitions now use their JSON contract.
+Logs and baseline remain under /tmp/iseriespc-relocation-.
+
+This is development verification. Restore/archive transitions, complete native
+CRTDUPOBJ DATA/CST option semantics, mismatching referenced-type ALTER, private-unit
+delegation/publication, outgoing parent reads, implicit child allocation lifetimes,
+full native pending OPEN/diagnostic/feedback/lock-mode contracts, CPYF CRTFILE,
+legacy/restart/competing-writer/cancellation/scale, journal/commitment/delete-path
+contracts and independent native goldens remain open. C07/C08/C09 stay partial;
+checklist remains 36 complete / 70 open. Main schema stays 35, coordination stays 2
+and catalog stays 325 entries / 182 defined adapters.
+See docs/sql-foreign-keys-progress.md.
+
+CRTDUPOBJ DATA/CST development checkpoint (2026-10-20)
+
+Native CRTDUPOBJ now defaults DATA(*NO) and CST(*YES), accepts its first five
+positional parameters, and resolves TOLIB(*FROMLIB/*SAME/*CURLIB) and
+NEWOBJ(*OBJ/*SAME). DATA/CST reject unsupported values; DATA(*YES) on a non-file
+reports CPF2116. Prompt and persistent command metadata expose the same defaults;
+an unmodified legacy seed upgrades on restart. Compiled CL and terminal commands
+share the native handler. The generic catalog copy API retains its existing
+record-copy default and exposes explicit copyData/copyConstraints choices.
+
+Members and source-file attributes survive empty copies; record slots start at
+zero and dynamic capacity grants reset. DATA(*YES) retains rows, sparse RRNs,
+deleted extents and capacity grants while assigning fresh member/row identities.
+CST(*NO) removes SQL primary/unique/CHECK/foreign metadata, schema clauses and
+constraint-owned paths, including paths renamed by earlier copies. Explicit
+column defaults/NOT NULL and native DDS UNIQUE attributes remain. CST(*YES)
+retains CHECK state/status, including pending old rows, with ordinary enforcement
+restored after transfer. Foreign bindings use the destination parent and actual
+member; empty copies validate empty data, and zero-member files retain defined
+relationships until member addition. Defined children establish only when a
+copied parent supplies a compatible key. Application hooks are copied after data
+transfer, managed hooks are regenerated, and journal bindings are not cloned.
+
+Both native and direct copies now require source USE plus OBJMGT, including a
+writer-side recheck of each bit after hooks. Live caller ownership also works
+without an attached command job. Metadata copying can preserve pending source
+state without weakening ordinary record access. Cancellation reaches writer waits,
+physical row transfer and the final publication boundary; no partial object is
+published on cancellation or late authority revocation.
+
+All 35 new duplication cases and all 500 focused checks pass. All 7780 solution
+tests pass with zero failures/skips in 12:24.78 using four xUnit workers. Locked
+restore, a zero-warning/error Release build and 1341 frozen source/build/test
+inputs pass. Full PTY passes at 24x80 and 27x132, including positional default
+empty copies, copied data without constraints, normal constraint rejection and
+the existing SQL/member/CL/RPG flows (CRTDUPOBJ-DATA-CST). Generated inventory,
+local Markdown links and phase whitespace pass.
+
+The original six probes failed before implementation. Expanded regressions found
+pending-state authority checks blocking trusted metadata copies and a zero-member
+foreign binding gap; both now have production fixes. Existing positive authority
+fixtures explicitly grant the newly required source management bit, and the
+parent-establishment native fixture explicitly requests DATA(*YES). Tests also
+correctly distinguish explicit NOT NULL column attributes from primary-constraint
+checks and assert native DDS uniqueness through the shared SQL diagnostic layer.
+One restart fixture needed globally qualified System namespaces. Logs, baselines
+and verification scripts remain under /tmp/iseriespc-duplicate-.
+
+This is development verification. CRTDUPOBJ generic/multiple-object and OBJTYPE
+selection, TRG/FILEID/ACCCTL, logical rebinding, save-file/ASP/automatic-journal/
+group-owner contracts and independent native goldens remain open. Restore/archive,
+referenced-type ALTER, private-unit delegation/publication, outgoing parent reads,
+implicit child allocation lifetimes, native pending OPEN/diagnostic/feedback/lock
+contracts, CPYF CRTFILE, broader legacy/restart/concurrency/scale and journal/
+commitment/delete-path acceptance also remain open. C07/C08/C09 and the command
+stay partial; checklist remains 36 complete / 70 open. Main schema stays 35,
+coordination stays 2 and catalog stays 325 entries / 182 defined adapters.
+See docs/object-duplication.md and docs/sql-foreign-keys-progress.md.
+
+CPYF CRTFILE development checkpoint (2026-10-20)
+
+CPYF now supports CRTFILE(*YES) through the shared CopyRecords service, direct
+commands, compiled CL and the terminal. The first six parameters may be positional;
+prompt/seed metadata publishes FROMMBR/TOMBR(*FIRST), MBROPT(*NONE), CRTFILE(*NO)
+and FMTOPT(*NONE). New files ignore a valid MBROPT and append the staged rows.
+Existing files keep their own definition and require the supported ADD/REPLACE
+choice. Creating a missing file requires an explicit target library or *CURLIB.
+TOMBR(*FIRST) uses the source file name for a new file; *FROMMBR and explicit names
+use the resolved member. Other source members are not implicitly duplicated.
+
+Physical/source and simple logical sources retain their record layouts, key order,
+selection and source width. SQL table/index input becomes a native physical file;
+registered SQL primary/unique/CHECK/foreign constraints and SQL defaults are
+omitted. Native DDS UNIQUE remains an access-path attribute. No application
+triggers, dependent logical files or source journal bindings are cloned. Fresh
+record/member identities and compact record positions are assigned. Defined
+foreign dependents remain defined when no referenceable SQL key was created.
+
+The bounded TEMP snapshot is staged before target DDL. File creation, member/
+record-slot metadata, access paths, copied authorities, automatic capacity grants
+and record writes publish in one writer transaction or roll back together. This
+retains iSeriesPC's existing atomic-copy extension. New-file capacity extends to
+fit the staged load without an operator inquiry and survives restart. Source USE
+is sufficient; OBJMGT is not required for creation from a readable source.
+Destination-library use/add and CRTPF operation rights are checked on the writer.
+Public/private/authorization-list entries and public-list mode are copied, the
+live caller owns the new file, and its copied private entry receives ALL. Existing
+REPLACE now requires target OBJMGT as well as operation/add/delete permissions.
+
+Writer-side validation checks caller/job state, source/logical/base/target member
+identities, exact definitions and source/destination authority images after hooks
+and row transfer. Live cancellation/job end, revoked source/library/CRTPF rights,
+metadata/ownership changes and late row-hook failures cannot publish a partial
+file. A new file is exclusively allocated before DDL and keeps that allocation
+through commit/rollback; its rows do not acquire redundant per-record holders.
+QTEMP uses the already bound identity during post-DDL checks, avoiding a second
+main connection while SQLite holds the schema lock.
+
+All 37 new creation cases, 515 focused checks and the final 37-case targeted run
+pass. All 7817 solution tests pass with zero failures/skips in 12:12.50 using four
+xUnit workers. Locked restore, a zero-warning/error Release build and
+1342 unchanged full-suite source/build/test inputs plus the separately frozen
+PTY script pass. Full display PTY passes at
+24x80 and 27x132, including positional CRTFILE creation, copied records and SQL
+constraint omission (CPYF-CRTFILE). Generated inventory, local links and whitespace
+pass. Main schema stays 35, coordination stays 2 and catalog stays 325 entries /
+182 defined adapters. Logs/baseline/scripts remain under /tmp/iseriespc-cpyf-create-.
+
+Initial creation probes failed before implementation; one first-member fixture
+incorrectly tried to add a second member to an SQL MAXMBRS(1) table and now uses a
+native PF. Expanded checks exposed the real new-owner authority and post-DDL lock
+reentry gaps, both fixed. Additional fixtures corrected a numeric JSON boolean,
+a wrong message table, disabled initial profile credentials, an invalid terminal
+job state and an attempt to create an FK before its parent existed. The old
+unsupported-positional fixture now tests seven arguments beyond the supported
+six. The first extended PTY reused a duplication source while awaiting repeated
+completion messages and observed only one source row; the corrected fixture
+creates a fresh source with a unique two-row completion before copying. The
+original input manifest is retained, all compiled/full-suite inputs stay unchanged,
+and the revised PTY script is independently frozen before both-size verification.
+No denial assertions or partial compatibility statuses were removed.
+
+This is development verification. CPYF SQL-view/query sources, missing-member
+addition in existing targets, multiple formats/members, UPDADD, ranges/predicates,
+conversion/NOCHK/CVTSRC, native partial/error-level/diagnostic/feedback behavior,
+remaining allocation/capability/identifier/group-owner/automatic-journal contracts
+and independent native goldens remain open. Broader C07/C08/C09, referential
+restore/archive, referenced-type ALTER, private units, parent reads, commitment,
+implicit child allocation lifetimes, native feedback/locking and scale/restart
+acceptance remain unfinished. Checklist stays 36 complete / 70 open; the full
+thread goal remains active. See docs/file-copy.md.

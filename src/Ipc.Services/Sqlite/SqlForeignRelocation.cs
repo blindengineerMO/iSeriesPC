@@ -8,17 +8,22 @@ namespace Ipc.Services.Sqlite;
 
 internal static partial class SqlForeignCatalog
 {
-    internal static void CopyBindings(SqliteConnection connection, SqliteTransaction transaction, QualifiedName source, QualifiedName target, FileDefinition definition)
+    internal static void CopyBindings(SqliteConnection connection, SqliteTransaction transaction, QualifiedName source, QualifiedName target, FileDefinition definition,
+        bool copyData = true, CancellationToken token = default)
     {
         if (definition.SqlTable?.ForeignKeys is not { Count: > 0 } foreign) return;
         var files = Files(connection,transaction).ToDictionary(file => file.Key,file => file.Definition);
+        var sourceMember = OptionalMember(connection, transaction, source);
         var result = new List<SqlForeignConstraint>();
         foreach (var item in foreign)
         {
+            token.ThrowIfCancellationRequested();
             var self = item.Parent.Schema == source.Library && item.Parent.Name == source.Name.Value;
             var parent = self ? target : new QualifiedName(item.Parent.Schema == source.Library ? target.Library : item.Parent.Schema!,item.Parent.Name);
-            if (self) { result.Add(item with { Parent = new(parent.Library,parent.Name.Value) }); continue; }
+            if (self)
+            { result.Add(item with { Parent = new(parent.Library,parent.Name.Value), CheckPending = item.Defined ? item.CheckPending : item.Disabled || copyData && item.CheckPending }); continue; }
             var rebound = item with { Parent = new(parent.Library, parent.Name.Value) };
+            if (sourceMember is null) { result.Add(rebound with { Defined = true, ParentMember = null }); continue; }
             string? member = null;
             if (files.TryGetValue(parent, out var parentDefinition))
                 try { ValidateReference(definition, item, parentDefinition); member = Member(connection, transaction, parent); }
@@ -27,7 +32,7 @@ internal static partial class SqlForeignCatalog
             rebound = rebound with { Defined = false, ParentMember = member };
             if (rebound.Disabled) rebound = rebound with { CheckPending = true };
             if (!rebound.Disabled)
-                rebound = rebound with { CheckPending = HasViolations(connection, transaction, source.Library + "." + source.Name.Value + "." + Member(connection, transaction, source), definition, rebound, CancellationToken.None) };
+                rebound = rebound with { CheckPending = copyData && HasViolations(connection, transaction, source.Library + "." + source.Name.Value + "." + sourceMember, definition, rebound, token) };
             result.Add(rebound);
         }
         definition.SqlTable = definition.SqlTable with { ForeignKeys = result };

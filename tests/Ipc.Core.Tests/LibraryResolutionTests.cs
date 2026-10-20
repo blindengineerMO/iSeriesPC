@@ -27,6 +27,7 @@ public sealed class LibraryResolutionTests
         Assert.False(commands.Execute("CRTSRCPF FILE(SRC)").IsError);
         Assert.True(system.Objects.Exists("WORK", "SRC", ObjectType.File));
         Assert.Equal("FIRST", system.Objects.GetRequired("WORK", "SRC", ObjectType.File).Owner);
+        system.Security.Authority.Grant("WORK", "SRC", ObjectType.File, "SECOND", AuthorityBit.ObjectOperate | AuthorityBit.Read | AuthorityBit.ObjectManagement);
         Assert.False(new CommandService(system, second).Execute("CRTDUPOBJ OBJ(SRC) FROMLIB(WORK) OBJTYPE(*FILE) TOLIB(QGPL) NEWOBJ(COPY)").IsError);
         Assert.Equal("SECOND", system.Objects.GetRequired("QGPL", "COPY", ObjectType.File).Owner);
         Assert.Equal("WORK", system.Jobs.GetRequired(first.Key).CurrentLibrary);

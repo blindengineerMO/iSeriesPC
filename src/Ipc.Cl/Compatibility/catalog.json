@@ -301,9 +301,17 @@
         "FROMLIB",
         "OBJTYPE",
         "TOLIB",
-        "NEWOBJ"
+        "NEWOBJ",
+        "DATA",
+        "CST"
       ],
-      "maxPositional": 0
+      "maxPositional": 5,
+      "defaults": {
+        "TOLIB": "*FROMLIB",
+        "NEWOBJ": "*OBJ",
+        "DATA": "*NO",
+        "CST": "*YES"
+      }
     },
     {
       "name": "MOVOBJ",
@@ -477,9 +485,17 @@
         "FROMMBR",
         "TOMBR",
         "MBROPT",
+        "CRTFILE",
         "FMTOPT"
       ],
-      "maxPositional": 0
+      "maxPositional": 6,
+      "defaults": {
+        "FROMMBR": "*FIRST",
+        "TOMBR": "*FIRST",
+        "MBROPT": "*NONE",
+        "CRTFILE": "*NO",
+        "FMTOPT": "*NONE"
+      }
     },
     {
       "name": "CPYTOIMPF",

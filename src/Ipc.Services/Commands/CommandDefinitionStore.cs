@@ -24,7 +24,7 @@ public sealed class CommandDefinitionStore(SqliteConnectionFactory factory)
             var existing = objects.GetForAuthorization("QSYS", name, ObjectType.Command);
             var metadata = BuiltinContract.Metadata(name)!;
             var definition = new CommandDefinition { Builtin = name, Title = name, MaximumPositional = metadata.MaximumPositional,
-                Parameters = metadata.Parameters.Select(p => new ParameterDefinition { Keyword = p.Keyword, Type = "*RAW", Length = p.MaximumLength, Prompt = p.Prompt, Secret = p.Secret, Literal = p.Literal }).ToArray() };
+                Parameters = metadata.Parameters.Select(p => new ParameterDefinition { Keyword = p.Keyword, Type = "*RAW", Length = p.MaximumLength, Prompt = p.Prompt, Secret = p.Secret, Literal = p.Literal, Default = p.DefaultValue }).ToArray() };
             var json = definition.ToJson();
             var fingerprint = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(json)));
             if (existing is not null)

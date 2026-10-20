@@ -115,3 +115,31 @@ state change with CPF32B2. CHECK(*NO) still skips existing-row verification.
 Automatic-establishment development verification (2026-10-19): all 7659 solution
 tests and 834 focused checks pass, with locked restore, a zero-warning/error build,
 1077 frozen inputs and full PTY at both sizes. The full suite completes in 11:36.04.
+
+Referential parent member removal preserves pending CHECK rows while rewriting
+the surviving child's schema, without firing application/journal triggers or
+changing record versions. Normal CHECK enforcement returns before publication.
+Member-removal development verification (2026-10-20): all 7713 solution tests and
+359 focused checks pass, with locked restore, a zero-warning/error build, 1335
+unchanged source/build/test inputs and full PTY at both sizes (11:47.83 full suite).
+The remaining native acceptance contracts stay open.
+
+Relocation establishment and RMVM now share the same state-preserving member
+rewrite. Existing pending CHECK rows survive copying, normal CHECK enforcement
+returns before publication and catalog hooks referencing the replaced child stay
+valid. Relocation development verification (2026-10-20): all 7745 solution tests,
+482 focused checks, locked restore, a zero-warning/error build, 1338 unchanged
+inputs and full PTY at both sizes pass (12:15.24 full suite). Native acceptance
+contracts above remain open.
+
+Native [CRTDUPOBJ DATA/CST](object-duplication.md) now defaults to an empty copy
+with constraints. CST(*NO) omits registered SQL constraints and their managed
+paths; explicit NOT NULL/default column attributes and native DDS UNIQUE remain.
+CST(*YES) preserves CHECK state/status even for DATA(*NO). Pending old rows transfer
+under a temporary CHECK override, which is restored before ordinary I/O; failed
+copies roll back all schema/data/catalog changes. Source authority is rechecked
+without requiring ordinary data access to a pending source. The shared API keeps
+record-copy defaults. Duplication verification (2026-10-20): 35 new cases, 500
+focused checks, all 7780 solution tests (12:24.78), zero-warning build, 1341
+unchanged inputs and full PTY at both sizes pass. Broader native acceptance remains
+open.

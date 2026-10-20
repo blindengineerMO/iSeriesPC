@@ -9,6 +9,18 @@ namespace Ipc.Services.Sqlite;
 
 internal static class SqlConstraintCatalog
 {
+    internal static bool IsConstraintIndex(string name)
+    {
+        foreach (var prefix in new[] { "ipc_sql_unique_", "ipc_sql_reference_", "ipc_sql_foreign_" })
+        {
+            var offset = name.LastIndexOf(prefix, StringComparison.Ordinal);
+            if (offset >= 0 && name.Length - offset == prefix.Length + 64 &&
+                (offset == 0 || name[..offset].EndsWith(".index.", StringComparison.Ordinal)) &&
+                name[(offset + prefix.Length)..].All(char.IsAsciiHexDigit)) return true;
+        }
+        return false;
+    }
+
     internal static void ValidateLimits(SqliteConnection connection, SqliteTransaction transaction,
         params (QualifiedName Key, FileDefinition Definition)[] replacements)
     {
@@ -41,14 +53,20 @@ internal static class SqlConstraintCatalog
         var original = FileDefinition.FromJson((string)read.ExecuteScalar()!);
         var beforeChecks = original.SqlTable?.Checks ?? []; var afterChecks = target.SqlTable?.Checks ?? [];
         var beforeForeign = original.SqlTable?.ForeignKeys ?? []; var afterForeign = target.SqlTable?.ForeignKeys ?? [];
-        if (beforeChecks.Count != afterChecks.Count || beforeForeign.Count != afterForeign.Count) throw new CpfException("IPC0201", "Constraint copy metadata changed shape.");
-        var changes = beforeChecks.Select((check, ordinal) => (Old: check.Disabled ? "" : SqlCheckRuntime.Sql(original.PrimaryFormat, check), New: afterChecks[ordinal].Disabled ? "" : SqlCheckRuntime.Sql(target.PrimaryFormat, afterChecks[ordinal])))
+        if (afterChecks.Count != 0 && beforeChecks.Count != afterChecks.Count || afterForeign.Count != 0 && beforeForeign.Count != afterForeign.Count)
+            throw new CpfException("IPC0201", "Constraint copy metadata changed shape.");
+        var changes = beforeChecks.Select((check, ordinal) => (Old: check.Disabled ? "" : SqlCheckRuntime.Sql(original.PrimaryFormat, check),
+                New: afterChecks.Count == 0 || afterChecks[ordinal].Disabled ? "" : SqlCheckRuntime.Sql(target.PrimaryFormat, afterChecks[ordinal])))
             .Concat(beforeForeign.Select((foreign, ordinal) => {
                 // SQLite's schema probe already renamed references to the copied file itself.
                 var probed = foreign.Parent.Schema == source.Library && foreign.Parent.Name == source.Name.Value ?
                     foreign with { Parent = new(targetKey.Library,targetKey.Name.Value) } : foreign;
-                return (Old: SqlForeignSchema.Enforced(probed) ? SqlForeignSchema.Clause(original.PrimaryFormat,probed) : "",New: SqlForeignSchema.Enforced(afterForeign[ordinal]) ? SqlForeignSchema.Clause(target.PrimaryFormat,afterForeign[ordinal]) : "");
-            })).Where(pair => pair.Old != pair.New).ToArray();
+                return (Old: SqlForeignSchema.Enforced(probed) ? SqlForeignSchema.Clause(original.PrimaryFormat,probed) : "",
+                    New: afterForeign.Count != 0 && SqlForeignSchema.Enforced(afterForeign[ordinal]) ? SqlForeignSchema.Clause(target.PrimaryFormat,afterForeign[ordinal]) : "");
+            })).Concat((original.SqlTable?.Constraints ?? []).Where(item => item.Primary &&
+                !(target.SqlTable?.Constraints ?? []).Any(after => after.Primary && after.Columns.SequenceEqual(item.Columns)))
+                .Select(item => (Old: "CHECK (" + string.Join(" AND ", item.Columns.Select(column => SqlForeignSchema.Quote(column) + " IS NOT NULL")) + ")", New: "")))
+            .Where(pair => pair.Old != pair.New).ToArray();
         if (changes.Length == 0) return null;
         return sql => {
             foreach (var (before, after) in changes)
@@ -79,12 +97,21 @@ internal static class SqlConstraintCatalog
         var result = new HashSet<string>(StringComparer.Ordinal); using var reader = command.ExecuteReader();
         while (reader.Read()) result.Add(reader.GetString(0)); return result;
     }
-    internal static string? PrepareRelocation(SqliteConnection connection, SqliteTransaction transaction, QualifiedName source, QualifiedName target, bool copy)
+    internal static string? PrepareRelocation(SqliteConnection connection, SqliteTransaction transaction, QualifiedName source, QualifiedName target, bool copy,
+        bool copyConstraints = true, bool copyData = true, CancellationToken token = default)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT def FROM sys_file_defs WHERE lib=$lib AND name=$name AND type='*FILE'";
         command.Parameters.AddWithValue("$lib", source.Library); command.Parameters.AddWithValue("$name", source.Name.Value);
         if (command.ExecuteScalar() is not string json || JsonNode.Parse(json) is not JsonObject definition || definition["sqlTable"]?["constraints"] is not JsonArray constraints) return null;
+        if (copy && !copyConstraints)
+        {
+            definition["sqlTable"]!["constraints"] = new JsonArray();
+            definition["sqlTable"]!.AsObject().Remove("checks"); definition["sqlTable"]!.AsObject().Remove("foreignKeys");
+            definition["name"] = target.Name.Value;
+            ValidateLimits(connection, transaction, (target, FileDefinition.FromJson(definition.ToJsonString())));
+            return definition.ToJsonString();
+        }
         var names = Names(connection, transaction, target.Library, copy ? null : source); var changed = false;
         foreach (var item in constraints.Concat(definition["sqlTable"]?["checks"] is JsonArray checks ? checks : new JsonArray()).Concat(definition["sqlTable"]?["foreignKeys"] is JsonArray foreign ? foreign : new JsonArray()))
         {
@@ -98,7 +125,7 @@ internal static class SqlConstraintCatalog
         if (copy && definition["sqlTable"]?["foreignKeys"] is JsonArray { Count: > 0 })
         {
             var copied = FileDefinition.FromJson(definition.ToJsonString());
-            SqlForeignCatalog.CopyBindings(connection,transaction,source,target,copied);
+            SqlForeignCatalog.CopyBindings(connection,transaction,source,target,copied,copyData,token);
             ValidateLimits(connection, transaction, (target, copied));
             definition["sqlTable"]!["foreignKeys"] = JsonNode.Parse(copied.ToJson())!["sqlTable"]!["foreignKeys"]!.DeepClone();
             changed = true;

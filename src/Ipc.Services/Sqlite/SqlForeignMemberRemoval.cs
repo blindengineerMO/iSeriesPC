@@ -143,45 +143,7 @@ internal sealed class SqlForeignMemberRemoval(SqliteConnectionFactory factory) :
     }
 
     private void RewriteDependent(SqliteConnection connection, SqliteTransaction transaction, QualifiedName key, string member, FileDefinition original, FileDefinition next)
-    {
-        var table = key.Library + "." + key.Name.Value + "." + member;
-        var clauses = original.SqlTable!.ForeignKeys!.Where(SqlForeignSchema.Enforced).Where(item =>
-            next.SqlTable!.ForeignKeys!.Single(after => after.Name == item.Name).Defined).Select(item => SqlForeignSchema.Clause(original.PrimaryFormat, item)).ToArray();
-        if (clauses.Length == 0) return;
-        var schema = new List<string>();
-        using (var read = connection.CreateCommand())
-        {
-            read.Transaction = transaction; read.CommandText = "SELECT sql FROM sqlite_schema WHERE tbl_name=$table AND type IN('index','trigger') AND sql IS NOT NULL ORDER BY type,name";
-            read.Parameters.AddWithValue("$table", table); using var reader = read.ExecuteReader(); while (reader.Read()) schema.Add(reader.GetString(0));
-        }
-        using var foreign = new SqlForeignDdlScope(connection);
-        using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "PRAGMA ignore_check_constraints"; var checks = Convert.ToInt64(command.ExecuteScalar());
-        try
-        {
-            command.CommandText = "PRAGMA ignore_check_constraints=ON"; command.ExecuteNonQuery();
-            var staging = "ipc_rmvm_" + Guid.NewGuid().ToString("N");
-            SqliteCancellation.Run(connection, factory.ShutdownToken, () => {
-                new MemberTableCopy(connection, transaction).Copy([(table, staging)], sql => {
-                    foreach (var clause in clauses)
-                    {
-                        var offset = sql.IndexOf(clause, StringComparison.Ordinal);
-                        if (offset < 0 || sql.IndexOf(clause, offset + clause.Length, StringComparison.Ordinal) >= 0)
-                            throw new CpfException("CPF32B2", "Constraint schema and metadata disagree during RMVM.");
-                        var comma = offset - 1; while (comma >= 0 && char.IsWhiteSpace(sql[comma])) comma--;
-                        if (comma < 0 || sql[comma] != ',') throw new CpfException("CPF32B2", "Invalid referential clause separator.");
-                        sql = sql[..comma] + sql[(offset + clause.Length)..];
-                    }
-                    return sql;
-                }, copySchemaObjects: false);
-                command.CommandText = "DROP TABLE " + SqlForeignSchema.Quote(table); command.ExecuteNonQuery();
-                command.CommandText = "ALTER TABLE " + SqlForeignSchema.Quote(staging) + " RENAME TO " + SqlForeignSchema.Quote(table); command.ExecuteNonQuery();
-                foreach (var sql in schema) { command.CommandText = sql; command.ExecuteNonQuery(); }
-                return 0;
-            });
-        }
-        finally { command.CommandText = "PRAGMA ignore_check_constraints=" + checks; command.ExecuteNonQuery(); }
-    }
+        => SqlForeignMemberRewrite.Apply(connection, transaction, key, member, original, next, factory.ShutdownToken);
 
     public void Dispose()
     { for (var index = _allocations.Count - 1; index >= 0; index--) _allocations[index].Dispose(); }
