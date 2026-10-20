@@ -102,13 +102,19 @@ public static partial class RpgCompiler
             var previewName = expression switch { RpgFieldRef root => root.Name,
                 RpgMemberRef { Target: RpgFieldRef owner } previewMember => owner.Name + "." + previewMember.Name, _ => null };
             if (previewName is not null && program.PreviewLayoutLookup?.Invoke(previewName, current) is { } preview)
+            {
+                if (preview.IsFileParameter) throw new RpgCompileException(line, "A file parameter has no data layout.");
                 return new(preview.Kind, preview.Length, preview.Decimals, ScalarDeclarationWidth(preview), preview.IsArray,
                     preview.Dimension, preview.ParameterStructure, preview.ParameterStructure?.IsMultipleOccurrence == true,
                     preview.ParameterStructure?.Occurrences ?? 1, preview.IsTable);
+            }
             if (expression is RpgFieldRef field)
             {
                 if (program.FindField(field.Name) is { } scalar)
+                {
+                    if (scalar.IsFileParameter) throw new RpgCompileException(line, "A file parameter has no data layout.");
                     return new(scalar.Kind, scalar.Length, scalar.Decimals, ScalarDeclarationWidth(scalar), scalar.IsArray, scalar.Dimension, Table: scalar.IsTable);
+                }
                 if (program.FindDs(field.Name) is { } ds)
                 {
                     var width = DeclarationStructureLength(program, ds);
@@ -143,7 +149,7 @@ public static partial class RpgCompiler
     private sealed record DeclarationLayout(RpgFieldKind Kind, int Length, int Decimals, int Width,
         bool Array = false, int Count = 1, RpgDataStructure? Structure = null, bool MultipleOccurrence = false, int Occurrences = 1, bool Table = false);
     private static DeclarationLayout ElementLayout(RpgDsElement field) => new(field.Kind, field.Length, field.Decimals,
-        field.StorageLength, field.IsArray, field.Dimension);
+        field.StorageLength, field.IsArray, field.Dimension, Structure: field.NestedStructure);
     private static int ScalarDeclarationWidth(RpgField field) => field.Kind switch
     {
         RpgFieldKind.Packed or RpgFieldKind.Decimal => (field.Length + 2) / 2,
@@ -155,7 +161,7 @@ public static partial class RpgCompiler
     {
         if (program.GlobalStructures.Contains(ds) && program.GlobalProgram is { } globals) return DeclarationStructureLength(globals, ds);
         return Math.Max(ds.Length, Math.Max(program.DeclarationStructureLengths.GetValueOrDefault(ds.Name),
-            ds.LikeDataStructure is { } parent ? DeclarationStructureLength(program, program.FindDs(parent)!) : 0));
+            ds.LikeDataStructure is { } parent && (program.FindDs(parent) ?? ExactActualType(program, RpgExpressionParser.Parse(parent))?.ParameterStructure) is { } layout ? DeclarationStructureLength(program, layout) : 0));
     }
     private static DeclarationLayout ValueLayout(object value, int line)
     {

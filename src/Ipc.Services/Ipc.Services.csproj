@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
+    <ProjectReference Include="../Ipc.Sql/Ipc.Sql.csproj" />
+    <Compile Remove="Sqlite/DatabaseSortKeys.cs" />
     <ProjectReference Include="../Ipc.Cl/Ipc.Cl.csproj" />
   </ItemGroup>
   <ItemGroup>

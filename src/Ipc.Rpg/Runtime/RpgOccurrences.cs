@@ -38,16 +38,19 @@ public sealed partial class RpgRuntimeContext
             return HasNonIntegralSource(absolute.Arguments[0]);
         if (source is RpgBuiltin { Name: "DEC", Arguments.Count: 3 } conversion)
             return RpgValues.ToLong(conversion.Arguments[2].Eval(this)) != 0;
-        return TryNativeReference(source, out var native) && native.Element is { } element &&
-            (element.Decimals != 0 || element.Kind == RpgFieldKind.Float);
+        return RpgCompiler.ExactActualType(_program, source) is { } type &&
+            (type.Decimals != 0 || type.Kind == RpgFieldKind.Float);
     }
     internal bool TryNativeArgument(RpgExpr expression, out NativeView view)
     {
         if (!TryNativeReference(expression, out view)) return false;
         EnsureNativeParameterAvailable(view);
         // Native parameters pass the entire MO structure, but only the selected occurrence of a subfield.
-        if (view.Element is null && view.Structure.IsMultipleOccurrence)
+        if (view.Element is null && view.Layout.IsMultipleOccurrence)
+        {
             view = view with { Offset = 0, Width = view.Bytes.Length };
+            if (view.Structure.BasedOn is not null) view = BindBasedStorage(view with { Binding = null });
+        }
         return true;
     }
 }

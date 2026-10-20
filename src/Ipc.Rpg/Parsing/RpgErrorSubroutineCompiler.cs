@@ -63,8 +63,8 @@ public static partial class RpgCompiler
             {
                 if (!ErrorFileOperation(statement.Opcode)) continue;
                 var operand = (statement.Factor2 ?? statement.Factor1 ?? "").ToUpperInvariant();
-                var file = program.DiskFiles.SingleOrDefault(f => f.Request.Name == operand || f.Layout.Record == operand)?.Request.Name ??
-                    program.Workstations.SingleOrDefault(f => f.Request.Name == operand || f.Layout.Records.Any(r => r.Name == operand))?.Request.Name;
+                var file = program.FindDisk(operand)?.Request.Name ??
+                    program.FindWorkstation(operand)?.Request.Name;
                 if (program.FileErrorHandlers.Any(f => f.File == file))
                     throw new RpgCompileException(statement.LineNumber, "A subprocedure cannot access a global file with INFSR.");
             }

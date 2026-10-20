@@ -73,6 +73,7 @@ public sealed class JobService
             CurrentLibrary = currentLibrary,
             LibraryList = libraryList,
             Ccsid = ccsid,
+            InquiryMessageReply = groupParent is { } parent ? new Ipc.Services.Messages.InquiryReplyPolicy(_factory).Get(parent) : "*RQD",
             SubmittedAt = SystemClock(),
             StartedAt = SystemClock(),
         };
@@ -149,6 +150,7 @@ public sealed class JobService
             Status = JobStatus.JobQueue,
             JobQueue = queue.ToString(),
             JobDescription = jobDescription,
+            InquiryMessageReply = jobDescription is null ? "*RQD" : new WorkDefinitionStore(_factory).JobDescription(QualifiedName.Parse(jobDescription,"QGPL").Library,QualifiedName.Parse(jobDescription,"QGPL").Name.Value)?.InquiryMessageReply ?? "*RQD",
             Priority = priority,
             UserProfile = profile ?? submitter,
             CurrentLibrary = currentLibrary,
@@ -264,6 +266,7 @@ public sealed class JobService
     {
         new ServiceAuthorization(_factory).RequireJob(key);
         if (reason.Length > 1024) throw new CpfException("IPC0123", "Job-end reason exceeds 1024 characters.");
+        using var queryResources = _factory.CloseJobRuntimeResources(key);
         using var connection = _factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT execution_state FROM sys_jobs WHERE number=$number AND name=$name AND user=$user";
@@ -301,6 +304,7 @@ public sealed class JobService
         if (state is JobExecutionState.Queued or JobExecutionState.Running || !Enum.IsDefined(state) ||
             (state == JobExecutionState.Succeeded) != (completion != JobCompletion.Abnormal))
             throw new CpfException("IPC0122", "Invalid job completion outcome.");
+        using var queryResources = _factory.CloseJobRuntimeResources(key);
         _factory.RecordTransactions.AbortJob(key);
         using var connection = _factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
@@ -335,6 +339,15 @@ public sealed class JobService
         WriteLogCore(key, "COMPLETION", messageId, completion == JobCompletion.Normal ? 0 : 40, text, connection, transaction);
         transaction.Commit();
         new JobLockStore(_factory).ReleaseJob(key);
+    }
+
+    internal void SystemMessageWait(JobKey job,bool waiting)
+    {
+        if(OperationIdentity.Current is { } identity && identity.Job!=job)throw new CpfException("CPF9802","Message wait belongs to another job.");
+        using var connection=_factory.Open();using var command=connection.CreateCommand();
+        command.CommandText="UPDATE sys_jobs SET status=$next WHERE number=$job AND name=$name AND user=$user AND execution_state='Running' AND cancel_requested=0 AND status=$previous";
+        command.Parameters.AddWithValue("$job",job.Number);command.Parameters.AddWithValue("$name",job.Name);command.Parameters.AddWithValue("$user",job.User);
+        command.Parameters.AddWithValue("$next",waiting?"MessageWait":"Active");command.Parameters.AddWithValue("$previous",waiting?"Active":"MessageWait");command.ExecuteNonQuery();
     }
 
     public void MessageWait(JobKey key, string? message)
@@ -551,12 +564,12 @@ public sealed class JobService
                 number, name, user, type, status, subsystem, jobq, priority, user_profile,
                 current_lib, libl, ccsid, submitter_name, submitter_user, submitted_at,
                 started_at, completed_at, description, routing_data, completion, completion_msg, auth_session,
-                job_description,job_class,run_priority,time_slice_ms,routing_program,startup_error,execution_state)
+                job_description,job_class,run_priority,time_slice_ms,routing_program,startup_error,execution_state,inquiry_reply)
             VALUES (
                 $number, $name, $user, $type, $status, $subsystem, $jobq, $priority, $profile,
                 $curlib, $libl, $ccsid, $subname, $subuser, $submitted,
                 $started, $completed, $description, $routing, $completion, $completion_msg, $auth_session,
-                $jobd,$class,$runpriority,$slice,$routeprogram,$startuperror,$executionstate);
+                $jobd,$class,$runpriority,$slice,$routeprogram,$startuperror,$executionstate,$inquiryreply);
             """;
         AddParameters(cmd, job);
         cmd.ExecuteNonQuery();
@@ -601,6 +614,7 @@ public sealed class JobService
         cmd.Parameters.AddWithValue("$curlib", (object?)job.CurrentLibrary ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$libl", (object?)job.LibraryList ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$ccsid", job.Ccsid);
+        cmd.Parameters.AddWithValue("$inquiryreply", job.InquiryMessageReply);
         cmd.Parameters.AddWithValue("$subname", (object?)job.SubmitterName ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$subuser", (object?)job.SubmitterUser ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$submitted", job.SubmittedAt?.ToString("o", System.Globalization.CultureInfo.InvariantCulture) ?? (object)DBNull.Value);
@@ -649,6 +663,7 @@ public sealed class JobService
             CurrentLibrary = N(9),
             LibraryList = N(10),
             Ccsid = reader.GetInt32(11),
+            InquiryMessageReply = reader.GetString(reader.GetOrdinal("inquiry_reply")),
             SubmitterName = N(12),
             SubmitterUser = N(13),
             SubmittedAt = D(14),

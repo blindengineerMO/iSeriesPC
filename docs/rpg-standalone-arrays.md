@@ -114,3 +114,7 @@ including continued keywords, CTDATA/ALT and inferred counts.
 
 [Standalone scalar declarations](rpg-native-scalars.md) now share this byte codec
 and allocation budget, preserving scalar metadata and live entry references.
+
+[Right-adjusted assignment](rpg-right-assignment.md) now supports character and
+structure arrays, scalar broadcast, elementwise expressions and captured
+overlapping SUBARR slices while preserving null flags.

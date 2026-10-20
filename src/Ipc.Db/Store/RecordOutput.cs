@@ -62,9 +62,15 @@ public sealed partial class SqliteFileStore
             }
             var writer = new DatabaseRecordWriter(Validate, values =>
             {
+                WithCapacityRecovery(token => {
+                    using var operation = locks.EnterRecordWrite(token);
+                    InsertCore(library, name, member, definition.PrimaryFormat.Name, values, token, Validate); return true;
+                }, lifetime.Token, _ => Validate());
+            }, replacement => { Owner(); lifetime.Rebind(replacement); }, resources, (number, values) =>
+            {
                 using var operation = locks.EnterRecordWrite(lifetime.Token);
-                InsertCore(library, name, member, definition.PrimaryFormat.Name, values, lifetime.Token, Validate);
-            }, replacement => { Owner(); lifetime.Rebind(replacement); }, resources);
+                InsertCore(library, name, member, definition.PrimaryFormat.Name, values, lifetime.Token, Validate, number);
+            });
             resources.Add(_factory.RegisterRuntimeResource(writer));
             return writer;
         }

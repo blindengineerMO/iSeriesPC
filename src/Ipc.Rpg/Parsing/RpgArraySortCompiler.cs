@@ -44,17 +44,19 @@ public static partial class RpgCompiler
             throw new RpgCompileException(line, "SORTA requires an array; a table name denotes its current element.");
         if (statement.SortFields.Count > 0)
         {
-            var ds = selected is RpgFieldRef root ? program.FindDs(root.Name) : null;
-            if (ds is not { NativeStorage: true, IsArray: true, Qualified: true })
+            var actual = ExactActualType(program, selected);
+            var ds = actual?.ParameterStructure;
+            if (ds is not { NativeStorage: true, Qualified: true } || actual?.IsArray != true)
                 throw new RpgCompileException(line, "%FIELDS requires an array data structure, optionally selected with %SUBARR.");
             foreach (var field in statement.SortFields)
-                if (ds.Find(field) is not { IsArray: false }) throw new RpgCompileException(line, "%FIELDS requires scalar subfields of its array data structure: " + field + ".");
+                if (ds.Find(field) is not { IsArray: false, NestedStructure: null }) throw new RpgCompileException(line, "%FIELDS requires scalar subfields of its array data structure: " + field + ".");
         }
         else if (selected is RpgElementRef { Target: RpgMemberRef { Target: RpgAllElementsRef } } or RpgMemberRef { Target: RpgAllElementsRef })
         {
             var indexed = selected as RpgElementRef; var key = (RpgMemberRef)(indexed?.Target ?? selected);
-            var ds = ((RpgAllElementsRef)key.Target).Target is RpgFieldRef root ? program.FindDs(root.Name) : null;
-            if (ds is not { NativeStorage: true, IsArray: true, Qualified: true } || ds.Find(key.Name) is not { } field || field.IsArray != (indexed is not null))
+            var actual = ExactActualType(program, ((RpgAllElementsRef)key.Target).Target);
+            var ds = actual?.ParameterStructure;
+            if (ds is not { NativeStorage: true, Qualified: true } || actual?.IsArray != true || ds.Find(key.Name) is not { NestedStructure: null } field || field.IsArray != (indexed is not null))
                 throw new RpgCompileException(line, "A keyed SORTA requires an array data structure and a scalar or indexed scalar subfield.");
         }
         else if (selected is RpgAllElementsRef || selected is RpgFieldRef name && program.FindDs(name.Name) is { NativeStorage: true, IsArray: true })

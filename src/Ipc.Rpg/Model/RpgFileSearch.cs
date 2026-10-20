@@ -7,6 +7,7 @@ public sealed class RpgFileSearch
 {
     public required RpgFileSearchKind Kind { get; init; }
     public IReadOnlyList<string> Expressions { get; init; } = [];
+    public IReadOnlyList<string?> NullIndicators { get; init; } = [];
     public string? DataStructure { get; init; }
     public string? CountExpression { get; init; }
 }

@@ -6,11 +6,11 @@ namespace Ipc.Services.Sqlite;
 internal static class MemberTableDependencies
 {
     public static bool HasExternalReferences(SqliteConnection connection, SqliteTransaction transaction,
-        IReadOnlyCollection<string> tables)
+        IReadOnlyCollection<string> tables, Func<string,string,string,string,bool>? managedSchema = null)
     {
         if (tables.Count == 0) return false;
         var owned = tables.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var original = ReadSchema(connection, transaction).Where(row => !owned.Contains(row.Table))
+        var original = ReadSchema(connection, transaction).Where(row => !owned.Contains(row.Table) && managedSchema?.Invoke(row.Type,row.Name,row.Table,row.Sql) != true)
             .ToDictionary(row => (row.Type, row.Name), row => row.Sql);
         Run(connection, transaction, "SAVEPOINT ipc_dependency_probe");
         try

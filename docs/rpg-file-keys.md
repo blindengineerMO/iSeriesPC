@@ -39,7 +39,8 @@ and `2*-3` no longer need spaces around their symbolic operators.
 order. An omitted count uses all of them. A supplied count is evaluated at each
 operation and must be an integer from 1 through both the available subfield
 count and the file key count. It may be a variable or expression. A scalar
-structure from the currently documented fixed D-spec subset is required;
+structure or indexed native array element is required; nested structures are
+supported and their indices are captured once. See [nested structures](rpg-nested-structures.md);
 arrayed structures are rejected. These rules follow IBM's
 [%KDS reference](https://www.ibm.com/docs/en/i/7.6.0?topic=functions-kds-search-arguments-in-data-structure).
 This feature uses the existing interpreter DS model; it does not establish native
@@ -106,9 +107,10 @@ Declared DISK input now binds external fields, access modes and open state; see
 [disk file declarations](rpg-disk-files.md). Declared noncommit update/delete modes now use retained input, N and UNLOCK.
 Commitment-open modes, complete RRN allocation/writeback, independent
 IBM golden acceptance, `EXPROPTS(*STRICTKEYS)`, H/M/R extenders, full fixed
-calculation layouts, nested DS declarations and complete memory/prototype ABI,
-null-indicator attributes and ALWNULL control remain unfinished. KFLD null flags
-fail explicitly. Full native update-read locks, isolation, access-path movement
+calculation layouts and complete memory/prototype ABI,
+complete formal/aggregate null-map interfaces remain unfinished. Native ALWNULL,
+scalar/list/KDS indicators and explicit KFLD null flags are supported; see
+[null values](rpg-null-values.md). Full native update-read locks, isolation, access-path movement
 and complete commitment commands remain open as described in
 [cursor navigation](cursor-navigation.md) and [record transactions](record-transactions.md).
 
@@ -118,3 +120,6 @@ E/EN/NE and numeric status/MONITOR now follow the bounded
 
 Free/qualified/array DCL-DS layouts now have [native byte storage](rpg-native-structures.md).
 %KDS uses native scalar subfield values; array-valued keys remain unsupported.
+
+Named variables and external indicator structures now use
+[named null maps](rpg-null-maps.md). Parameter maps remain open.

@@ -16,6 +16,7 @@ public static class RpgValues
 
     public static decimal ToDecimal(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("Pointer addresses do not support this conversion.") { StatusCode = 105 },
         object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         decimal d => d,
         long l => l,
@@ -38,6 +39,7 @@ public static class RpgValues
 
     public static long ToLong(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("Pointer addresses do not support this conversion.") { StatusCode = 105 },
         object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         long l => l,
         int i => i,
@@ -55,6 +57,7 @@ public static class RpgValues
 
     public static double ToDouble(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("Pointer addresses do not support this conversion.") { StatusCode = 105 },
         object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         double d => d,
         float f => f,
@@ -70,6 +73,7 @@ public static class RpgValues
 
     public static bool ToBool(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("Pointer addresses do not support this conversion.") { StatusCode = 105 },
         object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         bool b => b,
         null => false,
@@ -81,6 +85,7 @@ public static class RpgValues
 
     public static string ToText(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("A pointer address cannot be converted to character data.") { StatusCode = 105 },
         object?[] => throw new RpgRuntimeException("Array values require an array operation or an indexed element."),
         null => string.Empty,
         string s => s,
@@ -100,6 +105,7 @@ public static class RpgValues
 
     public static DateTimeOffset ToDate(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("Pointer addresses do not support this conversion.") { StatusCode = 105 },
         DateTimeOffset d => d,
         DateTime d => new DateTimeOffset(d),
         TimeSpan t => MinDate.Add(t),
@@ -112,6 +118,7 @@ public static class RpgValues
 
     public static TimeSpan ToTime(object? value) => value switch
     {
+        RpgProcedureAddress or RpgDataAddress or RpgNullAddress => throw new RpgRuntimeException("Pointer addresses do not support this conversion.") { StatusCode = 105 },
         TimeSpan t => t,
         DateTimeOffset d => d.TimeOfDay,
         DateTime d => d.TimeOfDay,
@@ -131,6 +138,8 @@ public static class RpgValues
 
     public static object Add(object? left, object? right)
     {
+        if (left is RpgDataAddress address) return address.Add(PointerOffset(right));
+        if (right is RpgDataAddress pointer) return pointer.Add(PointerOffset(left));
         if (left is string ls)
         {
             return ls + ToText(right);
@@ -149,8 +158,24 @@ public static class RpgValues
         return ToDecimal(left) + ToDecimal(right);
     }
 
+    private static long PointerOffset(object? value)
+    {
+        if (!IsNumeric(value) || IsFloat(value) || ToDecimal(value) != decimal.Truncate(ToDecimal(value))) throw RpgDataAddress.Failure(105, "Pointer arithmetic requires an integer byte offset.");
+        try { return checked((long)ToDecimal(value)); } catch (OverflowException) { throw RpgDataAddress.Failure(222, "Pointer offset overflow."); }
+    }
     public static object Subtract(object? left, object? right)
     {
+        if (left is RpgDataAddress address)
+        {
+            if (right is RpgDataAddress pointer)
+            {
+                if (address.Space != pointer.Space) throw RpgDataAddress.Failure(222, "Pointer subtraction requires the same storage space.");
+                try { return checked(address.Offset - pointer.Offset); } catch (OverflowException) { throw RpgDataAddress.Failure(222, "Pointer difference overflow."); }
+            }
+            var offset = PointerOffset(right);
+            if (offset == long.MinValue) throw RpgDataAddress.Failure(222, "Pointer offset overflow.");
+            return address.Add(-offset);
+        }
         if (IsDateLike(left) && IsDateLike(right))
         {
             if (left is TimeSpan leftTime && right is TimeSpan rightTime)
@@ -216,6 +241,20 @@ public static class RpgValues
 
     public static int Compare(object? left, object? right)
     {
+        if (left is RpgNullAddress) left = right is RpgDataAddress ? RpgDataAddress.Null : RpgProcedureAddress.Null;
+        if (right is RpgNullAddress) right = left is RpgDataAddress ? RpgDataAddress.Null : RpgProcedureAddress.Null;
+        if (left is RpgDataAddress || right is RpgDataAddress)
+        {
+            var a = left as RpgDataAddress;
+            var b = right as RpgDataAddress;
+            if (a is null || b is null) throw RpgDataAddress.Failure(105, "Basing pointers can only be compared with basing pointers or *NULL.");
+            return a.Space == b.Space ? a.Offset.CompareTo(b.Offset) : a.Space.CompareTo(b.Space);
+        }
+        if (left is RpgProcedureAddress || right is RpgProcedureAddress)
+        {
+            if (left is not RpgProcedureAddress a || right is not RpgProcedureAddress b) throw new RpgRuntimeException("Procedure addresses can only be compared with procedure addresses.") { StatusCode = 105 };
+            return a.Value.CompareTo(b.Value);
+        }
         if (left is Ipc.Core.Work.ProgramBuffer rawLeft && right is Ipc.Core.Work.ProgramBuffer rawRight)
         {
             var a = rawLeft.ToArray(); var b = rawRight.ToArray();

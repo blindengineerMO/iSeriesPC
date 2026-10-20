@@ -38,7 +38,8 @@ accepted because it overlaps the older project syntax.
 | 81 onward | Commentary, excluded from code and quote processing |
 
 Extended operations use columns 36–80 as one expression and require blank
-factor 1. EVAL, IF, WHEN, DOW, DOU, FOR, CALLP, ON-ERROR, RETURN and SORTA use
+factor 1. EVAL, EVALR, EVAL-CORR, IF, WHEN, DOW, DOU, FOR, CALLP, ON-ERROR,
+RETURN and SORTA use
 this form. Continuations repeat C and leave columns 7–35 blank; expression
 fragments join with whitespace. Empty/comment records and expanded includes may
 intervene. Literal splitting and native +/- continuation rules remain open.

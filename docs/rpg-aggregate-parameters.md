@@ -115,6 +115,6 @@ performance target is claimed.
 [Fixed aggregate returns and RTNPARM](rpg-return-values.md) now support detached
 array/structure results. [OPTIONS(*VARSIZE)](rpg-variable-parameters.md) now
 supports actual-sized reference storage. Dynamic dimensions, general table entry
-ABI, nested structure declarations, procedure pointers/foreign ABI, cross-unit
+ABI, procedure pointers/foreign ABI, cross-unit
 module/service-program binding and independent native golden/scale acceptance
 remain open. See [local procedures](rpg-local-procedures.md) for other limits.

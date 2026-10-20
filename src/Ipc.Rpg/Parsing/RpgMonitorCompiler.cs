@@ -12,7 +12,7 @@ internal static class RpgMonitorCompiler
         internal bool Handler { get; set; }
         internal List<int> Handlers { get; } = [];
     }
-    private static readonly HashSet<int> Codes = [100, 102, 103, 105, 112, 121, 122, 123, 202, 452, 907, 1021, 1022, 1211, 1215, 1216, 1217, 1218, 1221, 1222, 1299, 9999];
+    private static readonly HashSet<int> Codes = [100, 102, 103, 105, 112, 121, 122, 123, 202, 222, 425, 426, 452, 907, 1021, 1022, 1211, 1215, 1216, 1217, 1218, 1221, 1222, 1299, 9999];
     internal static void Bind(List<RpgStatement> statements)
     {
         var groups = new Stack<Group>();

@@ -77,7 +77,7 @@ public sealed partial class JobRecordTransactions
         { foreach (var item in positions) item.Cursor.Saved = item.Position; }
         internal void RollbackWithCursors()
         {
-            RequireIdle(); Reset();
+            RequireIdle(); RequireNoQuerySnapshots(); Reset();
             List<Exception>? errors = null;
             foreach (var cursor in Cursors)
                 try { cursor.Restore(cursor.Saved); }

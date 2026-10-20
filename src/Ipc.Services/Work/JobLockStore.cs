@@ -24,7 +24,7 @@ public sealed record JobLockResource(string Library, string Name, string Type, s
 }
 public sealed record JobLockInfo(string Token, JobKey Job, JobLockResource Resource, JobLockMode Mode, bool Waiting, string Lifetime, string Scope);
 
-public sealed class JobLockStore(SqliteConnectionFactory factory)
+public sealed partial class JobLockStore(SqliteConnectionFactory factory)
 {
     private readonly SqliteConnectionFactory _factory = factory;
     private static readonly AsyncLocal<CommandScope?> ActiveCommand = new();
@@ -98,11 +98,17 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
     public IDisposable Acquire(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken = default)
         => AcquireWithLifetime(job, resource, mode, wait, cancellationToken, "Job", "*JOB");
 
-    internal IDisposable AcquireWithLifetime(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken, string lifetime, string scope, string? recordOwner = null, AuthorityBit? requiredAuthority = null)
+    internal IDisposable AcquireWithLifetime(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, CancellationToken cancellationToken, string lifetime, string scope, string? recordOwner = null, AuthorityBit? requiredAuthority = null, string? viewOwner = null)
     {
         resource = Resolve(resource);
         RequireOwner(job); resource.Validate();
-        new ServiceAuthorization(_factory).RequireObject(resource.Library, resource.Name, resource.Type,
+        var authorization = new ServiceAuthorization(_factory);
+        if (viewOwner is not null)
+        {
+            if (resource.Type != ObjectType.File || mode != JobLockMode.SharedRead || lifetime != "Query") throw new CpfException("CPF9802", "Invalid view read allocation.");
+            authorization.RequireViewSource(viewOwner, resource.Library, resource.Name, Authorities.UseBits);
+        }
+        else authorization.RequireObject(resource.Library, resource.Name, resource.Type,
             (requiredAuthority ?? Authorities.UseBits) | AuthorityBit.ObjectOperate, acquireLocks: false);
         EnsureResourceExists(resource);
         var token = Guid.NewGuid().ToString("N");
@@ -160,7 +166,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         if (Convert.ToInt64(command.ExecuteScalar()) != 0) throw new CpfException("CPF1002", "Release persistent allocations before deleting, moving or renaming this object.");
     }
 
-    internal string AcquireCore(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, string lifetime, string scope, CancellationToken cancellationToken, string? requestToken = null, string? recordOwner = null)
+    internal string AcquireCore(JobKey job, JobLockResource resource, JobLockMode mode, TimeSpan wait, string lifetime, string scope, CancellationToken cancellationToken, string? requestToken = null, string? recordOwner = null, Action? validateLive = null)
     {
         resource = Resolve(resource);
         resource.Validate();
@@ -173,7 +179,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                EnsureLive(job);
+                if (validateLive is null) EnsureLive(job); else validateLive();
                 if (lifetime is "Job" or "Commitment")
                     new ServiceAuthorization(_factory).RequireObject(resource.Library, resource.Name, resource.Type, Authorities.UseBits, acquireLocks: false);
                 using (var connection = _factory.Locks.Open())
@@ -185,7 +191,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
                     var blockers = Conflicts(connection, transaction, job, resource, mode, token, recordOwner);
                     if (blockers.Count == 0)
                     {
-                        EnsureLive(job);
+                        if (validateLive is null) EnsureLive(job); else validateLive();
                         command.CommandText = "SELECT count(*) FROM holders WHERE job_number=$job";
                         command.Parameters.AddWithValue("$job", job.Number);
                         if (Convert.ToInt64(command.ExecuteScalar()) >= 8192) throw new CpfException("IPC0125", "Job lock limit of 8192 reached.");
@@ -218,7 +224,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
     private static HashSet<int> Conflicts(SqliteConnection connection, SqliteTransaction transaction, JobKey job, JobLockResource resource, JobLockMode mode, string token, string? recordOwner)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "SELECT member,row_number,mode,lifetime,scope FROM holders WHERE library=$lib AND name=$name AND type=$type AND job_number=$job";
+        command.CommandText = "SELECT member,CASE WHEN lifetime='StatementRows' AND EXISTS(SELECT 1 FROM holder_records r WHERE r.token=holders.token AND r.rrn=$row) THEN $row ELSE row_number END,mode,lifetime,scope FROM holders WHERE library=$lib AND name=$name AND type=$type AND job_number=$job";
         Bind(command, job, resource, mode, token); var covered = false;
         using (var own = command.ExecuteReader()) while (own.Read())
         {
@@ -244,7 +250,7 @@ public sealed class JobLockStore(SqliteConnectionFactory factory)
         command.Parameters.AddWithValue("$covered", covered ? 1 : 0);
         command.CommandText = """
             SELECT job_number,member,row_number,mode FROM holders WHERE library=$lib AND name=$name AND type=$type AND job_number<>$job
-              AND ($member='' OR member='' OR member=$member AND row_number=$row)
+              AND ($member='' OR member='' OR member=$member AND (row_number=$row OR lifetime='StatementRows' AND EXISTS(SELECT 1 FROM holder_records r WHERE r.token=holders.token AND r.rrn=$row)))
             UNION ALL
             SELECT job_number,member,row_number,mode FROM waiters WHERE library=$lib AND name=$name AND type=$type AND job_number<>$job
               AND ($member='' OR member='' OR member=$member AND row_number=$row)

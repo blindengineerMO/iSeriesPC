@@ -14,6 +14,28 @@ public sealed class PhysicalMemberTests : IDisposable
     private readonly string _source = Line('R', "REC") + "\n" + Line(' ', "VALUE", "5", 'A');
     public PhysicalMemberTests() { _system.Start(); _files = new(_system.Connections, _system.Objects); }
 
+    [Theory]
+    [InlineData("*YES", true)]
+    [InlineData("*NO", false)]
+    public void Reuse_deleted_records_creation_change_and_failed_change_are_atomic(string option, bool enabled)
+    {
+        _files.CreateSourceFile("QGPL", "DDS"); _files.SaveSourceMember("QGPL", "DDS", "DATA", _source, null);
+        var commands = new CommandService(_system);
+        var create = commands.Execute("CRTPF FILE(QGPL/DATA) SRCFILE(QGPL/DDS) REUSEDLT(" + option + ")");
+        Assert.False(create.IsError, create.Message); Assert.Equal(enabled, _files.GetDefinition("QGPL", "DATA")!.ReuseDeletedRecords);
+        Assert.False(commands.Execute("CHGPF FILE(QGPL/DATA) REUSEDLT(*SAME)").IsError);
+        Assert.Equal(enabled, _files.GetDefinition("QGPL", "DATA")!.ReuseDeletedRecords);
+        Assert.False(commands.Execute("CHGPF FILE(QGPL/DATA) REUSEDLT(" + (enabled ? "*NO" : "*YES") + ")").IsError);
+        Assert.Equal(!enabled, _files.GetDefinition("QGPL", "DATA")!.ReuseDeletedRecords);
+        var before = _files.GetDefinition("QGPL", "DATA")!.ToJson();
+        Assert.True(commands.Execute("CHGPF FILE(QGPL/DATA) REUSEDLT(" + option + ") MAXMBRS(0)").IsError);
+        Assert.Equal(before, _files.GetDefinition("QGPL", "DATA")!.ToJson());
+        Assert.True(commands.Execute("CHGPF FILE(QGPL/DATA) REUSEDLT(YES)").IsError);
+        Assert.Equal(before, _files.GetDefinition("QGPL", "DATA")!.ToJson());
+        Assert.True(commands.Execute("CRTPF FILE(QGPL/BAD) SRCFILE(QGPL/DDS) SRCMBR(DATA) REUSEDLT(*SAME)").IsError);
+        Assert.False(_files.FileExists("QGPL", "BAD"));
+    }
+
     [Fact]
     public void CRTPF_none_named_default_and_maximum_members_are_enforced_through_commands()
     {

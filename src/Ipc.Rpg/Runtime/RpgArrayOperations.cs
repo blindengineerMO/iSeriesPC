@@ -173,7 +173,7 @@ public sealed partial class RpgRuntimeContext
             throw NativeFailure(105, "SORTA direction conflicts with its declared array sequence.");
         // A keyed OVERLAY sorts complete base elements, including data outside the key bytes.
         var basis = element;
-        while (basis.OverlayTarget is { } target && view.Structure.Find(target) is { IsArray: true } parent) basis = parent;
+        while (basis.OverlayTarget is { } target && view.Layout.Find(target) is { IsArray: true } parent) basis = parent;
         records = view with { Offset = view.Offset - element.Offset + basis.Offset, Element = basis, Width = view.Count * basis.StorageLength, ArrayStride = basis.Stride };
         SortKeyedRecords(records, view, direction ?? element.ArrayDescending ?? false);
     }

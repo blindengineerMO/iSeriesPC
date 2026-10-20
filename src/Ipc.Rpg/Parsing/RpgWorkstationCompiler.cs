@@ -8,19 +8,20 @@ namespace Ipc.Rpg.Parsing;
 
 public static partial class RpgCompiler
 {
-    private sealed record WorkstationDeclaration(int Line, string Name, bool Input, bool Output, string Keywords, bool Disk = false, bool Template = false, bool Qualified = false, string? LikeFile = null, bool IncompleteFile = false);
+    private sealed record WorkstationDeclaration(int Line, string Name, bool Input, bool Output, string Keywords, bool Disk = false, bool Template = false, bool Qualified = false, string? LikeFile = null, bool IncompleteFile = false, bool Unblocked = false, string? Procedure = null, bool Static = false);
     private sealed record DeclarationKeyword(string Name, string? Arguments);
 
     private static List<WorkstationDeclaration> ParseWorkstationDeclarations(List<string> lines, RpgProgram program, bool free,
-        CancellationToken cancellationToken, bool filesOnly = false, Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
+        CancellationToken cancellationToken, bool filesOnly = false, Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null,
+        Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null)
     {
         if (!filesOnly)
         {
             // Discover final feedback lengths before folding layout-dependent declarations.
-            var discovery = new RpgProgram { Library = program.Library, Name = program.Name, NativeProcedureName = program.NativeProcedureName };
+            var discovery = new RpgProgram { Library = program.Library, Name = program.Name, NativeProcedureName = program.NativeProcedureName, GlobalProgram = program.GlobalProgram };
             if (program.GlobalProgram is { } globals) ImportGlobalSymbols(discovery, globals);
             var files = ParseWorkstationDeclarations(new(lines), discovery, free, cancellationToken, true);
-            if (!program.IsNativeProcedure)
+            foreach (var file in files) { program.FileDefinitionKeywords[file.Name] = file.Keywords; program.FileDeclarationLines[file.Name] = file.Line; if (file.Unblocked) program.UnblockedFiles.Add(file.Name); }
             {
                 var recordFiles = files.Where(f => f.Disk).Select(f => f with { Keywords = string.Join(' ',
                     DeclarationKeywords(f.Keywords, f.Line).Where(k => k.Name is not ("INFDS" or "INFSR"))
@@ -30,11 +31,31 @@ public static partial class RpgCompiler
                 {
                     if (!resolved)
                     {
-                        var metadata = new RpgProgram { Name = program.Name, Library = program.Library };
+                        var metadata = new RpgProgram { Name = program.Name, Library = program.Library, NativeProcedureName = program.NativeProcedureName, GlobalProgram = program.GlobalProgram };
+                        if (program.GlobalProgram is { } owner) metadata.DiskFiles.AddRange(RecordFiles(owner));
+                        HideImportedFiles(metadata, files);
                         BindDisks(metadata, recordFiles, diskResolver);
-                        program.DeclarationDiskFiles.AddRange(metadata.DiskFiles); resolved = true;
+                        HideImportedFiles(program, files);
+                        program.DeclarationDiskFiles.AddRange(metadata.DiskFiles.Where(f => !program.DeclarationDiskFiles.Contains(f))); resolved = true;
                     }
                     return program.DeclarationDiskFiles;
+                };
+            }
+            var displays = files.Where(f => !f.Disk).Select(f => f with { Keywords = FileKeywords(DeclarationKeywords(f.Keywords, f.Line).Where(k => k.Name is not ("INFDS" or "INFSR" or "INDDS"))) }).ToArray();
+            {
+                var resolved = false;
+                program.WorkstationLayoutsLookup = () =>
+                {
+                    if (!resolved)
+                    {
+                        var metadata = new RpgProgram { Library = program.Library, Name = program.Name, NativeProcedureName = program.NativeProcedureName, GlobalProgram = program.GlobalProgram };
+                        if (program.GlobalProgram is { } owner) metadata.Workstations.AddRange(RecordWorkstations(owner));
+                        HideImportedFiles(metadata, files);
+                        BindWorkstations(metadata, displays, workstationResolver, metadataOnly: true);
+                        HideImportedFiles(program, files);
+                        program.DeclarationWorkstations.AddRange(metadata.Workstations.Where(f => !program.DeclarationWorkstations.Contains(f))); resolved = true;
+                    }
+                    return program.DeclarationWorkstations;
                 };
             }
             foreach (var declaration in files)
@@ -66,7 +87,6 @@ public static partial class RpgCompiler
             }
             var scalar = text.StartsWith("DCL-S ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-S\t", StringComparison.OrdinalIgnoreCase);
             var file = text.StartsWith("DCL-F ", StringComparison.OrdinalIgnoreCase) || text.StartsWith("DCL-F\t", StringComparison.OrdinalIgnoreCase);
-            if (program.IsNativeProcedure && file) throw new RpgCompileException(line, "Procedure-local file declarations remain unsupported; use a module-global file.");
             if (Regex.IsMatch(text, @"\ADCL-(PR|PI)\s", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
             {
                 if (!filesOnly && (calculations || !free && (freeBlock || procedure)))
@@ -86,15 +106,8 @@ public static partial class RpgCompiler
                 if (filesOnly)
                 {
                     var header = ReadFreeDeclaration(lines, ref index, line, !free);
-                    if (DeclarationKeywords(Regex.Match(header, @"\ADCL-DS\s+\S+\s*(.*)\z", RegexOptions.IgnoreCase).Groups[1].Value, line).Any(k => k.Name is "LIKEDS" or "LIKEREC")) continue;
-                    for (index++; index < lines.Count; index++)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        var part = lines[index].Trim();
-                        if (part.Length == 0 || part.StartsWith("//", StringComparison.Ordinal)) continue;
-                        var declaration = ReadFreeDeclaration(lines, ref index, index + 1, !free);
-                        if (Regex.IsMatch(declaration, @"\AEND-DS(?:\s|\z)", RegexOptions.IgnoreCase)) break;
-                    }
+                    if (DeclarationKeywords(Regex.Match(header, @"\ADCL-DS\s+\S+\s*(.*)\z", RegexOptions.IgnoreCase).Groups[1].Value, line).Any(k => k.Name is "LIKEDS" or "LIKEREC" or "END-DS")) continue;
+                    index = StructureEnd(lines, line - 1, index, !free, cancellationToken);
                     continue;
                 }
                 if (!free && (freeBlock || procedure)) throw new RpgCompileException(line, "Column-limited free declarations must remain outside /FREE blocks and procedures.");
@@ -128,7 +141,6 @@ public static partial class RpgCompiler
                     (free || freeBlock || Specification(raw) == 'C')) calculations = true;
                 continue;
             }
-            if (program.IsNativeProcedure) throw new RpgCompileException(line, "Procedure-local F specs remain unsupported; use a module-global file.");
             var padded = raw.PadRight(43 + shift); lines[index] = "";
             var fileName = padded.Substring(6 + shift, 10).Trim().ToUpperInvariant();
             if (fileName.Length == 0)
@@ -163,9 +175,14 @@ public static partial class RpgCompiler
                 throw new RpgCompileException(line, "Supported F-specs require an externally described full-procedural C/O WORKSTN file.");
             declarations.Add(new(line, fileName, type == 'C', true, "WORKSTN " + padded[(43 + shift)..]));
         }
-        if (declarations.Count(d => !d.Disk) > 16 || declarations.Count(d => d.Disk) > 16 || declarations.Select(d => d.Name).Distinct().Count() != declarations.Count)
+        if (declarations.Select(d => d.Name).Distinct().Count() != declarations.Count)
             throw new RpgCompileException(0, "At most 16 workstation and 16 disk files with distinct names are supported.");
-        return ExpandDiskDeclarations(declarations);
+        var expanded = ExpandFileDeclarations(declarations, program);
+        if (expanded.Count(d => !d.Disk) > 16 || expanded.Count(d => d.Disk) > 16)
+            throw new RpgCompileException(0, "At most 16 workstation and 16 disk files with distinct names are supported.");
+        HideImportedFiles(program, expanded);
+        foreach (var declaration in expanded) program.FileDefinitionKeywords[declaration.Name] = declaration.Keywords;
+        return expanded;
     }
 
     private static List<DeclarationKeyword> DeclarationKeywords(string text, int line)
@@ -177,6 +194,8 @@ public static partial class RpgCompiler
             if (at == text.Length) break;
             var start = at;
             while (at < text.Length && (char.IsAsciiLetterOrDigit(text[at]) || text[at] == '_')) at++;
+            if (start < at && text[start..at].Equals("END", StringComparison.OrdinalIgnoreCase) && text.AsSpan(at).StartsWith("-DS", StringComparison.OrdinalIgnoreCase) &&
+                (at + 3 == text.Length || char.IsWhiteSpace(text[at + 3]) || text[at + 3] == '(')) at += 3;
             if (start == at) throw new RpgCompileException(line, "Invalid declaration keyword.");
             var name = text[start..at].ToUpperInvariant();
             while (at < text.Length && char.IsWhiteSpace(text[at])) at++;
@@ -220,14 +239,17 @@ public static partial class RpgCompiler
         symbols ??= program;
         if (program.IsNativeProcedure) program.Fields.RemoveAll(f => program.GlobalFields.Contains(f) && f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         var keywords = DeclarationKeywords(text, line);
+        keywords = DataBindingKeywords(program, name, keywords, line, standaloneStorage && !parameter);
         if (!RpgWorkstationBindings.Name(name) || HasLocalDeclaration(program, name) || keywords.Count == 0) throw new RpgCompileException(line, "Invalid or duplicate scalar declaration.");
         var inherited = LikeDefinition(symbols, keywords[0], line, current);
         var type = inherited is null ? keywords[0] : LikeScalarKeyword(inherited, line); var dimensions = type.Arguments is null ? Array.Empty<string>() : DeclarationArguments(type.Arguments, line);
         int Dimension(int index, int fallback) => dimensions.Length <= index ? fallback : DeclarationInteger(symbols, dimensions[index], line, 0, 32767, current);
         var kind = type.Name switch { "CHAR" => RpgFieldKind.Character, "PACKED" => RpgFieldKind.Packed, "ZONED" => RpgFieldKind.Zoned,
             "INT" => RpgFieldKind.Integer, "FLOAT" => RpgFieldKind.Float, "IND" => RpgFieldKind.Indicator, "DATE" => RpgFieldKind.Date,
-            "TIME" => RpgFieldKind.Time, "TIMESTAMP" => RpgFieldKind.Timestamp, _ => throw new RpgCompileException(line, "Unsupported free scalar type " + type.Name + ".") };
-        var length = Dimension(0, kind is RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Zoned ? -1 : kind == RpgFieldKind.Indicator ? 1 : kind == RpgFieldKind.Timestamp ? 26 : kind is RpgFieldKind.Time or RpgFieldKind.Float ? 8 : 10);
+            "TIME" => RpgFieldKind.Time, "TIMESTAMP" => RpgFieldKind.Timestamp, "POINTER" => type.Arguments is null ? RpgFieldKind.DataPointer : RpgFieldKind.ProcedurePointer, _ => throw new RpgCompileException(line, "Unsupported free scalar type " + type.Name + ".") };
+        if (kind == RpgFieldKind.ProcedurePointer && !string.Equals(type.Arguments, "*PROC", StringComparison.OrdinalIgnoreCase)) throw new RpgCompileException(line, "POINTER accepts no arguments for a basing pointer, or *PROC for a procedure pointer.");
+        if (kind is RpgFieldKind.ProcedurePointer or RpgFieldKind.DataPointer) dimensions = [];
+        var length = Dimension(0, kind is RpgFieldKind.ProcedurePointer or RpgFieldKind.DataPointer ? 16 : kind is RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Zoned ? -1 : kind == RpgFieldKind.Indicator ? 1 : kind == RpgFieldKind.Timestamp ? 26 : kind is RpgFieldKind.Time or RpgFieldKind.Float ? 8 : 10);
         var decimals = Dimension(1, 0);
         if (length is < 1 or > 32767 || decimals < 0 || decimals > 28 || kind is RpgFieldKind.Packed or RpgFieldKind.Zoned && (length > 29 || decimals > length) ||
             dimensions.Length > (kind is RpgFieldKind.Packed or RpgFieldKind.Zoned ? 2 : 1) || kind == RpgFieldKind.Integer && length is not (3 or 5 or 10 or 20) ||
@@ -235,8 +257,10 @@ public static partial class RpgCompiler
             kind == RpgFieldKind.Indicator && type.Arguments is not null || kind is RpgFieldKind.Date or RpgFieldKind.Time or RpgFieldKind.Timestamp && type.Arguments is not null)
             throw new RpgCompileException(line, "Unsupported scalar dimensions or date/time options.");
         string? initial = null;
-        if (keywords.Skip(1).Any(k => k.Name is not ("INZ" or "CCSID" or "DIM" or "ASCEND" or "DESCEND" or "CTDATA" or "PERRCD" or "EXTFMT" or "ALT" or "STATIC" or "TEMPLATE")) || keywords.Skip(1).GroupBy(k => k.Name).Any(g => g.Count() != 1))
+        if (keywords.Skip(1).Any(k => k.Name is not ("INZ" or "CCSID" or "DIM" or "ASCEND" or "DESCEND" or "CTDATA" or "PERRCD" or "EXTFMT" or "ALT" or "STATIC" or "TEMPLATE" or "NULLIND" or "BASED")) || keywords.Skip(1).GroupBy(k => k.Name).Any(g => g.Count() != 1))
             throw new RpgCompileException(line, "Unsupported standalone declaration option.");
+        var basedOn = BasedDeclaration(program, name, keywords, line, standaloneStorage && !parameter && current is null);
+        var nullable = NativeNullOption(symbols, keywords, line, parameter);
         var template = keywords.Any(k => k.Name == "TEMPLATE");
         if (template && (parameter || current is not null || keywords.Any(k => k.Name == "TEMPLATE" && k.Arguments is not null) ||
             keywords.Any(k => k.Name is "CTDATA" or "PERRCD" or "EXTFMT" or "ALT") || keywords.Any(k => k.Name == "DIM" && k.Arguments?.StartsWith('*') == true)))
@@ -269,13 +293,22 @@ public static partial class RpgCompiler
         string? initializationExpression = null;
         if (keywords.SingleOrDefault(k => k.Name == "INZ")?.Arguments is { } init)
         {
-            var value = DeclarationValue(symbols, init, line, current);
-            ValidateDeclarationInitializer(value, kind, length, decimals, opaque, line);
-            if (kind != RpgFieldKind.Float && RpgValues.IsNumeric(value)) value = RpgValues.ToDecimal(value);
-            initializationExpression = DeclarationLiteral(value);
-            initial = value is string characters ? characters : initializationExpression;
+            if (kind is RpgFieldKind.ProcedurePointer or RpgFieldKind.DataPointer)
+            {
+                if (!init.Equals("*NULL", StringComparison.OrdinalIgnoreCase) && !System.Text.RegularExpressions.Regex.IsMatch(init, kind == RpgFieldKind.DataPointer ? @"\A%ADDR\s*\(.+\)\z" : @"\A%PADDR\s*\(.+\)\z", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    throw new RpgCompileException(line, kind == RpgFieldKind.DataPointer ? "Basing pointer INZ requires *NULL or %ADDR." : "Procedure pointer INZ requires *NULL or %PADDR.");
+                initializationExpression = init;
+            }
+            else
+            {
+                var value = DeclarationValue(symbols, init, line, current);
+                ValidateDeclarationInitializer(value, kind, length, decimals, opaque, line);
+                if (kind != RpgFieldKind.Float && RpgValues.IsNumeric(value)) value = RpgValues.ToDecimal(value);
+                initializationExpression = DeclarationLiteral(value);
+                initial = value is string characters ? characters : initializationExpression;
+            }
         }
-        program.Fields.Add(new() { Name = name, IsTemplate = template, Kind = kind, Length = length, Decimals = decimals, InitialValue = initial,
+        program.Fields.Add(new() { Name = name, BasedOn = basedOn, NullCapable = nullable, NullIndicatorName = keywords.SingleOrDefault(k => k.Name == "NULLIND")?.Arguments?.ToUpperInvariant(), IsTemplate = template, Kind = kind, Length = length, Decimals = decimals, InitialValue = initial,
             LikeType = inherited?.LikeType ?? DeclarationIdentity(symbols, line, name), DeclaredLike = inherited is not null, ReadOnlyParameter = readOnlyParameter, NoPassParameter = noPassParameter, OmitParameter = omitParameter, ValueParameter = valueParameter, StaticLocal = isStatic,
             InitializationExpression = initializationExpression, OpaqueBytes = opaque, IsArray = array is not null && !table, IsTable = table,
             NativeArray = !template && array is not null && !table, NativeScalar = !template && standaloneStorage && array is null, DeclarationLine = line, Dimension = count, ArrayDescending = sequence, CompileTimeArray = compileTime,
@@ -285,11 +318,14 @@ public static partial class RpgCompiler
     }
 
     private static void BindWorkstations(RpgProgram program, IReadOnlyList<WorkstationDeclaration> declarations,
-        Func<RpgWorkstationRequest, RpgWorkstationLayout>? resolver)
+        Func<RpgWorkstationRequest, RpgWorkstationLayout>? resolver, bool metadataOnly = false)
     {
         var externalFields = new Dictionary<string, RpgDisplayField>(StringComparer.Ordinal);
+        var parameters = program.Workstations.Where(f => f.Request.IsParameter).ToArray();
+        program.Workstations.RemoveAll(f => f.Request.IsParameter);
         foreach (var declaration in declarations)
         {
+            if (program.Workstations.Count >= 16) throw new RpgCompileException(declaration.Line, "At most 16 visible WORKSTN files are supported.");
             var keywords = DeclarationKeywords(declaration.Keywords, declaration.Line);
             string? Single(string name)
             {
@@ -325,52 +361,62 @@ public static partial class RpgCompiler
             }
             var subfiles = keywords.Where(k => k.Name == "SFILE").Select(k => {
                 var parts = DeclarationArguments(k.Arguments ?? "", declaration.Line);
-                if (parts.Length != 2) throw new RpgCompileException(declaration.Line, "SFILE requires a format and RRN field.");
-                return new RpgSubfileBinding(parts[0].ToUpperInvariant(), parts[1].ToUpperInvariant());
+                if (parts.Length != (declaration.Template ? 1 : 2)) throw new RpgCompileException(declaration.Line, declaration.Template ? "TEMPLATE SFILE requires a format without an RRN field." : "SFILE requires a format and RRN field.");
+                return new RpgSubfileBinding(parts[0].ToUpperInvariant(), declaration.Template ? "" : parts[1].ToUpperInvariant());
             }).ToArray();
             var renames = keywords.Where(k => k.Name == "RENAME").Select(k => {
                 var parts = DeclarationArguments(k.Arguments ?? "", declaration.Line);
                 if (parts.Length != 2) throw new RpgCompileException(declaration.Line, "RENAME requires external and RPG format names.");
                 return new RpgRecordRename(parts[0].ToUpperInvariant(), parts[1].ToUpperInvariant());
             }).ToArray();
-            var request = new RpgWorkstationRequest(declaration.Name, Literal("EXTDESC", declaration.Name), Literal("EXTFILE", declaration.Name), input, output,
-                keywords.Any(k => k.Name == "USROPN"), subfiles, renames, (Single("PREFIX") ?? "").ToUpperInvariant());
+            var request = new RpgWorkstationRequest(declaration.Name, Literal("EXTDESC", declaration.Name), Literal("EXTFILE", declaration.Template && declaration.Name.Length > 10 ? "*EXTDESC" : declaration.Name), input, output,
+                keywords.Any(k => k.Name == "USROPN"), subfiles, renames, FilePrefix(Single("PREFIX"),declaration.Line), declaration.Template, declaration.Qualified, declaration.LikeFile,
+                Procedure: declaration.Procedure, Static: declaration.Static);
             try
             {
-                var layout = resolver?.Invoke(request) ?? throw new RpgCompileException(declaration.Line, "WORKSTN requires a compile-time display resolver.");
-                var binding = new RpgWorkstationBinding(request, layout); RpgWorkstationBindings.Validate(binding);
-                if (program.Workstations.SelectMany(f => f.Layout.Records).Any(r => layout.Records.Any(n => n.Name == r.Name)))
+                var parent = declaration.LikeFile is { } parentName ? program.Workstations.SingleOrDefault(f => f.Request.Name == parentName)
+                    ?? program.GlobalProgram?.Workstations.SingleOrDefault(f => f.Request.Name == parentName)
+                    ?? throw new RpgCompileException(declaration.Line, "LIKEFILE parent metadata is unavailable.") : null;
+                var layout = parent is null ? resolver?.Invoke(request) ?? throw new RpgCompileException(declaration.Line, "WORKSTN requires a compile-time display resolver.")
+                    : RpgWorkstationBindings.Derive(request, parent.Layout);
+                var binding = new RpgWorkstationBinding(request, layout, parent is null ? null : RpgWorkstationBindings.FamilyKey(parent)); RpgWorkstationBindings.Validate(binding);
+                if (program.Workstations.Where(f => f.Request.Procedure == request.Procedure).SelectMany(f => f.Layout.Records).Any(r => layout.Records.Any(n => n.Name == r.Name)))
                     throw new RpgCompileException(declaration.Line, "Display record names must be distinct; use RENAME.");
-                foreach (var field in layout.Records.SelectMany(r => r.Fields))
+                foreach (var field in metadataOnly || request.IsTemplate || request.Qualified || request.Procedure is not null ? [] : layout.Records.SelectMany(r => r.Fields))
                 {
                     if (externalFields.TryGetValue(field.Name, out var previous) && (previous.Kind != field.Kind || previous.Length != field.Length || previous.Decimals != field.Decimals || previous.Opaque != field.Opaque))
                         throw new RpgCompileException(declaration.Line, "Incompatible shared external field: " + field.Name);
                     externalFields[field.Name] = field;
                     var existing = program.FindField(field.Name);
-                    if (program.FindDs(field.Name) is not null || program.FindDsElement(field.Name) is not null)
+                    var member = program.FindDsElement(field.Name);
+                    var shared = SharedExternalField(program, field.Name, field.External, field.Kind, field.Length, field.Decimals, display: true);
+                    if (shared) continue;
+                    if (program.FindDs(field.Name) is not null || member is not null && !shared)
                         throw new RpgCompileException(declaration.Line, "External field conflicts with a data structure: " + field.Name);
                     if (existing is not null)
                     {
-                        if (existing.IsArray || program.FindDsElement(field.Name) is not null || program.FindDs(field.Name) is not null || existing.Source == RpgFieldSource.Constant ||
+                        if (existing.IsArray || member is not null && !shared || program.FindDs(field.Name) is not null || existing.Source == RpgFieldSource.Constant ||
                             existing.Kind != field.Kind || existing.Length != field.Length || existing.Decimals != field.Decimals)
                             throw new RpgCompileException(declaration.Line, "Incompatible external field declaration: " + field.Name);
                         existing.OpaqueBytes |= field.Opaque;
                     }
                     else program.Fields.Add(new() { Name = field.Name, Kind = field.Kind, Length = field.Length, Decimals = field.Decimals, Source = RpgFieldSource.ExternalFile, OpaqueBytes = field.Opaque });
                 }
-                foreach (var subfile in subfiles)
+                foreach (var subfile in metadataOnly || request.IsTemplate ? [] : subfiles)
                 {
                     var rrn = program.FindField(subfile.RelativeRecord);
-                    var size = layout.Records.Single(r => r.Name == subfile.Record).Capacity;
+                    var size = layout.Records.Single(r => r.Name == RpgWorkstationBindings.RecordName(request, subfile.Record)).Capacity;
                     if (rrn is null || rrn.IsTemplate || rrn.IsArray || rrn.Decimals != 0 || rrn.Kind is not (RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Decimal or RpgFieldKind.Integer or RpgFieldKind.Binary) ||
                         rrn.Length < size.ToString(CultureInfo.InvariantCulture).Length)
                         throw new RpgCompileException(declaration.Line, "SFILE RRN requires a sufficiently large numeric scalar with zero decimals.");
                 }
-                program.Workstations.Add(binding); program.FileSpecs.Add(declaration.Name);
+                program.Workstations.Add(binding); if (!request.IsTemplate) program.FileSpecs.Add(declaration.Name);
             }
             catch (Exception error) when (error is InvalidDataException or Ipc.Core.Messages.CpfException)
             { throw new RpgCompileException(declaration.Line, error.Message); }
         }
+        program.Workstations.AddRange(parameters);
+        if (program.Workstations.Count > 16) throw new RpgCompileException(0, "At most 16 visible WORKSTN files, including file parameters, are supported.");
     }
 
     private static void ValidateWorkstationStatements(RpgProgram program)
@@ -379,20 +425,27 @@ public static partial class RpgCompiler
         {
             if (statement.Opcode is not (RpgOpcode.ExFmt or RpgOpcode.ReadC or RpgOpcode.Read or RpgOpcode.Write or RpgOpcode.Update or RpgOpcode.Chain or RpgOpcode.Open or RpgOpcode.Close or
                 RpgOpcode.ReadP or RpgOpcode.Reade or RpgOpcode.ReadPe or RpgOpcode.SetLl or RpgOpcode.SetGt or RpgOpcode.Delete)) continue;
-            var operands = statement.Value ?? string.Join(" ", new[] { statement.Factor1, statement.Factor2, statement.Result }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            var operands = statement.RecordDataStructure is not null
+                ? statement.Opcode == RpgOpcode.Chain ? (statement.Factor1 ?? "") + " " + (statement.Factor2 ?? "") : statement.Factor2 ?? statement.Factor1 ?? ""
+                : statement.Value ?? string.Join(" ", new[] { statement.Factor1, statement.Factor2, statement.Result }.Where(s => !string.IsNullOrWhiteSpace(s)));
             var tokens = Regex.Matches(operands.ToUpperInvariant(), @"[A-Z_][A-Z0-9_]*").Select(m => m.Value).ToArray();
-            var binding = program.Workstations.FirstOrDefault(w => tokens.Contains(w.Request.Name) || w.Layout.Records.Any(r => tokens.Contains(r.Name)));
+            var name = (statement.Factor2 ?? statement.Factor1 ?? "").Trim().ToUpperInvariant();
+            if (program.FindWorkstation(name) is null && program.FindDisk(name) is not null) continue;
+            var binding = program.FindWorkstation(name) ??
+                program.Workstations.FirstOrDefault(w => tokens.Contains(w.Request.Name) || w.Layout.Records.Any(r => tokens.Contains(r.Name)));
             if (binding is null)
             {
                 if (statement.Opcode is RpgOpcode.ExFmt or RpgOpcode.ReadC)
                     throw new RpgCompileException(statement.LineNumber, "EXFMT/READC requires a declared WORKSTN record format.");
                 continue;
             }
+            if (binding.Request.IsTemplate) throw new RpgCompileException(statement.LineNumber, "A TEMPLATE file has no runtime I/O.");
+            if ((binding.Request.Qualified || binding.Request.Procedure is not null) && statement.Opcode is not (RpgOpcode.Open or RpgOpcode.Close) && statement.RecordDataStructure is null)
+                throw new RpgCompileException(statement.LineNumber, "Qualified and LIKEFILE WORKSTN files require result data structures.");
             if (statement.Opcode is not (RpgOpcode.ExFmt or RpgOpcode.ReadC or RpgOpcode.Read or RpgOpcode.Write or RpgOpcode.Update or RpgOpcode.Chain or RpgOpcode.Open or RpgOpcode.Close or
                 RpgOpcode.ReadP or RpgOpcode.Reade or RpgOpcode.ReadPe or RpgOpcode.SetLl or RpgOpcode.SetGt or RpgOpcode.Delete)) continue;
             if (statement.Opcode is RpgOpcode.ReadP or RpgOpcode.Reade or RpgOpcode.ReadPe or RpgOpcode.SetLl or RpgOpcode.SetGt or RpgOpcode.Delete)
                 throw new RpgCompileException(statement.LineNumber, "Unsupported WORKSTN operation " + statement.Opcode + ".");
-            var name = (statement.Factor2 ?? statement.Factor1 ?? "").Trim().ToUpperInvariant();
             if (name.Length == 0) name = (statement.Factor1 ?? "").Trim().ToUpperInvariant();
             var format = binding.Layout.Records.SingleOrDefault(r => r.Name == name);
             var expected = statement.Opcode == RpgOpcode.Chain ? @"\A(?:\([^)]*\)|\S+)\s+" + Regex.Escape(name) + @"\z" : @"\A" + Regex.Escape(name) + @"\z";
@@ -401,7 +454,7 @@ public static partial class RpgCompiler
                 statement.Opcode == RpgOpcode.ExFmt && (format?.Subfile != false || !binding.Request.Input || !binding.Request.Output) ||
                 statement.Opcode is RpgOpcode.ReadC or RpgOpcode.Chain or RpgOpcode.Update && format?.Subfile != true ||
                 statement.Opcode == RpgOpcode.Read && format?.Subfile == true)
-                throw new RpgCompileException(statement.LineNumber, "Unsupported WORKSTN operands; use a file/record name without a result data structure.");
+                throw new RpgCompileException(statement.LineNumber, "Unsupported WORKSTN operation, record or result data structure.");
         }
     }
 }

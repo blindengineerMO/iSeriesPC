@@ -13,7 +13,7 @@ using Ipc.Services.Work;
 namespace Ipc.Services.Messages;
 
 /// <summary>Bounded, versioned message descriptions shared by display and program messages.</summary>
-public sealed class MessageDescriptionStore(SqliteConnectionFactory factory)
+public sealed partial class MessageDescriptionStore(SqliteConnectionFactory factory)
 {
     private sealed record LegacyPayload(int Version, Dictionary<string, string> Messages);
     private sealed record Payload(int Version, Dictionary<string, MessageDescription> Messages);

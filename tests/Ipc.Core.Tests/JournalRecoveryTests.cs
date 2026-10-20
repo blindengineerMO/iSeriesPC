@@ -11,7 +11,7 @@ using Microsoft.Data.Sqlite;
 
 namespace Ipc.Core.Tests;
 
-public sealed class JournalRecoveryTests : IDisposable
+public sealed partial class JournalRecoveryTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ipc-recovery-" + Guid.NewGuid().ToString("N"));
     private readonly IpcSystem _system;
@@ -38,6 +38,17 @@ public sealed class JournalRecoveryTests : IDisposable
     private void RestoreBaseline(string sql)
     { using var connection = _system.Connections.Open(); connection.CreateFunction("ipc_journal_replay", () => 1); using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     [Fact]
+    public void Recovery_reinsertion_of_identical_values_invalidates_an_ordinary_cursor_target()
+    {
+        Start(); Insert(1); using var cursor = _files.OpenSequentialCursor("QGPL", "RECORDS", "RECORDS", keyed: false);
+        Assert.True(cursor.ChainRecord(1));
+        _system.Journals.Recover(Journal, Selection, 1, 1, remove: true);
+        _system.Journals.Recover(Journal, Selection, 1, 1);
+        Assert.Equal("CPF5026", Assert.Throws<CpfException>(() => cursor.Delete()).MessageId);
+        Assert.True(cursor.ChainRecord(1)); cursor.Update(new Dictionary<string, object?> { ["TEXT"] = "fresh target" });
+        Assert.Equal("fresh target", Sql("SELECT TEXT FROM \"QGPL.RECORDS.RECORDS\""));
+    }
+    [Fact]
     public void Mixed_records_remove_in_reverse_and_apply_forward_with_exact_RRNs_and_recovery_markers()
     {
         Start(); Insert(1); Insert(2, "second"); Update(1, "changed");
@@ -48,7 +59,7 @@ public sealed class JournalRecoveryTests : IDisposable
         Assert.Equal(new[] { "SR", "RC" }, _system.Journals.Read(Journal, 7).Select(e => e.Type));
         var applied = _system.Journals.Recover(Journal, Selection, 1, 6);
         Assert.Equal(new JournalRecoveryResult(5, 1, 6), applied);
-        Assert.Equal("1:1:changed,2:3:third", Sql("SELECT group_concat(rowid||':'||ID||':'||TEXT) FROM \"QGPL.RECORDS.RECORDS\" ORDER BY rowid"));
+        Assert.Equal("1:1:changed,3:3:third", Sql("SELECT group_concat(rowid||':'||ID||':'||TEXT) FROM \"QGPL.RECORDS.RECORDS\" ORDER BY rowid"));
         Assert.Equal(6L, Sql("SELECT count(*) FROM sys_journal_entries WHERE code='R'"));
         Assert.Equal(10, _system.Journals.Inspect(Journal).Sequence);
         Assert.Throws<CpfException>(() => _system.Journals.Recover(Journal, Selection, 1, 6)); Assert.Equal(10, _system.Journals.Inspect(Journal).Sequence);
@@ -77,6 +88,7 @@ public sealed class JournalRecoveryTests : IDisposable
     public void Data_mismatch_and_end_marker_failure_restore_data_triggers_sequence_and_receiver_accounting()
     {
         Start(); Insert(1); Update(1, "after");
+        var triggerCount = Sql("SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='QGPL.RECORDS.RECORDS'");
         RestoreBaseline("UPDATE \"QGPL.RECORDS.RECORDS\" SET TEXT='unexpected'");
         Assert.Throws<CpfException>(() => _system.Journals.Recover(Journal, Selection, 3, 1, true));
         Assert.Equal("unexpected", Sql("SELECT TEXT FROM \"QGPL.RECORDS.RECORDS\"")); Assert.Equal(3, _system.Journals.Inspect(Journal).Sequence);
@@ -86,7 +98,7 @@ public sealed class JournalRecoveryTests : IDisposable
         Assert.Throws<SqliteException>(() => _system.Journals.Recover(Journal, Selection, 3, 1, true));
         Assert.Equal("after", Sql("SELECT TEXT FROM \"QGPL.RECORDS.RECORDS\"")); Assert.Equal(3, _system.Journals.Inspect(Journal).Sequence);
         Assert.Equal(bytes, _system.Journals.InspectReceiver(new("QGPL", "RCV0001")).Bytes);
-        Assert.Equal(3L, Sql("SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='QGPL.RECORDS.RECORDS'"));
+        Assert.Equal(triggerCount, Sql("SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='QGPL.RECORDS.RECORDS'"));
         Assert.Equal(1L, Sql("PRAGMA foreign_keys")); Insert(2); Assert.Equal(4, _system.Journals.Inspect(Journal).Sequence);
     }
     [Fact]
@@ -157,20 +169,36 @@ public sealed class JournalRecoveryTests : IDisposable
     [InlineData("record_number=1.5")]
     public void Corrupt_record_images_schemas_and_numbers_fail_without_losing_data_or_triggers(string corrupt)
     {
-        Start(); Insert(1); Sql("UPDATE sys_journal_entries SET " + corrupt + " WHERE code='R'");
+        Start(); Insert(1);
+        var triggerCount = Sql("SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='QGPL.RECORDS.RECORDS'");
+        Sql("UPDATE sys_journal_entries SET " + corrupt + " WHERE code='R'");
         Assert.Throws<CpfException>(() => _system.Journals.Recover(Journal, Selection, 1, 1, true));
         Assert.Equal(1L, Sql("SELECT count(*) FROM \"QGPL.RECORDS.RECORDS\"")); Assert.Equal(1, _system.Journals.Inspect(Journal).Sequence);
-        Assert.Equal(3L, Sql("SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='QGPL.RECORDS.RECORDS'"));
+        Assert.Equal(triggerCount, Sql("SELECT count(*) FROM sqlite_schema WHERE type='trigger' AND tbl_name='QGPL.RECORDS.RECORDS'"));
     }
     [Fact]
     public async Task Cancellation_while_waiting_and_live_authority_denial_leave_no_recovery_effects()
+        => await Task.Factory.StartNew(CheckCanceledRecovery,CancellationToken.None,TaskCreationOptions.LongRunning,TaskScheduler.Default);
+    private void CheckCanceledRecovery()
     {
         Start(); Insert(1);
         using (var connection = _system.Connections.Open()) using (var held = connection.BeginTransaction(deferred: false))
         using (var stop = new CancellationTokenSource())
+        using (var started = new ManualResetEventSlim())
         {
-            var recovery = Task.Run(() => _system.Journals.Recover(Journal, Selection, 1, 1, true, cancellationToken: stop.Token)); await Task.Delay(100); stop.Cancel();
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => recovery.WaitAsync(TimeSpan.FromSeconds(4))); held.Rollback();
+            var recovery = Task.Factory.StartNew(() => { started.Set(); return Record.Exception(() => _system.Journals.Recover(Journal, Selection, 1, 1, true, cancellationToken: stop.Token)); },
+                CancellationToken.None,TaskCreationOptions.LongRunning,TaskScheduler.Default);
+            try
+            {
+                Assert.True(started.Wait(TimeSpan.FromSeconds(4)),"Recovery worker did not start.");
+                Thread.Sleep(100); stop.Cancel();
+                Assert.IsAssignableFrom<OperationCanceledException>(recovery.WaitAsync(TimeSpan.FromSeconds(4)).GetAwaiter().GetResult());
+            }
+            finally
+            {
+                stop.Cancel(); held.Rollback();
+                recovery.WaitAsync(TimeSpan.FromSeconds(4)).GetAwaiter().GetResult();
+            }
         }
         _system.Security.Authority.Grant("QGPL", "RECOVERY", ObjectType.Journal, "QUSER", Authorities.AllBits);
         _system.Security.Authority.Grant("QGPL", "RECORDS", ObjectType.File, "QUSER", Authorities.AllBits);

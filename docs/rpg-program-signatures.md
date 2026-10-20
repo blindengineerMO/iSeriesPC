@@ -15,7 +15,8 @@ Source rules follow the
 [IBM ILE RPG reference](https://www.ibm.com/docs/it/ssw_ibm_i_76/pdf/sc092508.pdf),
 pp. 447–450, 452–457, 615–616 and 800. EXTPGM identifies a dynamic program call;
 local procedure prototypes bind within one unit under the
-[local procedure contract](rpg-local-procedures.md). Cross-unit binding remains open.
+[local procedure contract](rpg-local-procedures.md). [Static module binding](rpg-module-binding.md) now resolves exported native
+procedures; service-program and broader ILE binding remain open.
 Emulator tests do not replace independent native-system reference acceptance.
 
 ```rpgle
@@ -143,7 +144,7 @@ The terminal compiles RPGSIGUP/RPGSIG and checks native PR/PI aliases and free
 CALLP(E) error writeback.
 
 VALUE, other OPTIONS modes, wider reference compatibility, arrays/DS/table entry ABI,
-remaining aggregate/local storage interfaces, modules/service programs/cross-unit binding, remaining
+remaining aggregate/local storage interfaces, service programs/binding directories and broader ILE binding, remaining
 activation/exception semantics and independent native golden/scale acceptance
 remain open. No performance target is claimed.
 

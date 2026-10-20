@@ -50,41 +50,63 @@ public static partial class RpgCompiler
     private static int NativeDimension(RpgProgram program, DeclarationKeyword? keyword, int line, int maximum = 32767, RpgDataStructure? current = null)
         => keyword is null ? 1 : DeclarationInteger(program, keyword.Arguments ?? "", line, 1, maximum, current);
 
-    private static void DeclareNativeStructure(List<string> lines, ref int index, RpgProgram program, CancellationToken cancellationToken, bool columnLimited = false)
+    private static RpgDataStructure DeclareNativeStructure(List<string> lines, ref int index, RpgProgram program, CancellationToken cancellationToken, bool columnLimited = false, RpgDataStructure? container = null, int nesting = 0, string? preparedHeader = null, int? headerLine = null)
     {
-        var line = index + 1;
-        var text = ReadFreeDeclaration(lines, ref index, line, columnLimited);
+        if (nesting >= 64) throw new RpgCompileException(index + 1, "Native data structure nesting exceeds 64 levels.");
+        var line = headerLine ?? index + 1;
+        var text = preparedHeader ?? ReadFreeDeclaration(lines, ref index, line, columnLimited);
+        var inlineEnd = Regex.IsMatch(text, @"\sEND-DS\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (inlineEnd) text = text[..text.LastIndexOf("END-DS", StringComparison.OrdinalIgnoreCase)].TrimEnd();
         var header = Regex.Match(text, @"\ADCL-DS\s+([A-Za-z_][A-Za-z0-9_]*|\*N)(?:\s+(.*))?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (!header.Success) throw new RpgCompileException(line, "Invalid DCL-DS declaration.");
-        var name = header.Groups[1].Value.ToUpperInvariant(); var anonymous = name == "*N";
+        var localName = header.Groups[1].Value.ToUpperInvariant();
+        var name = localName; var anonymous = name == "*N";
         if (anonymous) name = "\u0001DS" + (program.DataStructures.Count + 1);
         if (program.IsNativeProcedure) program.Fields.RemoveAll(f => program.GlobalFields.Contains(f) && f.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-        if (!anonymous && !RpgWorkstationBindings.Name(name) || program.DataStructures.Count >= 256 || HasLocalDeclaration(program, name))
+        if (container is not null && (!container.Qualified || anonymous)) throw new RpgCompileException(line, "Nested data structures require a qualified parent and a name.");
+        if (!anonymous && !RpgWorkstationBindings.Name(name) || container is null && (program.DataStructures.Count >= 256 || HasLocalDeclaration(program, name)))
             throw new RpgCompileException(line, "Duplicate data structure or more than 256 structures.");
         var options = DeclarationKeywords(header.Groups[2].Value, line);
-        if (options.Any(k => k.Name is not ("QUALIFIED" or "INZ" or "LEN" or "DIM" or "LIKEDS" or "LIKEREC" or "PSDS" or "OCCURS" or "TEMPLATE")) || options.GroupBy(k => k.Name).Any(g => g.Count() > 1) ||
+        options = DataBindingKeywords(program, name, options, line, container is null);
+        if (container is not null && options.Any(k => k.Name == "INZ") && program.DataDefinitions.Any(d => d.Import &&
+            (container.Name.Equals(d.Name, StringComparison.OrdinalIgnoreCase) || container.Name.StartsWith(d.Name + ".", StringComparison.OrdinalIgnoreCase))))
+            throw new RpgCompileException(line, "Imported nested structures cannot be initialized.");
+        if (container is not null)
+        {
+            if (options.Any(k => k.Name is "STATIC" or "TEMPLATE" or "OCCURS" or "PSDS")) throw new RpgCompileException(line, "Nested storage belongs to the enclosing structure; STATIC, TEMPLATE, OCCURS and PSDS cannot be specified.");
+            options = options.Where(k => k.Name is not ("POS" or "OVERLAY")).ToList();
+            name = container.Name + "." + name;
+        }
+        if (options.Any(k => k.Name is not ("QUALIFIED" or "INZ" or "LEN" or "DIM" or "LIKEDS" or "LIKEREC" or "PSDS" or "OCCURS" or "TEMPLATE" or "STATIC" or "EXT" or "EXTNAME" or "PREFIX" or "NULLIND" or "BASED")) || options.GroupBy(k => k.Name).Any(g => g.Count() > 1) ||
             options.Any(k => k.Name is "QUALIFIED" or "PSDS" or "TEMPLATE" && k.Arguments is not null))
             throw new RpgCompileException(line, "Unsupported or duplicate DCL-DS keyword.");
+        var basedOn = BasedDeclaration(program, name, options, line, container is null);
+        var isStatic = options.Any(k => k.Name == "STATIC");
+        if (isStatic && (!program.IsNativeProcedure || options.Any(k => k.Name == "STATIC" && k.Arguments is not null) || options.Any(k => k.Name == "TEMPLATE")))
+            throw new RpgCompileException(line, "Data structure STATIC requires an ordinary local definition and no arguments.");
         var template = options.Any(k => k.Name == "TEMPLATE");
         if (template) ValidateTemplateCount(program, line);
         var likeDs = options.SingleOrDefault(k => k.Name == "LIKEDS");
         var likeRec = options.SingleOrDefault(k => k.Name == "LIKEREC");
         if (likeDs is not null && likeRec is not null) throw new RpgCompileException(line, "LIKEDS and LIKEREC cannot be combined.");
         var like = likeDs ?? likeRec;
+        var external = options.Any(k => k.Name is "EXT" or "EXTNAME") ? ExternalStructureTemplate(program, localName, options, line) : null;
+        if (external is null && options.Any(k => k.Name == "PREFIX")) throw new RpgCompileException(line, "Data structure PREFIX requires EXT or EXTNAME.");
         var init = options.SingleOrDefault(k => k.Name == "INZ");
-        if (init?.Arguments is not null && (likeDs is null || !init.Arguments.Equals("*LIKEDS", StringComparison.OrdinalIgnoreCase)))
+        if (external is null && init?.Arguments is not null && (likeDs is null || !init.Arguments.Equals("*LIKEDS", StringComparison.OrdinalIgnoreCase)))
             throw new RpgCompileException(line, "DCL-DS INZ is argument-free, or INZ(*LIKEDS) with LIKEDS.");
         if (anonymous && options.Any(k => k.Name is "QUALIFIED" or "DIM" or "LIKEDS" or "LIKEREC" or "OCCURS")) throw new RpgCompileException(line, "Anonymous structures cannot be qualified, arrays, multiple-occurrence or LIKEDS definitions.");
         if (options.Any(k => k.Name == "OCCURS") && options.Any(k => k.Name == "DIM")) throw new RpgCompileException(line, "OCCURS and DIM cannot be combined.");
         var psds = options.Any(k => k.Name == "PSDS");
         if (psds && (program.IsNativeProcedure || program.DataStructures.Any(d => d.ProgramStatus && !d.IsTemplate) || options.Any(k => k.Name is "DIM" or "LIKEDS" or "LIKEREC" or "OCCURS")))
             throw new RpgCompileException(line, "Only one scalar PSDS is allowed; PSDS cannot use DIM, OCCURS or LIKEDS.");
-        var ds = new RpgDataStructure { Name = name, IsTemplate = template, LikeType = DeclarationIdentity(program, line, name), NativeStorage = true, Anonymous = anonymous, ProgramStatus = psds,
+        var ds = new RpgDataStructure { BasedOn = basedOn, Name = name, NullIndicatorName = StructureNullOption(program, options, line), StaticLocal = isStatic, IsTemplate = template, LikeType = DeclarationIdentity(program, line, localName), NativeStorage = true, Anonymous = anonymous, ProgramStatus = psds,
             LikeDataStructure = likeDs?.Arguments?.ToUpperInvariant(),
-            RecordOrigin = likeRec is null ? null : RecordTemplate(program, likeRec.Arguments ?? "", line).RecordOrigin,
+            TypeOrigin = external?.TypeOrigin,
+            RecordOrigin = external?.RecordOrigin ?? (likeRec is null ? null : RecordTemplate(program, likeRec.Arguments ?? "", line).RecordOrigin),
             IsMultipleOccurrence = options.Any(k => k.Name == "OCCURS"), Occurrences = NativeDimension(program, options.SingleOrDefault(k => k.Name == "OCCURS"), line),
             DeclarationLine = line, ExplicitLength = options.Any(k => k.Name == "LEN"),
-            Qualified = like is not null || options.Any(k => k.Name == "QUALIFIED"), InitializeSubfields = init is not null,
+            Qualified = container is not null || like is not null || options.Any(k => k.Name == "QUALIFIED"), InitializeSubfields = init is not null,
             IsArray = options.Any(k => k.Name == "DIM"), Dimension = NativeDimension(program, options.SingleOrDefault(k => k.Name == "DIM"), line) };
         if (ds.IsArray && !ds.Qualified) throw new RpgCompileException(line, "A data structure array requires QUALIFIED.");
         if (like is not null)
@@ -97,6 +119,7 @@ public static partial class RpgCompiler
             foreach (var e in parent.Elements)
                 ds.Elements.Add(new() { Name = ds.Name + "." + e.LocalName, LocalName = e.LocalName, Kind = e.Kind, Length = e.Length,
                     StorageLength = e.StorageLength, Stride = e.Stride, Decimals = e.Decimals, Dimension = e.Dimension, IsArray = e.IsArray, OpaqueBytes = e.OpaqueBytes,
+                    NullCapable = e.NullCapable, NullIndicatorName = e.NullIndicatorName, ExternalName = e.ExternalName, ExternalDefaultInitialization = init?.Arguments is not null && e.ExternalDefaultInitialization, NestedStructure = e.NestedStructure is null ? null : CopyNestedLayout(e.NestedStructure, ds.Name + "." + e.LocalName, init?.Arguments is not null),
                     ArrayDescending = e.ArrayDescending, OverlayTarget = e.OverlayTarget, LikeType = e.LikeType, DeclaredLike = e.DeclaredLike,
                     Offset = e.Offset, HasExplicitOffset = true, InitialValue = init?.Arguments is not null ? e.InitialValue : null,
                     HasInitialValue = init?.Arguments is not null && e.HasInitialValue, Anonymous = e.Anonymous });
@@ -106,9 +129,15 @@ public static partial class RpgCompiler
         }
         else
         {
-            var extent = 0; var next = 0; var overlayEnds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            var ended = false;
-            for (index++; index < lines.Count; index++)
+            if (external is not null)
+                foreach (var e in external.Elements)
+                    ds.Elements.Add(new() { Name = ds.Qualified ? name + "." + e.LocalName : e.LocalName!, LocalName = e.LocalName, NullCapable = e.NullCapable, NullIndicatorName = e.NullIndicatorName, ExternalName = e.ExternalName, ExternalDefaultInitialization = e.ExternalDefaultInitialization,
+                        Kind = e.Kind, Length = e.Length, Decimals = e.Decimals, StorageLength = e.StorageLength, Stride = e.Stride,
+                        Offset = e.Offset, HasExplicitOffset = true, LikeType = e.LikeType, InitialValue = e.InitialValue, HasInitialValue = e.HasInitialValue });
+            var overrides = new HashSet<string>(StringComparer.Ordinal);
+            var extent = external?.Length ?? 0; var next = extent; var overlayEnds = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var ended = inlineEnd;
+            if (!inlineEnd) for (index++; index < lines.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var record = lines[index];
@@ -116,14 +145,17 @@ public static partial class RpgCompiler
                 if (raw.Length == 0 || raw.StartsWith("//", StringComparison.Ordinal)) { lines[index] = ""; continue; }
                 var subline = index + 1; var declaration = ReadFreeDeclaration(lines, ref index, subline, columnLimited);
                 if (Regex.IsMatch(declaration, @"\AEND-DS(?:\s+" + Regex.Escape(header.Groups[1].Value) + @")?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) { ended = true; break; }
-                var match = Regex.Match(declaration, @"\A(?:DCL-SUBF\s+)?([A-Za-z_][A-Za-z0-9_]*|\*N)\s+(.+)\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-                if (!match.Success || declaration.StartsWith("DCL-DS", StringComparison.OrdinalIgnoreCase)) throw new RpgCompileException(subline, "Expected a typed subfield or END-DS; nested declarations are not yet supported.");
+                var inline = declaration.StartsWith("DCL-DS ", StringComparison.OrdinalIgnoreCase) || declaration.StartsWith("DCL-DS\t", StringComparison.OrdinalIgnoreCase);
+                var match = Regex.Match(inline ? declaration[6..].TrimStart() : declaration, @"\A(?:DCL-SUBF\s+)?([A-Za-z_][A-Za-z0-9_]*|\*N)(?:\s+(.+))?\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (!match.Success || !inline && match.Groups[2].Value.Length == 0) throw new RpgCompileException(subline, "Expected a typed subfield, nested DCL-DS or END-DS.");
                 var local = match.Groups[1].Value.ToUpperInvariant(); var filler = local == "*N";
-                if (!filler && MapFreeOpcode(local) != RpgOpcode.None && !declaration.StartsWith("DCL-SUBF", StringComparison.OrdinalIgnoreCase))
+                if (!inline && !filler && MapFreeOpcode(local) != RpgOpcode.None && !declaration.StartsWith("DCL-SUBF", StringComparison.OrdinalIgnoreCase))
                     throw new RpgCompileException(subline, "An operation-code subfield name requires DCL-SUBF.");
                 if (local == "*N") local = "__FILLER_" + (ds.Elements.Count + 1);
                 var exported = ds.Qualified ? name + "." + local : local;
                 if (program.IsNativeProcedure) program.Fields.RemoveAll(f => program.GlobalFields.Contains(f) && f.Name.Equals(exported, StringComparison.OrdinalIgnoreCase));
+                if (external is not null && DeclarationKeywords(match.Groups[2].Value, subline).FirstOrDefault()?.Name == "EXTFLD")
+                { OverrideExternalSubfield(program, ds, local, DeclarationKeywords(match.Groups[2].Value, subline), overrides, subline); continue; }
                 if (ds.Elements.Count >= 1024 || !filler && (ds.Find(local) is not null || HasLocalDeclaration(program, exported) || exported == name))
                     throw new RpgCompileException(subline, "Duplicate subfield name or more than 1024 subfields.");
                 if (match.Groups[2].Value.StartsWith('*'))
@@ -140,9 +172,24 @@ public static partial class RpgCompiler
                     throw new RpgCompileException(subline, "Compile-time DS subfield arrays require the remaining native overlay/initialization contract.");
                 if (keywords.GroupBy(k => k.Name).Any(g => g.Count() > 1)) throw new RpgCompileException(subline, "Duplicate subfield keyword.");
                 var scalarKeywords = keywords.Where(k => k.Name is not ("DIM" or "POS" or "OVERLAY" or "ASCEND" or "DESCEND")).ToArray();
-                var scratch = new RpgProgram { Library = program.Library, Name = program.Name };
-                DeclareFreeScalar(scratch, local, string.Join(' ', scalarKeywords.Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")"))), subline, program, ds, standaloneStorage: false);
-                var field = scratch.Fields.Single();
+                RpgDataStructure? nested = null;
+                RpgField field;
+                if (inline)
+                {
+                    nested = DeclareNativeStructure(lines, ref index, program, cancellationToken, columnLimited, ds, nesting + 1, declaration, subline);
+                    field = StructureType(nested);
+                }
+                else if (keywords.FirstOrDefault()?.Name is "LIKEDS" or "LIKEREC")
+                {
+                    nested = NestedLayout(program, ds, exported, keywords, subline);
+                    field = StructureType(nested);
+                }
+                else
+                {
+                    var scratch = new RpgProgram { Library = program.Library, Name = program.Name };
+                    DeclareFreeScalar(scratch, local, string.Join(' ', scalarKeywords.Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")"))), subline, program, ds, standaloneStorage: false);
+                    field = scratch.Fields.Single();
+                }
                 if (field.Kind == RpgFieldKind.Integer && field.InitialValue is { } integer && decimal.TryParse(integer, NumberStyles.Number, CultureInfo.InvariantCulture, out var initialInteger))
                 {
                     var bytes = field.Length switch { 3 => 1, 5 => 2, 10 => 4, _ => 8 };
@@ -150,8 +197,8 @@ public static partial class RpgCompiler
                     var max = bytes == 8 ? long.MaxValue : (1L << (bytes * 8 - 1)) - 1;
                     if (initialInteger < min || initialInteger > max) throw new RpgCompileException(subline, "Integer INZ exceeds its native byte width.");
                 }
-                var width = field.Kind switch { RpgFieldKind.Packed => (field.Length + 2) / 2,
-                    RpgFieldKind.Integer => field.Length switch { 3 => 1, 5 => 2, 10 => 4, _ => 8 }, _ => field.Length };
+                var width = nested?.Length ?? (field.Kind switch { RpgFieldKind.Packed => (field.Length + 2) / 2,
+                    RpgFieldKind.Integer => field.Length switch { 3 => 1, 5 => 2, 10 => 4, _ => 8 }, _ => field.Length });
                 var dimension = NativeDimension(program, keywords.SingleOrDefault(k => k.Name == "DIM"), subline, current: ds);
                 var size = checked(width * dimension);
                 var stride = width; var isArray = keywords.Any(k => k.Name == "DIM");
@@ -159,6 +206,8 @@ public static partial class RpgCompiler
                 var pos = keywords.SingleOrDefault(k => k.Name == "POS"); var overlay = keywords.SingleOrDefault(k => k.Name == "OVERLAY");
                 if (pos is not null && overlay is not null) throw new RpgCompileException(subline, "POS and OVERLAY cannot be combined.");
                 var offset = pos is null ? next : NativeDimension(program, pos, subline, 1048576, ds) - 1;
+                var pointerAligned = field.Kind is RpgFieldKind.ProcedurePointer or RpgFieldKind.DataPointer || nested is not null && ContainsPointers(nested);
+                if (pointerAligned && pos is null && overlay is null) offset = checked((offset + 15) / 16 * 16);
                 if (overlay is not null)
                 {
                     var parts = DeclarationArguments(overlay.Arguments ?? "", subline);
@@ -177,29 +226,37 @@ public static partial class RpgCompiler
                     offset = target.Offset + relative; overlayEnds[target.Name] = Math.Max(overlayEnds.GetValueOrDefault(target.Name), relative + covered);
                 }
                 else next = Math.Max(next, checked(offset + size));
+                if (pointerAligned && offset % 16 != 0) throw new RpgCompileException(subline, "Pointers require a sixteen-byte aligned position.");
                 if ((long)offset + size > 1048576) throw new RpgCompileException(subline, "Native subfield position exceeds 1 MiB.");
                 extent = Math.Max(extent, checked(offset + size));
                 var initial = keywords.SingleOrDefault(k => k.Name == "INZ");
                 ds.Elements.Add(new() { Name = exported, LocalName = local, Kind = field.Kind, Length = field.Length, Decimals = field.Decimals,
-                    ArrayDescending = ArraySequence(keywords, isArray, subline), LikeType = field.LikeType, DeclaredLike = field.DeclaredLike,
-                    OverlayTarget = overlay is null ? null : DeclarationArguments(overlay.Arguments!, subline)[0].ToUpperInvariant(),
+                    NestedStructure = nested, ArrayDescending = ArraySequence(keywords, isArray, subline), LikeType = field.LikeType, DeclaredLike = field.DeclaredLike,
+                    NullCapable = field.NullCapable, NullIndicatorName = nested?.NullIndicatorName ?? field.NullIndicatorName, OverlayTarget = overlay is null ? null : DeclarationArguments(overlay.Arguments!, subline)[0].ToUpperInvariant(),
                     StorageLength = width, Stride = stride, Dimension = dimension, IsArray = isArray, OpaqueBytes = field.OpaqueBytes,
                     Offset = offset, HasExplicitOffset = true, InitialValue = field.InitializationExpression, HasInitialValue = initial is not null, Anonymous = filler, DeclarationLine = subline });
             }
             if (!ended) throw new RpgCompileException(line, "DCL-DS without END-DS.");
             var length = options.SingleOrDefault(k => k.Name == "LEN");
             ds.Length = length is null ? extent : NativeDimension(program, length, line, 1048576, ds);
+            if (ContainsPointers(ds))
+            {
+                if (length is not null && ds.Length % 16 != 0) throw new RpgCompileException(line, "Structures containing pointers require a sixteen-byte aligned length.");
+                ds.Length = checked((ds.Length + 15) / 16 * 16);
+            }
             if (ds.Length < extent || ds.Length < 1) throw new RpgCompileException(line, "Data structure LEN is smaller than its subfields or no storage was declared.");
         }
-        if (!template && ((long)ds.Length * ds.StorageCount > 1048576 || program.DataStructures.Where(d => d.NativeStorage && !d.IsTemplate).Sum(d => (long)d.Length * d.StorageCount) + (long)ds.Length * ds.StorageCount > 16777216))
+        if (NestedDepth(ds) > 64 || NestedFieldCount(ds) > 1024) throw new RpgCompileException(line, "Native structures support at most 64 nesting levels and 1024 recursive subfields.");
+        if (container is null && !template && ((long)ds.Length * ds.StorageCount > 1048576 || program.DataStructures.Where(d => d.NativeStorage && !d.IsTemplate).Sum(d => (long)d.Length * d.StorageCount) + (long)ds.Length * ds.StorageCount > 16777216))
             throw new RpgCompileException(line, "Native data structure storage exceeds 1 MiB per declaration or 16 MiB per program.");
         if (!ds.Qualified && ds.Elements.Any(e => program.FindDs(e.Name) is not null)) throw new RpgCompileException(line, "Data structure and subfield names collide.");
-        program.DataStructures.Add(ds);
+        if (container is null) program.DataStructures.Add(ds);
+        return ds;
     }
 
     private static RpgDataStructure CloneWithInitialization(RpgDataStructure source, bool initialized)
     {
-        var ds = new RpgDataStructure { Name = source.Name, IsTemplate = source.IsTemplate, RecordOrigin = source.RecordOrigin, NativeStorage = true, Qualified = source.Qualified, Anonymous = source.Anonymous,
+        var ds = new RpgDataStructure { Name = source.Name, BasedOn = source.BasedOn, NullIndicatorName = source.NullIndicatorName, StaticLocal = source.StaticLocal, IsTemplate = source.IsTemplate, RecordOrigin = source.RecordOrigin, NativeStorage = true, Qualified = source.Qualified, Anonymous = source.Anonymous,
             LikeDataStructure = source.LikeDataStructure, TypeOrigin = source.TypeOrigin, LikeType = source.LikeType, DeclarationLine = source.DeclarationLine,
             ProgramStatus = source.ProgramStatus, ExplicitLength = source.ExplicitLength, IndicatorDataStructure = source.IndicatorDataStructure,
             ParameterName = source.ParameterName, ReadOnlyParameter = source.ReadOnlyParameter,

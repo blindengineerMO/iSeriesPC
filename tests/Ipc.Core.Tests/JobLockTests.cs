@@ -88,16 +88,26 @@ public sealed class JobLockTests : IDisposable
         _system.Objects.Create(new ObjectDescriptor { Key = new("QGPL", "SECOND"), ObjectType = ObjectType.File });
         var second = _resource with { Name = "SECOND" };
         using var firstHeld = _locks.Acquire(_a.Key, _resource, JobLockMode.Exclusive, TimeSpan.Zero);
-        var secondHeld = _locks.Acquire(_b.Key, second, JobLockMode.Exclusive, TimeSpan.Zero);
-        var waiting = Task.Run(() => _locks.Acquire(_a.Key, second, JobLockMode.Exclusive, TimeSpan.FromSeconds(5)));
-        await WaitFor(() => _locks.Inspect(second).Any(x => x.Waiting));
+        using var secondHeld = _locks.Acquire(_b.Key, second, JobLockMode.Exclusive, TimeSpan.Zero);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        // A blocking waiter needs its own worker. Keep it alive until the probe observes
+        // it, rather than racing a five-second expiry with a busy test thread pool.
+        var waiting = Task.Factory.StartNew(() => _locks.Acquire(_a.Key, second, JobLockMode.Exclusive, Timeout.InfiniteTimeSpan, cancellation.Token),
+            cancellation.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         try
         {
+            await WaitFor(() => _locks.Inspect(second).Any(x => x.Waiting));
             var error = Assert.Throws<CpfException>(() => _locks.Acquire(_b.Key, _resource, JobLockMode.Exclusive, TimeSpan.FromSeconds(2)));
             Assert.Contains("CPF1003", error.Message);
+            secondHeld.Dispose();
+            await waiting.WaitAsync(TimeSpan.FromSeconds(5));
         }
-        finally { secondHeld.Dispose(); }
-        using var acquired = await waiting.WaitAsync(TimeSpan.FromSeconds(5));
+        finally
+        {
+            cancellation.Cancel();
+            try { using var acquired = await waiting; }
+            catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        }
     }
     [Fact]
     public async Task Existing_holder_can_reenter_without_bypassing_conflicting_holders()

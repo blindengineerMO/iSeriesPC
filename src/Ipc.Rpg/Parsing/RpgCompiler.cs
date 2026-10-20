@@ -10,30 +10,30 @@ public static partial class RpgCompiler
 {
     public static RpgProgram Compile(string library, string name, string source, CancellationToken cancellationToken = default,
         Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
-        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
-        => Compile(library, name, new SourceDocument(library + "/" + name, source), cancellationToken: cancellationToken, workstationResolver: workstationResolver, diskResolver: diskResolver);
+        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null, Func<RpgExternalRequest, RpgExternalLayout>? externalResolver = null)
+        => Compile(library, name, new SourceDocument(library + "/" + name, source), cancellationToken: cancellationToken, workstationResolver: workstationResolver, diskResolver: diskResolver, externalResolver: externalResolver);
 
     public static RpgProgram Compile(string library, string name, SourceDocument source,
         Func<SourceDocument, string, SourceDocument>? resolver = null, CancellationToken cancellationToken = default,
         Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
-        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
+        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null, Func<RpgExternalRequest, RpgExternalLayout>? externalResolver = null)
     {
-        try { return Compile(library, name, new RpgSourcePreprocessor(resolver).Expand(source, cancellationToken), cancellationToken, workstationResolver, diskResolver); }
+        try { return Compile(library, name, new RpgSourcePreprocessor(resolver).Expand(source, cancellationToken), cancellationToken, workstationResolver, diskResolver, externalResolver: externalResolver); }
         catch (SourcePreprocessException error) { throw new RpgCompileException(error.Location, error.Message); }
     }
 
     public static RpgProgram Compile(string library, string name, PreprocessedSource source, CancellationToken cancellationToken = default,
         Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null,
-        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null)
-        => CompileUnit(library, name, source, cancellationToken, workstationResolver, diskResolver);
+        Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null, Func<RpgExternalRequest, RpgExternalLayout>? externalResolver = null)
+        => CompileUnit(library, name, source, cancellationToken, workstationResolver, diskResolver, externalResolver: externalResolver);
 
     private static RpgProgram CompileUnit(string library, string name, PreprocessedSource source, CancellationToken cancellationToken,
         Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver, Func<RpgDiskRequest, RpgDiskLayout>? diskResolver,
         List<string>? preparedLines = null, RpgProgram? globals = null, string? procedureName = null, int procedureLine = 0,
-        ForwardDeclarationTypes? forwardTypes = null)
+        ForwardDeclarationTypes? forwardTypes = null, Func<RpgExternalRequest, RpgExternalLayout>? externalResolver = null, bool moduleCompilation = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant(), Source = source, GlobalProgram = globals, NativeProcedureName = procedureName, NativeEntryLine = procedureLine };
+        var program = new RpgProgram { Name = name.ToUpperInvariant(), Library = library.ToUpperInvariant(), Source = source, GlobalProgram = globals, NativeProcedureName = procedureName, NativeEntryLine = procedureLine, IsModule = moduleCompilation || globals?.IsModule == true };
         if (globals is not null) ImportGlobalSymbols(program, globals);
         try
         {
@@ -42,15 +42,26 @@ public static partial class RpgCompiler
                 l.TrimStart().StartsWith("**free", StringComparison.OrdinalIgnoreCase));
             program.IsFreeForm = freeForm;
             var nativeProcedures = globals is null ? ExtractNativeProcedures(specificationLines, freeForm, cancellationToken) : [];
+            ParseNullControl(specificationLines, program, freeForm, cancellationToken);
             program.NativeProcedureNames.UnionWith(nativeProcedures.Select(p => p.Name));
-            forwardTypes ??= new(program, specificationLines, freeForm, cancellationToken);
+            diskResolver = CachedDiskResolver(diskResolver);
+            workstationResolver = CachedWorkstationResolver(workstationResolver);
+            externalResolver = CachedExternalResolver(externalResolver);
+            program.ExternalDescriptionLookup = request =>
+            {
+                var layout = externalResolver?.Invoke(request) ?? throw new RpgCompileException(0, "EXTNAME requires a compile-time external description resolver.");
+                var binding = new RpgExternalBinding(request, layout); RpgExternalBindings.Validate(binding);
+                if (!program.ExternalDescriptions.Any(b => b.Request == request)) program.ExternalDescriptions.Add(binding);
+                return layout;
+            };
+            forwardTypes ??= new(program, specificationLines, freeForm, cancellationToken, diskResolver: diskResolver, workstationResolver: workstationResolver);
             forwardTypes.Attach(program);
             foreach (var definition in nativeProcedures) forwardTypes.Child(definition.Name, definition.Lines);
-            diskResolver = CachedDiskResolver(diskResolver);
-            var workstations = ParseWorkstationDeclarations(specificationLines, program, freeForm, cancellationToken, diskResolver: diskResolver);
+            var workstations = ParseWorkstationDeclarations(specificationLines, program, freeForm, cancellationToken, diskResolver: diskResolver, workstationResolver: workstationResolver);
             ParseDeclarations(specificationLines, program, cancellationToken);
             if (program.IsNativeProcedure && !program.HasNativeEntryInterface)
             { program.HasNativeEntryInterface = true; program.NativeParameterLists.Add("/*ENTRY", Array.Empty<string>()); }
+            ValidateBasedDeclarations(program);
             ValidateNativeProgramSignatures(program);
             BindCompileTimeData(program, cancellationToken);
             ParseFileErrorHandlers(program, workstations);
@@ -58,16 +69,19 @@ public static partial class RpgCompiler
             BindFeedbackStructures(program, workstations);
             BindWorkstations(program, workstations.Where(d => !d.Disk).ToArray(), workstationResolver);
             BindDisks(program, workstations.Where(d => d.Disk).ToArray(), diskResolver);
+            ValidateRecnoFields(program);
+            if (program.NullControl == "*USRCTL") foreach (var indicator in program.Fields.Where(f => f.Kind == RpgFieldKind.Indicator && f.Source == RpgFieldSource.ExternalFile)) indicator.NativeScalar = true;
             foreach (var field in program.Fields.Where(f => f.NativeScalar && !f.IsTemplate && !program.GlobalFields.Contains(f)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 DeclareNativeStandalone(program, field, field.DeclarationLine);
             }
+            ValidateNullAssociations(program);
             ValidateIndicatorBindings(program);
             program.FileSpecs.Clear(); program.FileSpecs.AddRange(workstations.Where(d => !d.Template).Select(d => d.Name));
             foreach (var definition in nativeProcedures)
             {
-                var body = CompileUnit(library, name, source, cancellationToken, workstationResolver, diskResolver, definition.Lines, program, definition.Name, definition.Line, forwardTypes.Child(definition.Name));
+                var body = CompileUnit(library, name, source, cancellationToken, workstationResolver, diskResolver, definition.Lines, program, definition.Name, definition.Line, forwardTypes.Child(definition.Name), externalResolver);
                 program.Subprocedures.Add(new() { Name = definition.Name, NativeBody = body, IsExport = definition.Export });
             }
             if (globals is null) LinkNativeProcedures(program);
@@ -76,12 +90,21 @@ public static partial class RpgCompiler
             ParseStatements(specificationLines, program, freeForm, cancellationToken);
             ValidateRecordIo(program);
             ValidateTemplateUses(program, keyDeclarations.Lists);
+            ValidateFileParameterUses(program, keyDeclarations.Lists);
             ValidateNativeReturns(program);
             ValidateProcedureExpressions(program);
             ValidateNativeParameterLists(program);
             ValidateNativeProgramCalls(program);
+            EnsureAddressableFields(program);
             ValidateReadOnlyParameters(program);
             ValidateParameterBuiltins(program);
+            ValidateNullBuiltins(program);
+            ValidateRightAssignments(program);
+            ValidateModuleBoundCalls(program);
+            ValidateDataDefinitions(program);
+            ValidateDataPointerOperations(program);
+            if (program.NoMain && (program.MainStatements.Count != 0 || program.HasNativeEntryInterface))
+                throw new RpgCompileException(program.MainStatements.FirstOrDefault()?.LineNumber ?? 1, "NOMAIN modules cannot contain main calculations or a main procedure interface.");
             foreach (var statement in program.MainStatements.Where(s => s.ClearAllOccurrences))
                 if (program.FindDs(statement.Result ?? "") is not { NativeStorage: true, IsMultipleOccurrence: true })
                     throw new RpgCompileException(statement.LineNumber, "CLEAR *ALL requires a named multiple-occurrence data structure.");
@@ -111,13 +134,24 @@ public static partial class RpgCompiler
             }
 
             ValidateErrorSubroutines(program);
+            if (globals is null)
+            {
+                CollectProcedureAddresses(program);
+                foreach (var procedure in program.Subprocedures.Where(p => p.NativeBody is not null))
+                    foreach (var storage in program.DataStructures)
+                    {
+                        if (!procedure.NativeBody!.DataStructures.Contains(storage)) procedure.NativeBody.DataStructures.Add(storage);
+                        procedure.NativeBody.GlobalStructures.Add(storage);
+                    }
+            }
+            if (globals is null) ValidateLocalFileVisibility(program);
 
             AssignDsOffsets(program);
             return program;
         }
         catch (RpgCompileException error) when (error.Location is null && error.LineNumber > 0 && error.LineNumber <= source.Locations.Count)
         { throw new RpgCompileException(source.Locations[error.LineNumber - 1], error.Message); }
-        finally { forwardTypes?.Detach(); program.RecordLayoutsLookup = null; }
+        finally { forwardTypes?.Detach(); program.RecordLayoutsLookup = null; program.WorkstationLayoutsLookup = null; program.ExternalDescriptionLookup = null; }
     }
 
     private static List<string> ReadSpecs(string source)
@@ -576,6 +610,10 @@ public static partial class RpgCompiler
         var space = text.IndexOfAny(new[] { ' ', '\t' });
         var opcode = (space >= 0 ? text[..space] : text).Trim().ToUpperInvariant();
         var operands = space >= 0 ? text[(space + 1)..].Trim() : string.Empty;
+        var halfAdjust = opcode == "EVAL-CORR(H)";
+        if (opcode.StartsWith("EVAL-CORR(", StringComparison.Ordinal) && !halfAdjust)
+            throw new RpgCompileException(lineNumber, "EVAL-CORR supports H; M/R precision modes for procedure expressions remain unsupported.");
+        if (halfAdjust) opcode = "EVAL-CORR";
         var callError = opcode == "CALLP(E)";
         if (opcode.StartsWith("CALLP(", StringComparison.Ordinal) && !callError)
             throw new RpgCompileException(lineNumber, "CALLP currently supports only the E extender.");
@@ -597,6 +635,7 @@ public static partial class RpgCompiler
         var statement = new RpgStatement
         {
             Opcode = mapped,
+            HalfAdjust = halfAdjust,
             NoLock = noLock,
             ErrorExtender = errorExtender || callError,
             Factor1 = null,
@@ -610,6 +649,14 @@ public static partial class RpgCompiler
 
         switch (statement.Opcode)
         {
+            case RpgOpcode.Dealloc:
+                statement.Result = operands; break;
+            case RpgOpcode.EvalR:
+                ParseRightAssignment(statement, operands, lineNumber);
+                break;
+            case RpgOpcode.EvalCorr:
+                ParseCorrespondingAssignment(program, statement, operands, lineNumber);
+                break;
             case RpgOpcode.SortA:
                 ParseArraySort(program, statement, operands, lineNumber);
                 break;
@@ -800,16 +847,19 @@ public static partial class RpgCompiler
         if (opening < 0) return (false, false);
         var operation = opcode[..opening];
         var input = operation is "CHAIN" or "READ" or "READP" or "READE" or "READPE";
-        if (!input && operation is not ("OPEN" or "CLOSE" or "SETLL" or "SETGT" or "WRITE" or "UPDATE" or "DELETE" or "UNLOCK" or "EXFMT" or "READC"))
+        if (!input && operation is not ("OPEN" or "CLOSE" or "SETLL" or "SETGT" or "WRITE" or "UPDATE" or "DELETE" or "UNLOCK" or "EXFMT" or "READC" or "DEALLOC" or "ALLOC" or "REALLOC"))
             return (false, false);
         var match = Regex.Match(opcode, @"\A[A-Z]+\(([EN]+)\)\z", RegexOptions.CultureInvariant);
         var extenders = match.Success ? match.Groups[1].Value : "";
-        if (extenders.Length == 0 || extenders.Distinct().Count() != extenders.Length || extenders.Contains('N') && !input)
+        if (extenders.Length == 0 || extenders.Distinct().Count() != extenders.Length || extenders.Contains('N') && !input && operation != "DEALLOC")
             throw new RpgCompileException(line, "File operations support E and, on update input, N; extenders cannot repeat.");
         opcode = operation; return (extenders.Contains('N'), extenders.Contains('E'));
     }
     private static RpgOpcode MapFreeOpcode(string opcode) => opcode switch
     {
+        "DEALLOC" => RpgOpcode.Dealloc,
+        "EVALR" => RpgOpcode.EvalR,
+        "EVAL-CORR" => RpgOpcode.EvalCorr,
         "EVAL" => RpgOpcode.Eval,
         "CALLP" => RpgOpcode.CallP,
         "CALLB" => RpgOpcode.CallB,

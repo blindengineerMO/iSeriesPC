@@ -24,7 +24,7 @@ seton LR;
 `*KEY` packs key fields consecutively in key order for `%KDS`; it cannot serve
 as a record I/O buffer. Native signed integer, packed/zoned, character, floating,
 indicator and default ISO date/time fields retain the supported database and
-native-field limits. Null maps, varying fields and opaque database fields remain
+native-field limits. Formal/aggregate null maps, varying fields and opaque database fields remain
 outside the declared DISK subset.
 
 ## I/O and origin checks
@@ -95,7 +95,10 @@ LIKEREC on printed pages 499–500, file result structures on pages 629–630, a
 CCSID conversion on pages 304–305. It provides prerequisites for
 [LIKEFILE](https://www.ibm.com/docs/en/i/7.6.0?topic=filename-rules-likefile-keyword),
 whose qualified record names and result structures are required for file copies.
-File parameters, WORKSTN templates/copies/result structures, EXTNAME, nested and multi-format
+[DISK file parameters](rpg-file-parameters.md), [local DISK files](rpg-local-files.md)
+and [WORKSTN result structures](rpg-workstation-records.md) extend these buffers.
+[WORKSTN file definitions](rpg-workstation-definitions.md) add templates and copies.
+Multi-format
 record layouts, null extracts, broader types/CCSIDs, full ILE linking and
 independent native-system golden acceptance remain open. C09 remains partial;
 checklist 36 complete / 70 open.
@@ -112,4 +115,21 @@ claimed.
 
 [DISK file templates and LIKEFILE definitions](rpg-file-definitions.md) now
 provide qualified module-level file copies without opening their templates.
-File parameters and WORKSTN variants remain open.
+Local WORKSTN file instances remain open.
+
+[WORKSTN file parameters](rpg-workstation-parameters.md) now borrow caller-owned
+display handles, subfile state, RRN/indicator bindings and error handling.
+
+[Nested native structures](rpg-nested-structures.md) now support inline and
+LIKEDS/LIKEREC children, shared storage views, forward types and nested record
+buffers. See that contract for supported operations and bounds.
+
+[Externally described structures](rpg-external-structures.md) add EXT/EXTNAME,
+EXTFLD/PREFIX, external defaults, compatible file-variable sharing and checked
+saved descriptions without opening runtime files.
+
+Native scalar/subfield null indicators and nullable record input/output now use
+[ALWNULL modes](rpg-null-values.md). Null extracts and parameter maps remain open.
+
+Named variables and external indicator structures now use
+[named null maps](rpg-null-maps.md). Parameter maps remain open.

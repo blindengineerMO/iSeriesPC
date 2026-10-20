@@ -7,12 +7,12 @@ namespace Ipc.Db.Store;
 
 public sealed partial class SqliteFileStore
 {
-    private void MutateLogical(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation, CancellationToken cancellationToken = default, Action? validateAfterWait = null)
+    private void MutateLogical(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation, CancellationToken cancellationToken = default, Action? validateAfterWait = null, long? relativeNumber = null)
     {
-        try { MutateLogicalCore(definition, member, formatName, values, operation, cancellationToken, validateAfterWait); }
+        try { MutateLogicalCore(definition, member, formatName, values, operation, cancellationToken, validateAfterWait, relativeNumber); }
         catch (Microsoft.Data.Sqlite.SqliteException error) when (error.SqliteErrorCode == 1) { throw LogicalError("Invalid stored logical value or mutation definition."); }
     }
-    private void MutateLogicalCore(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation, CancellationToken cancellationToken, Action? validateAfterWait)
+    private void MutateLogicalCore(FileDefinition definition, string member, string formatName, IReadOnlyDictionary<string, object?> values, string operation, CancellationToken cancellationToken, Action? validateAfterWait, long? relativeNumber)
     {
         var logical = definition.Logical!; ValidateLogical(logical);
         var format = definition.PrimaryFormat;
@@ -26,6 +26,7 @@ public sealed partial class SqliteFileStore
         foreach (var physicalMember in members) EnsureMember(logical.SourceLibrary, logical.SourceFile, physicalMember);
         using var data = OpenRecordData(logical.SourceLibrary, logical.SourceFile, write: true, cancellationToken, members: members);
         validateAfterWait?.Invoke();
+        if (relativeNumber is not null && data.IsWorkspace) throw LogicalError("Relative record output is not supported in a commitment workspace.");
         var connection = data.Connection; var transaction = data.Transaction!;
         foreach (var physicalMember in members) EnsureExactDecimalStorage(connection, transaction, MemberTable(logical.SourceLibrary, logical.SourceFile, physicalMember), physical.PrimaryFormat);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
@@ -43,7 +44,15 @@ public sealed partial class SqliteFileStore
             command.CommandText = "SELECT " + predicate + " FROM (SELECT " + string.Join(',', fields.Select((f, i) => parameters[i] + " AS " + Quote(f.Name))) + ")";
             var selected = Convert.ToInt64(command.ExecuteScalar());
             if (selected != 1) throw LogicalError("Output record does not satisfy the logical selection rules.");
-            command.CommandText = "INSERT INTO " + Quote(MemberTable(logical.SourceLibrary, logical.SourceFile, members[0])) + " (" + string.Join(',', fields.Select(f => Quote(f.Name))) + ") VALUES (" + string.Join(',', parameters) + ")";
+            var recordColumn = RowIdentitySql(physical.PrimaryFormat); long? targetNumber = null;
+            if (!data.IsWorkspace)
+            {
+                targetNumber = relativeNumber ?? Ipc.Services.Sqlite.RecordSlots.Next(connection, transaction, logical.SourceLibrary, logical.SourceFile, members[0], recordColumn, physical.ReuseDeletedRecords);
+                if (relativeNumber is not null) RequireRelativeOutputSlot(connection, transaction, logical.SourceLibrary, logical.SourceFile, members[0], recordColumn, targetNumber.Value, cancellationToken);
+                else RequireMemberCapacity(connection, transaction, logical.SourceLibrary, logical.SourceFile, members[0], physical, targetNumber.Value);
+                new JobLockStore(_factory).RequireRecordAccess(logical.SourceLibrary, logical.SourceFile, members[0], targetNumber.Value, write: true);
+            }
+            command.CommandText = "INSERT INTO " + Quote(MemberTable(logical.SourceLibrary, logical.SourceFile, members[0])) + " (" + (targetNumber is null ? "" : Quote(recordColumn) + ",") + string.Join(',', fields.Select(f => Quote(f.Name))) + ") VALUES (" + (targetNumber is null ? "" : targetNumber.Value.ToString(CultureInfo.InvariantCulture) + ",") + string.Join(',', parameters) + ")";
             data.Prepare(command); Ipc.Services.Sqlite.SqliteCancellation.Run(connection, cancellationToken, command.ExecuteNonQuery); command.CommandText = "SELECT last_insert_rowid()";
             new JobLockStore(_factory).RequireRecordAccess(logical.SourceLibrary, logical.SourceFile, members[0], Convert.ToInt64(command.ExecuteScalar()), write: true);
         }
@@ -58,9 +67,16 @@ public sealed partial class SqliteFileStore
             {
                 var table = Quote(MemberTable(logical.SourceLibrary, logical.SourceFile, physicalMember));
                 command.CommandText = "SELECT " + RowIdentitySql(physical.PrimaryFormat) + " FROM " + table + " WHERE " + predicate;
+                var deletedRows = new HashSet<long>();
                 using (var reader = command.ExecuteReader()) while (reader.Read())
-                    new JobLockStore(_factory).RequireRecordAccess(logical.SourceLibrary, logical.SourceFile, physicalMember, reader.GetInt64(0), write: true);
-               
+                {
+                    var number = reader.GetInt64(0); deletedRows.Add(number);
+                    new JobLockStore(_factory).RequireRecordAccess(logical.SourceLibrary, logical.SourceFile, physicalMember, number, write: true);
+                }
+                if (!data.IsWorkspace)
+                    data.AddCascadeLocks(operation == "DELETE" ? LockForeignCascades(connection,transaction,new(logical.SourceLibrary,logical.SourceFile),physicalMember,deletedRows,cancellationToken) :
+                        LockForeignParentChecks(connection,transaction,new(logical.SourceLibrary,logical.SourceFile),physicalMember,deletedRows,
+                            format.Fields.Where(field => field.Sequence==0 && values.ContainsKey(field.Name)).Select(field=>field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),cancellationToken));
                 command.CommandText = (operation == "DELETE" ? "DELETE FROM " + table : "UPDATE " + table + " SET " + string.Join(',', changes)) + " WHERE " + predicate;
                 data.Prepare(command); command.ExecuteNonQuery();
             }

@@ -93,13 +93,19 @@ RPG against keyed and unkeyed physical definitions. The terminal RPGRRN program
 performs CHAIN, a deleted-slot miss, SETLL, UPDATE and one-record DELETE/read
 continuation.
 
-Native DISK input declarations now bind F-spec/DCL-F layouts and access modes.
+[Durable record slots](record-slots.md) now preserve deleted extents, implement
+ordinary native-addition REUSEDLT policy and guard cursor writes with incarnation
+tokens. Native DISK input declarations bind F-spec/DCL-F layouts and access modes.
 Declared update/delete/output modes and retained input now also use
 [file/override WAITRCD policies](record-waits.md). Native commitment-open flags,
-RECNO field writeback, initialized/deleted-slot output and INZPFM/REUSEDLT allocator
-semantics, global RRN reservation/generations, complete native statuses/isolation,
+RECNO field writeback, slot-directed output, native initialization ABI/acceptance and operator
+extension, global pending RRN
+reservation and complete native statuses/isolation,
 multi-member relative mapping and independent IBM golden acceptance remain open.
 The current record workspace still loads a used member in full; large-file,
 aggregate and WAL budgets remain required. These are additions to the internal
 [cursor](cursor-navigation.md) and [transaction](record-transactions.md) foundation;
 C08/C09/C11 remain incomplete.
+
+[Member initialization](member-initialization.md) now supplies INZPFM default/deleted
+slots and SIZE policies. It leaves existing gaps and RRNs unchanged.

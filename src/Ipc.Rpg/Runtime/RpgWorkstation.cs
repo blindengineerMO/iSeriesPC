@@ -15,12 +15,16 @@ internal sealed class RpgWorkstationState : IDisposable
 {
     internal bool Initialized { get; set; }
     internal Dictionary<string, IRpgWorkstation> Files { get; } = new(StringComparer.Ordinal);
+    internal HashSet<string> Started { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, RpgRuntimeContext.FileStatus> Status { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<string, int> NumericStatus { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<string, byte[]> Feedback { get; } = new(StringComparer.OrdinalIgnoreCase);
     public void Dispose()
     {
         List<Exception>? errors = null;
         foreach (var file in Files.Values)
             try { file.Dispose(); } catch (Exception error) { (errors ??= new()).Add(error); }
-        Files.Clear(); Initialized = false;
+        Files.Clear(); Started.Clear(); Initialized = false;
         if (errors is not null) throw new AggregateException("Could not close RPG workstations.", errors);
     }
 }

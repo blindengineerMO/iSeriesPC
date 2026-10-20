@@ -17,6 +17,13 @@ Their `Ipc.Console.Session` namespaces remain stable for existing callers. The
 console owns terminal I/O only. `Ipc.Server` supplies the background executable;
 `SessionServer` hosts the shared services and isolated session controllers.
 
+The shared `Ipc.Sql` assembly sits between `Ipc.Core` and the service/database
+layers. It supplies file definitions, SQL parsing/types, exact expression evaluation
+and record-value conversions. Services register its versioned CHECK evaluator on
+normal and private record-workspace connections. Database queries and mutations
+use that same evaluator. Existing public type names resolve through assembly
+forwarders; see [SQL CHECK constraints](sql-check-constraints.md).
+
 ## Ownership and lifecycle
 
 The server holds exclusive OS file handles on `<catalog>.host.lock` and

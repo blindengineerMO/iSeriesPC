@@ -124,7 +124,7 @@ program feedback, retained occurrences and CL aliases on return/error in actual
 CCSID 37/1208 jobs. RPGFIXDS adds terminal compilation and execution of packed
 precision, native integers, overlays and C-spec arithmetic.
 
-External DS descriptions, data-area DS, nested/LIKEDS subfields, DS-subfield
+Data-area DS, DS-subfield
 CTDATA/ALT, local/procedure signatures, wider type/date-time/CCSID formats,
 continued names/literals,
 complete native entry/array/procedure ABI and independent native golden/scale
@@ -139,3 +139,7 @@ checks pass, and the full run includes 2567 RPG/CL/queue checks. Locked restore,
 zero-warning/error Release build, final RPGFIXDS/display PTY, generated inventory,
 documentation links and whitespace checks pass. RPGFIXDS runs at 24x80; general
 display fixtures also cover 27x132. Full-suite runtime is 7m13s.
+
+[Externally described structures](rpg-external-structures.md) add EXT/EXTNAME,
+EXTFLD/PREFIX, external defaults, compatible file-variable sharing and checked
+saved descriptions without opening runtime files.

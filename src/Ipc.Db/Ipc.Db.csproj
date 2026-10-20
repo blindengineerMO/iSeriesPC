@@ -6,5 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Ipc.Core\Ipc.Core.csproj" />
     <ProjectReference Include="..\Ipc.Services\Ipc.Services.csproj" />
+    <ProjectReference Include="../Ipc.Sql/Ipc.Sql.csproj" />
+    <Compile Remove="Definitions/*.cs;Sql/*.cs;Store/SqlExpressionBinding.cs;Store/SqlScalarFunctions.cs" />
   </ItemGroup>
 </Project>

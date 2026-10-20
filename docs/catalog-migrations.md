@@ -1,5 +1,11 @@
 # Catalog migrations and recovery
 
+Schema 32 adds durable member extents and record incarnation tokens. Migration
+seeds sparse existing physical/source members without changing their record
+formats; deleted trailing positions lost by earlier schemas cannot be recovered.
+Failed installation rolls back schema, triggers and migration history. See
+[physical record slots](record-slots.md).
+
 Schema 31 adds nullable journal commitment-cycle identity and an indexed cycle
 lookup. Existing receiver bytes, sequence numbers, entries and accounting remain
 unchanged. Schema-30 upgrade and injected post-ALTER failure/retry preserve data
@@ -168,3 +174,18 @@ builder, enable foreign keys, and release their own keepalive/pool on disposal.
 `IpcSystem` no longer writes disk logs for in-memory catalogs. Readiness here means
 the embedded system initialized; the shared background server reports readiness
 after ownership, migration, recovery, listener and dispatcher initialization.
+
+Schema 33 adds [job inquiry policies and the system reply list](inquiry-replies.md),
+with atomic upgrade rollback, legacy RQD defaults and persisted reply comparisons.
+
+Schema 34 adds [operator-granted member capacity and registered size inquiries](operator-capacity.md), with transactional upgrade and interrupted-job cleanup.
+
+Searched SQL mutations upgrade the separate lock coordination database from
+format 1 to 2, adding record-set membership and transactional holder cleanup.
+The main catalog stays at schema 34. See [SQL mutations](sql-mutations.md).
+
+Schema 35 adds private [saved interactive SQL sessions](sql-interactive.md), keyed
+by profile with cascading profile cleanup and revision-checked transactional
+settings/history/draft writes. SQL text is excluded from audit payloads. The
+schema-34 upgrade preserves data and creates the normal restorable backup.
+QDECFMT is seeded independently without replacing customized values.

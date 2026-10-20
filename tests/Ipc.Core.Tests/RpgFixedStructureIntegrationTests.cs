@@ -68,10 +68,17 @@ public sealed partial class RpgDiskFileTests
     }
 
     [Theory]
-    [InlineData("E", " ")] [InlineData(" ", "U")]
-    public void Unsupported_native_external_or_data_area_structures_prevent_program_creation(string external, string status)
+    [InlineData(" ", "U")]
+    public void Unsupported_native_data_area_structures_prevent_program_creation(string external, string status)
     {
         var result = Create(D("DATA", "DS", external: external[0], status: status[0]) + D("N", length: "1") + "/free\nreturn;\n/end-free");
         Assert.True(result.IsError); Assert.False(_system.Objects.Exists("QGPL", "APP", ObjectType.Program));
     }
+    [Fact]
+    public void Native_external_headers_use_the_structure_name_as_the_saved_description()
+    {
+        Compile(D("DATA", "DS", external: 'E', keywords: "QUALIFIED INZ") + D("EXTRA", length: "1") + "/free\neval DATA.ID=77;\nsndpgmmsg %char(DATA.ID);\nreturn;\n/end-free");
+        _files.RemoveMember("QGPL", "SOURCE", "APP"); _files.DeleteFile("QGPL", "DATA"); using var session = Session(); Ok(session.Execute("CALL QGPL/APP"), "77");
+    }
+
 }

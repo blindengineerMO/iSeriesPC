@@ -30,8 +30,8 @@ public sealed partial class CommandService
             var fileName = context.Resolve(call?.GetOption("MSGF") ?? "QCPFMSG").Trim().ToUpperInvariant();
             var (requestedLibrary, requestedName) = SplitQualified(fileName, "*LIBL");
             var found = SearchLibraries(requestedLibrary).FirstOrDefault(library => _system.Objects.Exists(library, requestedName, ObjectType.MessageFile));
-            // Preserve the existing CPF9898 immediate-text adapter when no real QCPFMSG exists.
-            if (!(found is null && messageId == "CPF9898" && fileName is "QCPFMSG" or "QSYS/QCPFMSG"))
+            // Preserve the generic-text adapter until the bounded system file supplies CPF9898.
+            if (!(messageId == "CPF9898" && fileName is "QCPFMSG" or "QSYS/QCPFMSG" && (found is null || new MessageDescriptionStore(_system.Connections).UsesGenericClFallback(found,requestedName))))
             {
                 if (found is null) throw new CpfException("CPF2407", "Message file not found.");
                 predefined = new MessageDescriptionStore(_system.Connections).Snapshot(found, requestedName, messageId, requestedLibrary, replacement);

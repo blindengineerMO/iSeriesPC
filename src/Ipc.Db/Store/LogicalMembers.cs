@@ -14,6 +14,7 @@ public sealed partial class SqliteFileStore
         Authorize(library, name, AuthorityBit.ObjectManagement);
         using var connection = _factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
         var definition = GetDefinition(library, name) ?? throw LogicalError("File not found.");
+        if (definition.SqlIndex) throw LogicalError("SQL index member bindings are managed by the base file.");
         var logical = definition.Logical ?? throw LogicalError("ADDLFM requires a logical file."); ValidateLogical(logical);
         if (logical.Members.ContainsKey(member)) throw new CpfException("CPF5812", "Logical member already exists.");
         if (logical.Members.Count >= logical.MaximumMembers) throw LogicalError("Logical file has reached its maximum member count.");

@@ -21,11 +21,11 @@ public sealed partial class CommandService
         return DescribeRpgWorkstation(request, library, name, new DisplayFileStore(_system.Connections, ResolveDisplayMessage).Load(library, name));
     }
 
-    private static RpgWorkstationLayout DescribeRpgWorkstation(RpgWorkstationRequest request, string library, string name, PanelDefinition panel)
+    private static RpgWorkstationLayout DescribeRpgWorkstation(RpgWorkstationRequest request, string library, string name, PanelDefinition panel, string? family = null)
     {
         if (request.Renames.Any(rename => !panel.Records.Any(r => r.Name == rename.External)))
             throw new CpfException("CPF4131", "RENAME references an unavailable display record.");
-        string RecordName(string external) => request.Renames.SingleOrDefault(r => r.External == external)?.Name ?? external;
+        string RecordName(string external) => RpgWorkstationBindings.RecordName(request, request.Renames.SingleOrDefault(r => r.External == external)?.Name ?? external);
         var records = panel.Records.Select(record =>
         {
             var subfile = record.Keywords.Any(k => k.Name == "SFL");
@@ -45,7 +45,7 @@ public sealed partial class CommandService
         var indicatorArea = panel.Keywords.Any(k => k.Name == "INDARA");
         var signature = RpgWorkstationLayout.SignatureFor(records, indicatorArea);
         var layout = new RpgWorkstationLayout(library + "/" + name, signature, records) { IndicatorArea = indicatorArea };
-        RpgWorkstationBindings.Validate(new(request, layout)); return layout;
+        RpgWorkstationBindings.Validate(new(request, layout, family)); return layout;
     }
 
     private IRpgWorkstation OpenRpgWorkstation(RpgWorkstationBinding binding)
@@ -64,7 +64,7 @@ public sealed partial class CommandService
                 new JobDataAreaStore(_system.Connections).RequireOwner(_job.Key);
                 if (_system.Objects.GetRequired(library, name, ObjectType.File).Created != created)
                     throw new CpfException("CPF4131", "The open display file was replaced.");
-                var current = DescribeRpgWorkstation(binding.Request, library, name, store.Load(library, name));
+                var current = DescribeRpgWorkstation(binding.Request, library, name, store.Load(library, name), binding.Family);
                 var signature = binding.Layout.IndicatorArea is null ? RpgWorkstationLayout.SignatureFor(current.Records) : current.Signature;
                 if (signature != binding.Layout.Signature)
                     throw new CpfException("CPF4131", "Display record format changed; recompile the RPG program.");

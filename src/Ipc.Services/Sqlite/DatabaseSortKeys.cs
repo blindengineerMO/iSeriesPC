@@ -22,6 +22,14 @@ public static class DatabaseSortKeys
     {
         connection.CreateFunction<string?, byte[]?>("ipc_decimal_key_v1", Decimal, isDeterministic: true);
         connection.CreateFunction<string?, int, int, byte[]?>("ipc_text_key_v1", Text, isDeterministic: true);
+        connection.CreateCollation("ipc_decimal_v1", (left, right) => Decimal(left)!.AsSpan().SequenceCompareTo(Decimal(right)));
+        foreach (var ccsid in new[] { 37, 500, 1047, 850, 819, 1208, 367 })
+            connection.CreateCollation("ipc_text_v1_" + ccsid, (left, right) => TextEqualityKey(left, ccsid).AsSpan().SequenceCompareTo(TextEqualityKey(right, ccsid)));
+    }
+    private static byte[] TextEqualityKey(string text, int ccsid)
+    {
+        var encoding = (Encoding)CodePage.FromCcsid(ccsid).Clone(); encoding.EncoderFallback = EncoderFallback.ExceptionFallback;
+        return encoding.GetBytes(text.TrimEnd(' '));
     }
     public static byte[]? Decimal(string? text)
     {

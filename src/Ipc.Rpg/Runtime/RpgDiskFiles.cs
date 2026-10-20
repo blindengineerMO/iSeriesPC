@@ -22,15 +22,15 @@ public static class RpgDiskLayouts
         if (request.Renames.Any(r => r.External != format.Name)) throw new CpfException("CPF4131", "RENAME references an unavailable database record.");
         var fields = format.Fields.Select(field =>
         {
-            if (field.NullCapable || field.VariableLength || field.Type == FieldType.Alpha && field.Ccsid == 65535)
-                throw new CpfException("CPF4131", "DISK declarations do not yet support null-capable, varying or opaque database fields.");
+            if (field.VariableLength || field.Type == FieldType.Alpha && field.Ccsid == 65535)
+                throw new CpfException("CPF4131", "DISK declarations do not yet support varying or opaque database fields.");
             var kind = field.Type switch { FieldType.Alpha => RpgFieldKind.Character, FieldType.Zoned => RpgFieldKind.Zoned,
                 FieldType.Packed => RpgFieldKind.Packed, FieldType.Binary => RpgFieldKind.Integer, FieldType.Float => RpgFieldKind.Float,
                 FieldType.Logic => RpgFieldKind.Indicator, FieldType.Date => RpgFieldKind.Date, FieldType.Time => RpgFieldKind.Time,
                 FieldType.Timestamp => RpgFieldKind.Timestamp, _ => throw new CpfException("CPF4131", "Unsupported database field type.") };
             var length = field.Type == FieldType.Binary ? field.Length switch { 1 => 3, 2 => 5, 4 => 10, 8 => 20, _ => 0 } : field.Length;
             return new RpgDiskField(field.Name, request.Prefix + field.Name, kind, length, field.Decimals, field.Ccsid,
-                field.Sequence, field.Descending, field.Position, field.StorageLength);
+                field.Sequence, field.Descending, field.Position, field.StorageLength, field.NullCapable);
         }).ToArray();
         var record = RpgDiskBindings.RecordName(request, request.Renames.SingleOrDefault()?.Name ?? format.Name);
         var result = new RpgDiskLayout(library + "/" + name,
@@ -51,6 +51,10 @@ public static class RpgDiskLayouts
 
 internal sealed class RpgDiskState : IDisposable
 {
+    internal HashSet<string> Started { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, RpgRuntimeContext.FileStatus> Status { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, int> NumericStatus { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, byte[]> Feedback { get; } = new(StringComparer.Ordinal);
     internal bool Initialized { get; set; }
     internal Dictionary<string, RpgFileHandle> Files { get; } = new(StringComparer.Ordinal);
     public void Dispose()
@@ -58,7 +62,7 @@ internal sealed class RpgDiskState : IDisposable
         List<Exception>? errors = null;
         foreach (var handle in Files.Values)
             try { handle.Close(); } catch (Exception error) { (errors ??= []).Add(error); }
-        Files.Clear(); Initialized = false;
+        Files.Clear(); Started.Clear(); Status.Clear(); NumericStatus.Clear(); Feedback.Clear(); Initialized = false;
         if (errors is not null) throw new AggregateException("Could not close RPG disk files.", errors);
     }
 }
@@ -76,7 +80,7 @@ public sealed partial class RpgInterpreter
             {
                 var disk = context.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name);
                 var workstation = context.Program.Workstations.SingleOrDefault(f => f.Request.Name == name);
-                if (disk is { Request.UserOpen: false, Request.IsTemplate: false }) context.DiskState.Files.Add(name, ImplicitFile(name, () => CreateDisk(disk)));
+                if (disk is { Request.UserOpen: false, Request.IsTemplate: false, Request.IsParameter: false }) context.DiskState.Files.Add(name, ImplicitFile(name, () => OpenWithRecno(context, name, () => CreateDisk(disk))));
                 else if (workstation is { Request.UserOpen: false }) context.WorkstationState.Files.Add(name, ImplicitFile(name, () => CreateWorkstation(workstation)));
                 else continue;
                 context.SetFileStatus(name, clearFileEof: true);
@@ -99,9 +103,9 @@ public sealed partial class RpgInterpreter
         }
         try
         {
-            foreach (var file in context.Program.DiskFiles.Where(f => !f.Request.UserOpen && !f.Request.IsTemplate).Reverse())
+            foreach (var file in context.Program.DiskFiles.Where(f => !f.Request.UserOpen && !f.Request.IsTemplate && !f.Request.IsParameter).Reverse())
             {
-                state.Files.Add(file.Request.Name, ImplicitFile(file.Request.Name, () => CreateDisk(file))); context.SetFileStatus(file.Request.Name, clearFileEof: true);
+                state.Files.Add(file.Request.Name, ImplicitFile(file.Request.Name, () => OpenWithRecno(context, file.Request.Name, () => CreateDisk(file)))); context.SetFileStatus(file.Request.Name, clearFileEof: true);
             }
             state.Initialized = true;
         }
@@ -109,7 +113,7 @@ public sealed partial class RpgInterpreter
     }
     private RpgFileHandle CreateDisk(RpgDiskBinding binding)
     {
-        if (binding.Request.IsTemplate) throw FileFailure(105, "A TEMPLATE file has no runtime storage.", binding.Request.Name);
+        if (binding.Request.IsTemplate || binding.Request.IsParameter) throw FileFailure(105, "A TEMPLATE or file parameter has no independent runtime storage.", binding.Request.Name);
         RpgFileHandle handle;
         if (_host.OpenDisk is { } open) handle = open(binding);
         else
@@ -134,8 +138,10 @@ public sealed partial class RpgInterpreter
         var name = FirstFile(statement).ToUpperInvariant();
         var binding = context.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name);
         if (binding is null) return false;
-        if (context.DiskState.Files.ContainsKey(name)) throw FileFailure(1215, "DISK file is already open: " + name, name);
-        context.DiskState.Files.Add(name, FileIo(name, () => CreateDisk(binding), 1217)); context.SetFileStatus(name, clearFileEof: true); return true;
+        var reference = context.FileReference(name); var owner = reference?.Owner ?? context; var actual = reference?.Binding ?? binding;
+        var actualName = actual.Request.Name;
+        if (owner.DiskStateFor(actualName).Files.ContainsKey(actualName)) throw FileFailure(1215, "DISK file is already open: " + name, name);
+        owner.DiskStateFor(actualName).Files.Add(actualName, FileIo(name, () => OpenWithRecno(context, name, () => reference is null ? CreateDisk(actual) : owner.FileOpener!(actual)), 1217)); context.SetFileStatus(name, clearFileEof: true); return true;
     }
     private static bool CloseDisk(RpgStatement statement, RpgRuntimeContext context)
     {
@@ -143,39 +149,45 @@ public sealed partial class RpgInterpreter
         var binding = context.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name);
         if (binding is null) return false;
         if (binding.Request.IsTemplate) throw FileFailure(105, "A TEMPLATE file has no runtime I/O.", name);
-        if (!context.DiskState.Files.Remove(name, out var handle)) throw FileFailure(1211, "DISK file is not open: " + name, name);
+        var reference = context.FileReference(name); var owner = reference?.Owner ?? context; var actualName = reference?.Binding.Request.Name ?? name;
+        if (!owner.DiskStateFor(actualName).Files.Remove(actualName, out var handle)) throw FileFailure(1211, "DISK file is not open: " + name, name);
         handle.Close(); return true;
     }
     private RpgFileCursor? DeclaredDisk(string name)
     {
         var context = _context ?? throw new InvalidOperationException("No RPG execution context.");
-        var binding = context.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name || f.Layout.Record == name);
+        var binding = context.Program.FindDisk(name);
         if (binding is null) return null;
         if (binding.Request.IsTemplate) throw FileFailure(105, "A TEMPLATE file has no runtime I/O.", binding.Request.Name);
-        if (!context.DiskState.Files.TryGetValue(binding.Request.Name, out var handle)) throw FileFailure(1211, "DISK file is not open: " + binding.Request.Name, binding.Request.Name);
+        var reference = context.FileReference(binding.Request.Name); var owner = reference?.Owner ?? context; var actualName = reference?.Binding.Request.Name ?? binding.Request.Name;
+        if (!owner.DiskStateFor(actualName).Files.TryGetValue(actualName, out var handle)) throw FileFailure(1211, "DISK file is not open: " + binding.Request.Name, binding.Request.Name);
         var cursor = handle.Cursor; RpgDiskLayouts.Validate(binding, cursor); return cursor;
     }
     private void CopyDiskRecord(RpgRuntimeContext context, RpgStatement statement, IReadOnlyDictionary<string, object?> record, RpgFileCursor cursor, RpgRuntimeContext.NativeView? receiver = null)
     {
         var name = FirstFile(statement).ToUpperInvariant();
-        var binding = context.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name || f.Layout.Record == name);
+        var binding = context.Program.FindDisk(name);
         if (binding is null) { CopyRecordToContext(context, record); return; }
         try
         {
+            var feedback = FileIo(binding.Request.Name, () => context.PrepareRecno(binding.Request.Name, cursor.CurrentRecordNumber));
+            var prepared = FileIo(binding.Request.Name, () => context.PrepareNullInput(record, cursor.Definition.PrimaryFormat));
             if (receiver is not null)
             {
-                FileIo(binding.Request.Name, () => context.ReceiveRecord(receiver, binding, record)); return;
+                FileIo(binding.Request.Name, () => context.ReceiveRecord(receiver, binding, prepared, record)); feedback?.Invoke(); return;
             }
             var values = FileIo(binding.Request.Name, () => binding.Layout.Fields.Select(field =>
-                (field.Name, Value: context.NormalizeFileValue(field.Name, record[field.External]))).ToArray());
-            foreach (var field in values) context.WriteValue(field.Name, field.Value);
+                (field.Name, Value: context.NormalizeFileValue(field.Name, prepared[field.External]))).ToArray());
+            foreach (var field in values) context.WriteFileValue(field.Name, field.Value);
+            foreach (var field in binding.Layout.Fields) context.SetFileNullIndicator(field.Name, record[field.External] is null);
+            feedback?.Invoke();
         }
         catch { cursor.InvalidateCurrent(); throw; }
     }
     private static RpgDiskBinding? DiskBinding(RpgRuntimeContext context, RpgStatement statement)
     {
         var name = FirstFile(statement).ToUpperInvariant();
-        return context.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name || f.Layout.Record == name);
+        return context.Program.FindDisk(name);
     }
     private int UnlockOpcode(RpgStatement statement, RpgRuntimeContext context)
     {
@@ -187,7 +199,7 @@ public sealed partial class RpgInterpreter
     private string StatusFile(RpgStatement statement)
     {
         var name = FirstFile(statement).ToUpperInvariant();
-        return _context?.Program.DiskFiles.SingleOrDefault(f => f.Request.Name == name || f.Layout.Record == name)?.Request.Name ??
-            _context?.Program.Workstations.SingleOrDefault(f => f.Request.Name == name || f.Layout.Records.Any(r => r.Name == name))?.Request.Name ?? name;
+        return _context?.Program.FindDisk(name)?.Request.Name ??
+            _context?.Program.FindWorkstation(name)?.Request.Name ?? name;
     }
 }

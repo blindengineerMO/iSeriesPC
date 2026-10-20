@@ -77,6 +77,11 @@ public enum RpgOpcode
     SortA,
     XFoot,
     Lookup,
+    EvalCorr,
+    EvalR,
+    Dealloc,
+    Alloc,
+    Realloc,
 }
 
 public enum RpgFieldKind
@@ -95,6 +100,8 @@ public enum RpgFieldKind
     Timestamp,
     Indicator,
     ProcPtr,
+    ProcedurePointer,
+    DataPointer,
 }
 
 public enum RpgFieldSource
@@ -110,6 +117,9 @@ public enum RpgFieldSource
 
 public sealed class RpgField
 {
+    public string? BasedOn { get; init; }
+    public string? NullIndicatorName { get; init; }
+    public bool NullCapable { get; set; }
     public bool IsTemplate { get; init; }
     internal object LikeType { get; init; } = new();
     internal bool DeclaredLike { get; init; }
@@ -119,11 +129,16 @@ public sealed class RpgField
     public bool OmitParameter { get; init; }
     public bool ValueParameter { get; init; }
     public bool VariableSizeParameter { get; internal set; }
+    public bool NullMapParameter { get; internal set; }
+    internal int? NullIndicatorParameterIndex { get; set; }
     public bool ExactParameter { get; internal set; }
     public bool TrimParameter { get; internal set; }
     public bool RightAdjustParameter { get; internal set; }
     public bool StaticLocal { get; init; }
     internal RpgDataStructure? ParameterStructure { get; init; }
+    internal RpgDiskBinding? FileParameter { get; init; }
+    internal RpgWorkstationBinding? WorkstationParameter { get; init; }
+    internal bool IsFileParameter => FileParameter is not null || WorkstationParameter is not null;
     public bool IsTable { get; init; }
     public string? AlternateOf { get; init; }
     public bool CompileTimeArray { get; init; }
@@ -132,7 +147,7 @@ public sealed class RpgField
     public string CompileTimeFormat { get; init; } = "S";
     public bool? ArrayDescending { get; init; }
     public bool NativeArray { get; init; }
-    public bool NativeScalar { get; init; }
+    public bool NativeScalar { get; set; }
     public int DeclarationLine { get; init; }
     public string? InitializationExpression { get; init; }
     public bool OpaqueBytes { get; set; }
@@ -161,6 +176,11 @@ public sealed class RpgField
 
 public sealed class RpgDsElement
 {
+    public string? NullIndicatorName { get; init; }
+    public bool NullCapable { get; set; }
+    public RpgDataStructure? NestedStructure { get; init; }
+    public string? ExternalName { get; init; }
+    public bool ExternalDefaultInitialization { get; init; }
     internal object LikeType { get; init; } = new();
     internal bool DeclaredLike { get; init; }
     public bool ReadOnlyParameter { get; init; }
@@ -196,6 +216,9 @@ public sealed class RpgDsElement
 
 public sealed class RpgDataStructure
 {
+    public string? BasedOn { get; init; }
+    public string? NullIndicatorName { get; init; }
+    public bool StaticLocal { get; init; }
     public bool IsTemplate { get; init; }
     public RpgRecordOrigin? RecordOrigin { get; internal set; }
     internal object LikeType { get; init; } = new();
@@ -266,6 +289,7 @@ public sealed class RpgStatement
     public string NativeControlLevel { get; set; } = "";
     public IReadOnlyList<string> SortFields { get; set; } = Array.Empty<string>();
     public bool? SortDescending { get; init; }
+    public bool HalfAdjust { get; init; }
     public bool ClearAllOccurrences { get; set; }
     public bool IsFreeForm { get; init; }
     public bool NoLock { get; init; }
@@ -316,6 +340,19 @@ public sealed class RpgCallSpec
 
 public sealed class RpgProgram
 {
+    public bool IsModule { get; internal set; }
+    public bool NoMain { get; internal set; }
+    public IReadOnlyList<string> BindingDirectories { get; internal set; } = [];
+    public bool IsBoundProgram { get; internal set; }
+    internal Dictionary<string, RpgSubprocedure> BoundProcedures { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, RpgServiceImport> BoundServices { get; } = new(StringComparer.Ordinal);
+    public List<RpgDataDefinition> DataDefinitions { get; } = [];
+    public List<string> ProcedureAddresses { get; } = [];
+    public bool HasExportedData => DataDefinitions.Any(d => !d.Import) || BoundModules.Any(m => m.DataDefinitions.Any(d => !d.Import));
+    internal Dictionary<string, RpgDataBinding> BoundData { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public IReadOnlyList<RpgServiceReference> ServiceReferences { get; internal set; } = [];
+    internal IReadOnlyList<RpgProgram> BoundModules { get; set; } = [];
+
     internal Func<string, bool, int, RpgDataStructure?>? ForwardStructureLookup { get; set; }
     internal Func<string, RpgDataStructure?, RpgField?>? ForwardTypeLookup { get; set; }
     internal Func<int, string, object>? DeclarationIdentityLookup { get; set; }
@@ -358,9 +395,32 @@ public sealed class RpgProgram
     public bool IsFreeForm { get; set; }
 
     public List<string> FileSpecs { get; } = new();
+    internal string NullControl { get; set; } = "*NO";
     public List<RpgWorkstationBinding> Workstations { get; } = new();
+    internal RpgDiskBinding? FindDisk(string? name)
+    {
+        var file = DiskFiles.Where(f => f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || f.Layout.Record.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(f => f.Request.Procedure == NativeProcedureName && f.Request.Procedure is not null).FirstOrDefault();
+        return file?.Request.Procedure is null && Workstations.Any(f => f.Request.Procedure is not null && f.Request.Procedure == NativeProcedureName &&
+            (f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || f.Layout.Records.Any(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))) ? null : file;
+    }
+    internal RpgWorkstationBinding? FindWorkstation(string? name)
+    {
+        var file = Workstations.Where(f => f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || f.Layout.Records.Any(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            .OrderByDescending(f => f.Request.Procedure == NativeProcedureName && f.Request.Procedure is not null).FirstOrDefault();
+        return file?.Request.Procedure is null && DiskFiles.Any(f => f.Request.Procedure is not null && f.Request.Procedure == NativeProcedureName &&
+            (f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || f.Layout.Record.Equals(name, StringComparison.OrdinalIgnoreCase))) ? null : file;
+    }
     public List<RpgDiskBinding> DiskFiles { get; } = new();
+    internal List<RpgExternalBinding> ExternalDescriptions { get; } = new();
+    internal Func<RpgExternalRequest, RpgExternalLayout>? ExternalDescriptionLookup { get; set; }
     internal List<RpgDiskBinding> DeclarationDiskFiles { get; } = new();
+    internal Dictionary<string, string> FileDefinitionKeywords { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<string, int> FileDeclarationLines { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal HashSet<string> UnblockedFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal List<RpgWorkstationBinding> DeclarationWorkstations { get; } = new();
+    internal Func<IReadOnlyList<RpgWorkstationBinding>>? WorkstationLayoutsLookup { get; set; }
+    internal Func<string, int, RpgField?>? ForwardFileLookup { get; set; }
     internal Func<IReadOnlyList<RpgDiskBinding>>? RecordLayoutsLookup { get; set; }
     internal Dictionary<string, RpgDataStructure> RecordStructures { get; } = new(StringComparer.Ordinal);
 
@@ -398,12 +458,17 @@ public sealed class RpgProgram
     public RpgSubprocedure? FindSubprocedure(string name) =>
         Subprocedures.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) ?? GlobalProgram?.FindSubprocedure(name);
 
+    internal RpgSubprocedure? FindBoundProcedure(string name) => BoundProcedures.GetValueOrDefault(name) ?? GlobalProgram?.FindBoundProcedure(name);
+
+    internal RpgServiceImport? FindBoundService(string name) => BoundServices.GetValueOrDefault(name) ?? GlobalProgram?.FindBoundService(name);
+
     public RpgPrototype? FindPrototype(string name) =>
         Prototypes.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) ?? GlobalProgram?.FindPrototype(name);
 }
 
 public sealed class RpgPrototype
 {
+    public string? PointerTarget { get; init; }
     public bool NativeProcedure { get; init; }
     public RpgField? NativeReturnField { get; init; }
     public bool AcceptsArgumentCount(int count) => count >= 0 && count <= Parameters.Count &&
@@ -411,9 +476,11 @@ public sealed class RpgPrototype
     public int DeclarationLine { get; init; }
     public bool NativeSignature { get; init; }
     public List<RpgField> NativeParameters { get; } = new();
+    internal List<string> NativeParameterNames { get; } = new();
     public required string Name { get; init; }
 
     public string? ExternalName { get; init; }
+    public bool ExternalDefaultInitialization { get; init; }
 
     public string? ReturnType { get; init; }
 

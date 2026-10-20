@@ -46,11 +46,14 @@ public sealed partial class CommandService
                     var (library, name) = ResolveWorkObject(CommandParser.Unquote(value).ToUpperInvariant(), type);
                     return library + "/" + name;
                 }
-                info.SetBindings(key, Queue("OUTQ", ObjectType.OutputQueue), Queue("MSGQ", ObjectType.MessageQueue)); break;
+                var inquiry=CommandParser.Unquote(call.GetOption("INQMSGRPY")??"*SAME").ToUpperInvariant();
+                if(inquiry!="*SAME"&&!Ipc.Services.Messages.InquiryReplyPolicy.Valid(inquiry))throw new CpfException("IPC0003","Invalid INQMSGRPY.");
+                if(call.GetOption("OUTQ") is not null || call.GetOption("MSGQ") is not null)info.SetBindings(key, Queue("OUTQ", ObjectType.OutputQueue), Queue("MSGQ", ObjectType.MessageQueue));
+                new Ipc.Services.Messages.InquiryReplyPolicy(_system.Connections).Set(key,inquiry);break;
             case "WRKJOB":
                 var job = _system.Jobs.GetRequired(key); var bindings = info.Bindings(key);
                 return new CommandResult { Message = DescribeJob(job, info.Accounting(key)), Listing =
-                    new[] { DescribeJob(job, info.Accounting(key)), $"Output queue: {bindings.OutputQueue}; message queue: {bindings.MessageQueue}" }
+                    new[] { DescribeJob(job, info.Accounting(key)), $"Output queue: {bindings.OutputQueue}; message queue: {bindings.MessageQueue}", $"Inquiry message reply: {job.InquiryMessageReply}" }
                     .Concat(info.ActivationGroups(key).Select(g => $"Activation group {g.Name}: {g.ActiveCalls} active call(s)"))
                     .Concat(info.Processes(key).Select(p => FormattableString.Invariant($"Process {p.ProcessId}: {p.State}, CPU sample {p.CpuNanoseconds / 1000000000.0:F6}s, peak sampled threads {p.PeakThreads}, exit {p.ExitCode}")))
                     .Concat(info.Threads(key).Select(t => $"Thread {t.ManagedThread} (Linux {t.NativeThread}): {t.State}, CPU {t.CpuNanoseconds / 1000000000.0:F6}s"))
@@ -62,7 +65,20 @@ public sealed partial class CommandService
     {
         var group = CommandParser.Unquote(call.GetOption("ACTGRP") ?? "*CALLER").ToUpperInvariant();
         if (group is not ("*NEW" or "*CALLER") && !ObjectName.IsValid(group)) throw new CpfException("IPC0124", "Invalid activation group.");
-        return new Dictionary<string, string> { ["ipc.program.activationGroup"] = group };
+        var attributes = new Dictionary<string, string> { ["ipc.program.activationGroup"] = group };
+        if (call.GetOption("ALWUPD") is { } option)
+        {
+            var allow = CommandParser.Unquote(option).ToUpperInvariant();
+            if (allow is not ("*YES" or "*NO")) throw new CpfException("IPC0003", "ALWUPD must be *YES or *NO.");
+            attributes["ipc.program.allowUpdate"] = allow;
+        }
+        if (call.GetOption("ALWLIBUPD") is { } libraryOption)
+        {
+            var allow = CommandParser.Unquote(libraryOption).ToUpperInvariant();
+            if (allow is not ("*YES" or "*NO")) throw new CpfException("IPC0003", "ALWLIBUPD must be *YES or *NO.");
+            attributes["ipc.program.allowLibraryUpdate"] = allow;
+        }
+        return attributes;
     }
     private JobKey ResolveJob(string value)
     {

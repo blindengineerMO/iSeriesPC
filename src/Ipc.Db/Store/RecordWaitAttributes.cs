@@ -10,9 +10,9 @@ public sealed partial class SqliteFileStore
     {
         library = ResolveLibrary(library).ToUpperInvariant(); name = name.ToUpperInvariant();
         if (seconds is < 0 or > 32767) throw LogicalError("WAITRCD requires 0–32767 seconds.");
-        Authorize(library, name, AuthorityBit.ObjectManagement | AuthorityBit.ObjectAlter);
+        AuthorizeFileManagement(library, name, AuthorityBit.None);
         using var connection = _factory.Open(); using var transaction = connection.BeginTransaction(deferred: false);
-        var definition = GetDefinition(library, name) ?? throw new CpfException("CPF9801", "Logical file not found.");
+        var definition = ReadDefinition(connection, transaction, library, name) ?? throw new CpfException("CPF9801", "Logical file not found.");
         if (definition.Attribute != FileAttribute.Logical || definition.Logical is null) throw LogicalError("CHGLF requires a logical file.");
         if (seconds is null) { transaction.Commit(); return; }
         definition.RecordLockWaitSeconds = seconds.Value;

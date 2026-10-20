@@ -46,7 +46,8 @@ Both keyed forms work with %SUBARR, including a default count through the end
 of the array. Start/count retain the existing numeric type and 105/121 bounds
 rules. A DS array without a key/%FIELDS is rejected at compilation. Named native
 DS arrays, including DIM(1) and LIKEDS-derived arrays, retain their byte layouts.
-Nested DS declarations and complex nested keyed paths remain open.
+[Nested structures](rpg-nested-structures.md) add nested array declarations.
+Complex keyed paths crossing several nested children remain open.
 
 ## Storage and comparisons
 
@@ -93,7 +94,7 @@ after source removal, actual CCSID 37/1208 jobs, retained RETURN, LR/reclaim and
 failed program creation. The display PTY compiles/calls RPGKEYARR for %FIELDS,
 keyed lookup and keyed subarray sorting on both screen sizes.
 
-Nested DS paths, varying arrays, DS-subfield CTDATA/pre-runtime arrays, alternate collation,
+Additional nested key paths, varying arrays, DS-subfield CTDATA/pre-runtime arrays, alternate collation,
 additional array built-ins, fixed native SORTA, complete expression typing,
 the full entry/procedure ABI, independent native-system golden cases and scale/
 overlap acceptance remain open. Existing declaration and native storage limits

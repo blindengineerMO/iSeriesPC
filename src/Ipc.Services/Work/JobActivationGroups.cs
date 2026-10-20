@@ -29,6 +29,25 @@ internal sealed class JobActivationGroups(SqliteConnectionFactory factory, JobKe
         try { Persist(group); return new CallScope(this, group, previous); }
         catch { group.Calls--; _current.Value = previous; throw; }
     }
+    internal Func<IDisposable> CaptureProcedureScope()
+    {
+        var captured = _current.Value ?? throw new InvalidOperationException("No active procedure owner.");
+        return () =>
+        {
+            if (!_groups.TryGetValue(captured.Name, out var current) || !ReferenceEquals(current, captured))
+                throw new CpfException("IPC0124", "The procedure's activation group was reclaimed.");
+            var previous = _current.Value; captured.Calls++; _current.Value = captured;
+            try { Persist(captured); return new CallScope(this, captured, previous); }
+            catch { captured.Calls--; _current.Value = previous; throw; }
+        };
+    }
+    internal T? ExistingResource<T>(ObjectDescriptor program, string key) where T : class
+    {
+        var requested = program.ExtendedAttributes?.GetValueOrDefault("ipc.program.activationGroup") ?? "*CALLER";
+        if (requested == "*NEW") return null;
+        var name = requested == "*CALLER" ? CurrentName : requested;
+        return _groups.TryGetValue(name, out var group) && group.Resources.TryGetValue(key, out var value) ? value as T : null;
+    }
     internal T Resource<T>(string key, Func<T> create) where T : class
     {
         var group = _current.Value ?? throw new InvalidOperationException("No active program scope.");

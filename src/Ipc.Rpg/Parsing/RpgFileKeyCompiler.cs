@@ -6,7 +6,8 @@ namespace Ipc.Rpg.Parsing;
 
 public static partial class RpgCompiler
 {
-    private sealed record KeyDeclaration(string Name, string? Procedure, int Line, List<string> Fields);
+    private sealed record KeyDeclaration(string Name, string? Procedure, int Line, List<string> Fields)
+    { internal List<string?> NullIndicators { get; } = new(); }
     private static bool KeyName(string text) => text.Length <= 128 && Regex.IsMatch(text, @"\A[A-Za-z_$#@][A-Za-z0-9_$#@]*\z", RegexOptions.CultureInvariant);
 
     private static (List<KeyDeclaration> Lists, string?[] Scopes) ParseKeyDeclarations(List<string> lines, RpgProgram program, bool globalFree, CancellationToken cancellationToken)
@@ -58,12 +59,13 @@ public static partial class RpgCompiler
             else
             {
                 if (current is null || factor1.Length != 0 || !KeyName(result)) throw new RpgCompileException(line, "KFLD requires a preceding KLIST and a scalar result-field name.");
-                if (factor2.Length != 0) throw new RpgCompileException(line, "KFLD null indicators require ALWNULL(*USRCTL), which is not yet supported.");
+                if (factor2.Length != 0 && (program.NullControl != "*USRCTL" || RpgExpressionParser.Parse(factor2) is not RpgIndicatorRef && ExactActualType(program, RpgExpressionParser.Parse(factor2)) is not { Kind: RpgFieldKind.Indicator, IsArray: false }))
+                    throw new RpgCompileException(line, "KFLD null indicators require ALWNULL(*USRCTL) and a scalar indicator.");
                 var field = program.FindField(result);
                 if (field is { IsArray: true } || program.FindDs(result) is not null || field is null && program.FindDsElement(result) is null ||
                     program.DataStructures.Any(ds => ds.Dimension != 1 && ds.Find(result) is not null))
                     throw new RpgCompileException(line, "KFLD requires a declared scalar field or scalar data-structure subfield.");
-                current.Fields.Add(result);
+                current.Fields.Add(result); current.NullIndicators.Add(factor2.Length == 0 ? null : factor2);
                 if (current.Fields.Count > 128) throw new RpgCompileException(line, "KLIST exceeds 128 fields.");
             }
             lines[index] = "";
@@ -91,17 +93,26 @@ public static partial class RpgCompiler
                 var list = lists.LastOrDefault(list => list.Name.Equals(text, StringComparison.OrdinalIgnoreCase) && list.Procedure == scope)
                     ?? lists.LastOrDefault(list => list.Name.Equals(text, StringComparison.OrdinalIgnoreCase) && list.Procedure is null);
                 if (list is not null)
-                { statement.FileSearch = new() { Kind = RpgFileSearchKind.KeyList, Expressions = list.Fields.ToArray() }; continue; }
+                {
+                    if (program.FindDisk(statement.Factor2) is { } file)
+                    {
+                        var keys = file.Layout.Fields.Where(f => f.KeySequence > 0).OrderBy(f => f.KeySequence).ToArray();
+                        for (var i = 0; i < Math.Min(keys.Length, list.NullIndicators.Count); i++)
+                            if (list.NullIndicators[i] is not null && !keys[i].NullCapable)
+                                throw new RpgCompileException(line, "A KFLD null indicator requires a null-capable key.");
+                    }
+                    statement.FileSearch = new() { Kind = RpgFileSearchKind.KeyList, Expressions = list.Fields.ToArray(), NullIndicators = list.NullIndicators.ToArray() }; continue;
+                }
                 if (text.StartsWith("%KDS", StringComparison.OrdinalIgnoreCase))
                 {
                     if (!statement.IsFreeForm || !text.StartsWith("%KDS(", StringComparison.OrdinalIgnoreCase) || !text.EndsWith(')'))
                         throw new RpgCompileException(line, "%KDS requires free-form %KDS(data-structure{:count}).");
                     var parts = SplitKeyComponents(text[5..^1], line);
-                    if (parts.Count is < 1 or > 2 || !KeyName(parts[0]) || program.FindDs(parts[0]) is not { } ds || ds.Elements.Count == 0)
-                        throw new RpgCompileException(line, "%KDS requires a declared nonempty data structure and an optional key count.");
-                    if (ds.Dimension != 1) throw new RpgCompileException(line, "Indexed array data structures in %KDS are not yet supported.");
+                    if (parts.Count is < 1 or > 2 || ExactActualType(program, RpgExpressionParser.Parse(parts[0])) is not { IsArray: false, ParameterStructure: { } ds } || ds.Elements.Count == 0)
+                        throw new RpgCompileException(line, "%KDS requires a declared nonempty scalar data structure or selected array element and an optional key count.");
+                    if (!ds.NativeStorage && ds.Dimension != 1) throw new RpgCompileException(line, "Legacy %KDS requires a scalar data structure.");
                     if (parts.Count == 2) _ = RpgExpressionParser.Parse(parts[1]);
-                    statement.FileSearch = new() { Kind = RpgFileSearchKind.DataStructure, DataStructure = ds.Name, CountExpression = parts.Count == 2 ? parts[1] : null };
+                    statement.FileSearch = new() { Kind = RpgFileSearchKind.DataStructure, DataStructure = parts[0], CountExpression = parts.Count == 2 ? parts[1] : null };
                     continue;
                 }
                 if (text.StartsWith('('))

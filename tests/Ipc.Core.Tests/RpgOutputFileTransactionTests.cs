@@ -47,17 +47,21 @@ public sealed partial class RecordTransactionTests
         Assert.DoesNotContain(new JobLockStore(_system.Connections).Inspect(new("QGPL", "FIRST", ObjectType.File)), l => l.Lifetime == "OutputOpen");
     }
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Output_in_a_write_operation_stops_on_call_cancellation_or_factory_shutdown(bool shutdown)
+    [InlineData(false, false)] [InlineData(true, false)]
+    [InlineData(false, true)] [InlineData(true, true)]
+    public async Task Output_in_a_write_operation_stops_on_call_cancellation_or_factory_shutdown(bool shutdown, bool relative)
     {
+        if(relative)_files.InitializeMember("QGPL","FIRST",totalRecords:2,deleted:true);
         using var owner = OperationIdentity.Enter("QSECOFR", _job.Key);
         using var factory = new Ipc.Services.Sqlite.SqliteConnectionFactory(_directory); var files = new SqliteFileStore(factory, _system.Objects);
         using var cancellation = new CancellationTokenSource(); using var writer = files.OpenRecordWriter("QGPL", "FIRST", "FIRST", cancellation.Token);
         using var blocker = _system.Connections.Open(); using var transaction = blocker.BeginTransaction(deferred: false);
         var waiting = Task.Run(() =>
         {
-            var error = Record.Exception(() => writer.Write(new Dictionary<string, object?> { ["ID"] = 2L, ["TEXT"] = "cancelled" }));
+            var error = Record.Exception(() => {
+                var values=new Dictionary<string,object?>{["ID"]=2L,["TEXT"]="cancelled"};
+                if(relative)writer.WriteRelative(2,values);else writer.Write(values);
+            });
             // Shutdown can win before a connection opens, or cancel a live
             // SQLite writer wait. Both stop the operation without publishing.
             if (shutdown) Assert.True(error is OperationCanceledException or ObjectDisposedException, error?.ToString() ?? "Output unexpectedly succeeded.");

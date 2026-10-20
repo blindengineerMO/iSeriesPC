@@ -65,7 +65,8 @@
         "type": "Project",
         "dependencies": {
           "Ipc.Core": "[1.0.0, )",
-          "Ipc.Services": "[1.0.0, )"
+          "Ipc.Services": "[1.0.0, )",
+          "Ipc.Sql": "[1.0.0, )"
         }
       },
       "ipc.services": {
@@ -73,9 +74,18 @@
         "dependencies": {
           "Ipc.Cl": "[1.0.0, )",
           "Ipc.Core": "[1.0.0, )",
+          "Ipc.Sql": "[1.0.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "SQLitePCLRaw.provider.e_sqlite3": "[3.0.5, )",
           "System.DirectoryServices.Protocols": "[10.0.12, )"
+        }
+      },
+      "ipc.sql": {
+        "type": "Project",
+        "dependencies": {
+          "Ipc.Core": "[1.0.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.12, )",
+          "SQLitePCLRaw.provider.e_sqlite3": "[3.0.5, )"
         }
       }
     }

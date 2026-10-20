@@ -47,8 +47,8 @@ public sealed partial class MenuController
             { _commandPrompt.Error("Command definition changed; cancel and open its new prompt."); return new("CommandPrompt"); }
         }
         catch (CpfException error) { _commandPrompt.Error(error.Message); return new("CommandPrompt"); }
-        var result = _execution.Execute(response.Command);
-        if (result.IsError) { _commandPrompt.Error(result.Message ?? "Command failed."); return new("CommandPrompt"); }
-        _promptOption = null; _commandPrompt = null; _form.ClearAll(); return ApplyCommandResult(result);
+        var result = _programTerminal.Start(() => _execution.Execute(response.Command));
+        if (result?.IsError == true) { _commandPrompt.Error(result.Message ?? "Command failed."); return new("CommandPrompt"); }
+        _promptOption = null; _commandPrompt = null; _form.ClearAll(); return result is null ? new(_programTerminal.Display?.State ?? "ProgramDisplay") : ApplyCommandResult(result);
     }
 }

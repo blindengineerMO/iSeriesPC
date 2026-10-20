@@ -9,9 +9,19 @@ using Microsoft.Data.Sqlite;
 namespace Ipc.Services.Security;
 
 /// <summary>Checks server-established callers at service boundaries. No identity denotes trusted host code.</summary>
-public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
+public sealed partial class ServiceAuthorization(SqliteConnectionFactory factory)
 {
     public void RequireObject(string library, string name, string type, AuthorityBit required, bool checkLibrary = true, bool acquireLocks = true)
+        => RequireObjectCore(library, name, type, required, AuthorityBit.None, checkLibrary, acquireLocks);
+
+    public void RequireObjectAny(string library, string name, string type, AuthorityBit required, AuthorityBit alternatives,
+        bool checkLibrary = true, bool acquireLocks = true)
+    {
+        if (alternatives == AuthorityBit.None) throw new ArgumentException("At least one alternative authority is required.", nameof(alternatives));
+        RequireObjectCore(library, name, type, required, alternatives, checkLibrary, acquireLocks);
+    }
+
+    private void RequireObjectCore(string library, string name, string type, AuthorityBit required, AuthorityBit alternatives, bool checkLibrary, bool acquireLocks)
     {
         var key = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(new(library, name), type);
         library = key.Library; name = key.Name.Value;
@@ -26,15 +36,26 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
                 Deny(library, name, type, required);
         }
         var descriptor = objects.GetForAuthorization(library, name, type);
-        if (descriptor is null || !Has(Effective(engine, profile, groups, descriptor), required))
+        var granted = descriptor is null ? AuthorityBit.None : Effective(engine, profile, groups, descriptor);
+        if (descriptor is null || !Has(granted, required) || alternatives != AuthorityBit.None && (granted & alternatives) == AuthorityBit.None)
             Deny(library, name, type, required);
+        var choices = (int)(granted & alternatives);
+        var selected = (AuthorityBit)(choices & -choices);
         if (acquireLocks)
         {
             var locks = new Ipc.Services.Work.JobLockStore(factory);
             if (checkLibrary && !(library == "QSYS" && type == ObjectType.Library))
                 locks.RequireAccess("QSYS", library, ObjectType.Library, Authorities.UseBits);
-            locks.RequireAccess(library, name, type, required);
+            locks.RequireAccess(library, name, type, required | selected);
         }
+    }
+
+    // Data boundaries opt in after authorization. Object lookup and allocation
+    // inspection use read authority without reading records, including during repair.
+    internal void RequireFileDataState(string library, string name, AuthorityBit required)
+    {
+        if ((required & SqlConstraintState.Data) == 0) return;
+        using var connection = factory.Open(); SqlConstraintState.RequireAccess(connection, null, library, name, required);
     }
 
     internal void RequireSnapshot(ObjectDescriptor descriptor, AuthorityBit required)
@@ -48,12 +69,37 @@ public sealed class ServiceAuthorization(SqliteConnectionFactory factory)
             Deny(descriptor.Library, descriptor.Name, descriptor.ObjectType, required);
     }
 
+    // View expansion delegates only its recorded owner's table rights. The reader's
+    // authentication/job stays intact, and adopted program authority is not imported.
+    internal void RequireViewSource(string owner, string library, string name, AuthorityBit required)
+    {
+        if (OperationIdentity.Current is { } caller) Caller(caller.Principal);
+        using var connection = factory.Open();
+        var profile = UserProfileStore.ReadForAuthentication(connection, null, owner);
+        if (profile is null) Deny(library, name, ObjectType.File, required);
+        var profiles = new UserProfileStore(factory, new PasswordPolicy(new SystemValueRegistry()));
+        var objects = new SqliteObjectStore(factory); var engine = new AuthorityEngine(factory, objects);
+        var container = objects.GetForAuthorization("QSYS", library, ObjectType.Library);
+        var descriptor = objects.GetForAuthorization(library, name, ObjectType.File);
+        var groups = profiles.ReadEffectiveGroups(owner);
+        if (container is null || descriptor is null || !Has(engine.ComputeEffective(profile!, groups, container), AuthorityBit.ObjectOperate) ||
+            !Has(engine.ComputeEffective(profile!, groups, descriptor), required)) Deny(library, name, ObjectType.File, required);
+        SqlConstraintState.RequireAccess(connection, null, library, name, required);
+    }
+
     private static AuthorityBit Effective(AuthorityEngine engine, UserProfile profile, IReadOnlyList<string> groups, ObjectDescriptor descriptor)
     {
         var bits = engine.ComputeEffective(profile, groups, descriptor);
         if (OperationIdentity.Current is { } identity)
             foreach (var owner in identity.AdoptedOwners().Distinct(StringComparer.Ordinal)) bits |= engine.AdoptedAuthority(owner, descriptor);
         return bits;
+    }
+
+    public void RequireObjectOwner(ObjectDescriptor descriptor)
+    {
+        if (OperationIdentity.Current is not { } identity) return;
+        var (profile, groups) = Caller(identity.Principal);
+        if (descriptor.Owner != profile.Name && !groups.Contains(descriptor.Owner, StringComparer.Ordinal)) RequireSpecial(SpecialAuthority.AllObject, allowAdopted: false);
     }
 
     public void RequireAdoption(ObjectDescriptor program)

@@ -41,11 +41,12 @@ public sealed partial class RpgInterpreter
         if (argument?.Kind == RpgFileSearchKind.Current || argument is null && string.IsNullOrWhiteSpace(statement.Factor1)) return null;
         var keys = cursor.Definition.PrimaryFormat.Fields.Where(field => field.Sequence > 0).OrderBy(field => field.Sequence).ToArray();
         if (keys.Length == 0) throw new RpgRuntimeException("A keyed search requires declared file keys.");
-        IReadOnlyList<string> expressions; RpgDsElement[]? subfields = null;
+        IReadOnlyList<string> expressions; RpgDsElement[]? subfields = null; RpgRuntimeContext.NativeView? captured = null;
         if (argument?.Kind == RpgFileSearchKind.DataStructure)
         {
-            var ds = context.Program.FindDs(argument.DataStructure!) ?? throw new RpgRuntimeException("Key data structure is unavailable.");
-            if (ds.Dimension != 1) throw new RpgRuntimeException("%KDS requires a scalar data structure in the current subset.");
+            if (context.TryNativeReference(RpgExpressionParser.Parse(argument.DataStructure!), out var native)) captured = native;
+            var ds = captured?.Layout ?? context.Program.FindDs(argument.DataStructure!) ?? throw new RpgRuntimeException("Key data structure is unavailable.");
+            if (captured is null && ds.Dimension != 1 || captured?.IsArray == true || captured?.Element is not null) throw new RpgRuntimeException("%KDS requires a scalar data structure or selected array element.");
             var count = argument.CountExpression is null ? ds.Elements.Count : KeyCount(Eval(argument.CountExpression, context));
             if (count < 1 || count > ds.Elements.Count || count > keys.Length) throw new RpgRuntimeException("%KDS count exceeds the data structure or file key count.");
             subfields = ds.Elements.Take(count).ToArray(); expressions = subfields.Select(field => field.Name).ToArray();
@@ -57,7 +58,15 @@ public sealed partial class RpgInterpreter
         {
             var field = keys[index];
             if (argument?.Kind == RpgFileSearchKind.KeyList) RequireKeyListShape(context, expressions[index], field);
-            var value = subfields is null ? Eval(expressions[index], context) : context.ReadKeySubfield(subfields[index]);
+            RpgRuntimeContext.NativeView? keyView = subfields is not null && captured is not null ? context.NativeMember(captured, subfields[index].LocalName ?? subfields[index].Name) :
+                subfields is null && context.TryNativeReference(RpgExpressionParser.Parse(expressions[index]), out var scalar) ? scalar : null;
+            var value = keyView is not null ? context.ReadNative(keyView) : subfields is null ? Eval(expressions[index], context) : context.ReadKeySubfield(subfields[index]);
+            if (argument?.Kind == RpgFileSearchKind.KeyList && index < argument.NullIndicators.Count && argument.NullIndicators[index] is { } indicator && RpgValues.ToBool(Eval(indicator, context)))
+            {
+                if (!field.NullCapable) throw new RpgRuntimeException("A KFLD null indicator requires a null-capable key.");
+                value = null;
+            }
+            if (argument?.Kind != RpgFileSearchKind.KeyList && field.NullCapable && context.Program.NullControl == "*USRCTL" && keyView is not null && context.ReadNullIndicator(keyView)) value = null;
             if (argument?.Kind is RpgFileSearchKind.Values or RpgFileSearchKind.DataStructure)
                 value = ConvertSearchValue(field, value);
             values.Add(field.Name, value);
@@ -76,7 +85,7 @@ public sealed partial class RpgInterpreter
     private static bool KeyNumeric(object? value) => value is byte or sbyte or short or ushort or int or uint or long or ulong or decimal or float or double;
     private static object? ConvertSearchValue(FieldSpec key, object? value)
     {
-        if (value is null) throw new RpgRuntimeException("Null search attributes require native null-indicator support.");
+        if (value is null) return key.NullCapable ? null : throw new RpgRuntimeException("A nonnullable key cannot be null.");
         if (key.Type == FieldType.Alpha)
         {
             if (value is not string text) throw new RpgRuntimeException("Character key components require character expressions.");

@@ -2149,3 +2149,2116 @@ result structures, EXTNAME/nested/multi-format/null layouts, complete CHARCOUNT/
 behavior, broader ILE binding and independent native golden/scale acceptance. C09 stays
 partial; schema 31, catalog 306 and checklist 36 complete / 70 open remain unchanged.
 See docs/rpg-record-structures.md.
+
+DISK file-definition checkpoint (2026-10-18): module-level TEMPLATE, QUALIFIED, LIKEFILE
+and explicit BLOCK(*NO) now work in free and native fixed F specifications, including
+continuations and both supported column origins. Templates preserve descriptions without
+scalar imports, runtime file slots or automatic opens; file/record symbols reject
+runtime data/status access, including data-name shadows and direct runtime guards.
+LIKEFILE requires an earlier DISK parent, inherits usage/keyed
+access/descriptions/prefixes/renames and constant EXTFILE settings, qualifies record
+names and requires result-buffer I/O. Default runtime filenames follow the copy's own
+name; TEMPLATE and USROPN do not inherit. Copies and template intermediates share record
+ancestry for LIKEREC and exact calls while retaining independent cursors/open state.
+Native fixed blank file attributes require LIKEFILE. Inherited-property overrides,
+ambiguous input blocking, unsupported blocked/workstation modes and template runtime
+settings reject explicitly. Version-4 bindings persist templates, qualification and
+family relationships; ordinary bindings retain version 3 with versions 1–3
+compatibility. Restore validates family graphs and inherited layouts; runtime
+recompilation verifies every saved binding, including derived copies, before execution.
+Root descriptors are read once, and source/description-file removal is supported with
+compatible runtime files. All 5208 solution tests pass with zero failures/skips in
+8m24s, including 41 new cases: 38 file-definition/metadata/integration cases and three
+process cases. All 1031 final focused checks, locked restore, a zero-warning/error
+Release build and expanded RPGFILES terminal compile/call acceptance pass. Process
+checks cover related exact buffers, valid/malformed response atomicity and rejection
+before launch. Saved cases cover CCSIDs 37/1208; RPGFILES runs at 24x80 and general
+display acceptance covers 27x132. Generated inventory, local links and whitespace checks
+pass. LIKEFILE file parameters, procedure-local files, WORKSTN templates/copies/result
+structures, blocked I/O, broader external/member options, ILE linking and independent
+native golden/scale acceptance remain open. C09 stays partial; schema 31, catalog 306
+and checklist 36 complete / 70 open remain unchanged. See docs/rpg-file-definitions.md.
+
+DISK file-parameter checkpoint (2026-10-18): native PR/PI LIKEFILE parameters now
+borrow caller-owned DISK files across local procedures and saved RPG programs.
+Earlier parent definitions and determined blocking are required; file parameters
+qualify record names and supply LIKEREC layouts, including forward return types
+and RTNPARM positions. Only NOPASS/OMIT options are accepted. File actuals require
+the same family at call sites and compatible external layouts/modes at separate
+program entries. Cursors, current records, update rights, locks, open state and
+named-file feedback remain shared. Callee OPEN/CLOSE uses the actual owner's
+settings. Caller INFDS and INFSR remain active; unhandled errors support RETURN
+and GOTO to owner frames, including across saved program calls. E extenders and
+matching MONITOR handlers run first. References expose no bytes or native
+memory, expire at call boundaries in borrowed cells and semantic host arguments, and rebind retained entries on every call.
+Forwarding preserves owner/lifetime checks. File parameters can shadow other
+global file names, while local data shadows retain global file-parameter bindings
+for file operands. Shadowing a parameter's own parent rejects explicitly.
+File data/layout access, unsupported options, templates/unrelated actuals,
+non-RPG targets and more than 16 visible files reject. Main PI bindings use
+version 5; ordinary programs retain prior versions and versions 1–4 restore.
+Parameter flags, family graphs and every reconstructed binding are verified.
+Record metadata caches separate equal layouts from unrelated parent families.
+Source and separate description-file removal are supported. All 5264
+solution tests pass with zero failures/skips in 8m21s, including 56 new cases:
+54 parameter/metadata/integration cases and two external-process cases. All 1355
+broad and 158 final focused checks, locked restore, a zero-warning/error Release
+build and expanded RPGFPRM terminal compile/call acceptance pass. Process cases
+reject before side effects in both protocol versions; saved cases cover CCSIDs
+37/1208. RPGFPRM runs at 24x80, and general display acceptance covers 27x132.
+Generated inventory, local links and whitespace checks pass. Procedure-local file
+instances, WORKSTN file parameters/templates/copies/result structures, blocked I/O,
+broader external/member options, ILE linking and independent native golden/scale
+acceptance remain open. C09 stays partial; schema 31, catalog 306 and checklist
+36 complete / 70 open remain unchanged. See docs/rpg-file-parameters.md.
+
+Procedure-local DISK checkpoint (2026-10-18): native free DCL-F and both supported
+traditional F-spec origins now define automatic and STATIC files inside
+subprocedures. Local record I/O requires result structures and does not import
+scalar fields. Local DISK names/records shadow global DISK definitions while
+retaining independent file ownership; private file/record names reject in other
+scopes. LIKEFILE copies use earlier local/global parents without inheriting
+STATIC, preserve default/constant runtime-name rules and borrow through file
+parameters with the actual procedure's ownership and lifetime. Automatic files
+open per invocation and close on every normal/abnormal exit; recursive calls
+have independent cursors. STATIC files retain cursors, locks, open state and
+named feedback across calls, recursion and LR; explicit CLOSE does not re-open
+on the next call. Activation reclaim/end, replacement, job end and failed
+activation cleanup close retained handles. Cycle globals reset on LR while
+procedure STATIC data/files remain in the activation. INFDS must match file scope
+and storage. Local INFSR supports RETURN/GOTO, including implicit-open failures
+and errors through borrowed parameters. STATIC native structures/arrays allocate
+once under the module's 16 MiB bound and do not consume each recursive frame's
+automatic-storage budget. Named global file status follows its shared owner.
+Version-6 bindings save local scopes and STATIC flags, verify all reconstructed
+requests/layouts and retain versions 1–5 compatibility. Parent graphs and
+metadata caches preserve nominal record ancestry; forward LIKE of local record
+returns keeps EXACT identity through preview/final binding. Bounded streaming
+serialization rejects oversized metadata while writing; existing source,
+layout and visible-file limits remain enforced. Saved programs survive removal
+of source and a separate description file. All 5311 solution tests pass
+with zero failures/skips in 8m27s, including 47 new cases: 44 local
+file/metadata/integration cases and three external-process cases. All 1409 broad
+and 208 final focused checks, locked restore, a zero-warning/error Release build
+and expanded RPGLOCAL terminal compile/call acceptance pass. Process cases cover
+valid/malformed writeback atomicity and rejection before launch. Saved cases
+cover CCSIDs 37/1208; RPGLOCAL runs at 24x80, and general display acceptance covers
+27x132. Generated inventory, local links and whitespace checks pass. Local
+WORKSTN files/cross-device shadows, WORKSTN templates/copies/result structures,
+blocked I/O, broader external/member options, ILE linking and independent native
+golden/scale acceptance remain open. C09 stays partial; schema 31, catalog 306
+and checklist 36 complete / 70 open remain unchanged. See docs/rpg-local-files.md.
+
+WORKSTN record-buffer checkpoint (2026-10-18): global display formats now supply
+native LIKEREC INPUT/OUTPUT/ALL extracts. Display numerics use zoned bytes with
+one byte per digit. EXFMT requires ALL; READ/CHAIN/READC accept INPUT or ALL;
+WRITE/UPDATE accept OUTPUT or ALL. Subfile buffers include stored hidden/output
+fields on input. Native free and fixed result operands accept a matching
+structure or one indexed element, captured once, and bypass imported scalar
+fields. LIKEDS copies, exact native parameters, value returns and RTNPARM retain
+record ancestry. Readonly input rejects before terminal transfer; readonly
+output parameters remain usable. Input stages field conversions, RRN and
+response-indicator updates before host acknowledgement, preserving receiver
+bytes and pending input on conversion failure. CA responses, misses and EOF
+preserve bytes. Output snapshots one image before transfer. Lazy cached display
+metadata supports forward return types and detaches compiler callbacks.
+Saved layouts reconstruct buffers after source removal, preserving RENAME,
+PREFIX, CCSIDs 37/1208, typed dates/times and opaque SFLMSGKEY bytes. Native
+external-process buffers use the zoned layout and preserve atomic writeback.
+All 5347 solution tests pass with zero failures/skips in 8m25s,
+including 36 new cases: 32 record/metadata/integration cases and four external-
+process cases. The broader run passed 1447 other checks; its date/time fixture
+failure was corrected and passes in all 36 final focused checks and the full
+suite. Locked restore, a zero-warning/error Release build and expanded RPGWREC
+terminal compile/call acceptance pass. RPGWREC runs at 24x80, and general display
+acceptance covers 27x132. Generated inventory, local links and whitespace checks
+pass. WORKSTN templates/copies/file parameters, local WORKSTN files/cross-device
+shadows, zero-field extracts, nested/multi-format/null layouts, blocked I/O,
+broader external/member/CCSID options, ILE linking and independent native golden/
+scale acceptance remain open. C09 stays partial; schema 31, catalog 306 and
+checklist 36 complete / 70 open remain unchanged. See docs/rpg-workstation-records.md.
+
+WORKSTN file-definition checkpoint (2026-10-18): global free and native fixed
+WORKSTN declarations now support TEMPLATE, QUALIFIED and LIKEFILE. Templates
+supply descriptions without imported scalar fields, runtime handles or terminal
+connections. Copies inherit earlier parent descriptions, usage, prefixes,
+renames and explicitly constant runtime targets; default runtime names follow
+the copy. LIKEFILE implies qualified formats and result-buffer I/O. Runtime
+copies keep independent display sessions, pending writes, subfile positions,
+open state and file status. USROPN, INDDS, INFDS and INFSR are not inherited;
+copies may supply their own. Template runtime settings, file/status/data uses
+and inherited attribute overrides reject. SFILE templates omit the RRN; runtime
+copies must bind each inherited subfile to their own RRN using unqualified
+format names. Qualified format/control mappings retain subfile input behavior.
+Related copies share LIKEREC/EXACT ancestry through native parameters, returns
+and forward metadata; unrelated equal layouts remain distinct. Root metadata
+resolves once, and copies derive from cached parent snapshots. Version-3 saved
+WORKSTN bindings verify parent order/families, inherited layouts, names/prefixes
+and every reconstructed copy, including requests that bypass the resolver.
+Ordinary versions 1/2 and legacy host indicator metadata remain supported.
+Bounded serialization enforces its 1 MiB limit while writing, and file counts
+follow inherited devices. Source and separate description removal are supported.
+All 5399 solution tests pass with zero failures/skips in 8m37s,
+including 52 new cases: 48 definition/metadata/integration cases and four added
+external-process cases. All 1534 broad, 248 final focused and 42 job-lock checks, locked
+restore, a zero-warning/error Release build and expanded RPGWCOPY terminal
+compile/call acceptance pass. Process cases cover CCSIDs 37/1208, related exact
+buffers and valid/malformed atomic writeback. RPGWCOPY runs at 24x80; general
+display acceptance covers 27x132. Generated inventory, local links and whitespace
+checks pass. The deadlock regression fixture now uses a dedicated cancellable
+worker, preventing its observation from racing a short waiter expiry while
+retaining deadlock/wakeup assertions. Procedure-local WORKSTN files/cross-device shadows, WORKSTN file
+parameters, zero-field extracts, nested/multi-format/null layouts, blocked I/O,
+broader external/member/CCSID options, ILE linking and independent native golden/
+scale acceptance remain open. C09 stays partial; schema 31, catalog 306 and
+checklist 36 complete / 70 open remain unchanged. See docs/rpg-workstation-definitions.md.
+
+WORKSTN file-parameter checkpoint (2026-10-18): native PR/PI LIKEFILE interfaces
+now borrow caller-owned WORKSTN files across local procedures and saved RPG
+programs. Qualified parameter records supply checked LIKEREC buffers, exact
+interfaces and forward return layouts. Actual display sessions, pending writes,
+subfile state, RRN variables, indicator areas, open state and named status stay
+shared. OPEN/CLOSE use the actual owner's runtime settings. Caller INDDS, INFDS
+and INFSR remain active, with normal E/MONITOR precedence and RETURN/GOTO to
+owner frames across saved calls. Review found that a main owner's RETURN set
+program-end state without unwinding the callee; owner-error dispatch now unwinds
+on every handled ending state, with regressions for both DISK and WORKSTN.
+NOPASS/OMIT, parameter positions, forwarding and retained-entry rebinding retain
+their lifetime checks. Borrowed cells and semantic references expose no native
+bytes/storage and expire at call boundaries. Templates, unrelated actuals,
+incompatible layouts, data uses/options and non-RPG targets reject. Local
+parameters can shadow global files of either device, while local data shadows
+retain global file operands. LIKEREC resolves active parameter qualifiers before
+imported record metadata, including forward returns; records hidden by a
+parameter of another device reject. Later local definitions retain precedence.
+Parameter parents must be earlier file definitions;
+a parameter cannot shadow its own parent. WORKSTN blocking is already known.
+Version-4 main-PI WORKSTN bindings preserve parameter flags and verify every
+reconstructed binding/family; ordinary versions 1–3 remain supported. Scoped
+local parameter layouts derive from saved global snapshots. Source and separate
+description removal are supported. Existing visible-file and metadata limits
+remain active. All 5438 solution tests pass with zero failures/skips in
+8m39s, including 39 new cases: 36 WORKSTN parameter/metadata/integration
+cases, one DISK owner-return regression and two external-process cases. All 1642
+broad and 219 final scoped checks, locked restore, a zero-warning/error Release
+build and expanded RPGWFPRM terminal compile/call acceptance pass. Saved cases
+cover CCSIDs 37/1208; external cases reject before side effects in both protocol
+versions. RPGWFPRM runs at 24x80; general display acceptance covers 27x132.
+Generated inventory, local links and whitespace checks pass. Two existing API
+failures in the first full run did not recur in all 16 owning-class checks or
+the full rerun. Procedure-local
+WORKSTN file instances and local-file cross-device shadows, zero-field extracts,
+nested/multi-format/null layouts, blocked I/O, broader external/member/CCSID
+options, ILE linking and independent native golden/scale acceptance remain open.
+C09 stays partial; schema 31, catalog 306 and checklist 36 complete / 70 open
+remain unchanged. See docs/rpg-workstation-parameters.md.
+
+Procedure-local WORKSTN checkpoint (2026-10-18): native free and fixed
+procedures now own automatic and STATIC display files. Automatic handles close
+on return/error; recursive invocations have independent pending writes. STATIC
+handles share state across calls and recursion, survive main-cycle LR, rebind
+on retained calls, and release at *NEW/reclamation/job end. Explicit CLOSE stays
+closed on later calls. LIKEFILE does not inherit STATIC or USROPN. Local files
+import no scalar fields and require compatible result data structures for data
+I/O. Local files and record names can shadow global DISK or WORKSTN definitions.
+Local/global templates, qualified copies, forward return metadata and borrowed
+LIKEFILE parameters retain checked layouts and actual-owner state. INDDS, SFILE
+RRNs, named status, INFDS and INFSR remain with the owner, including owner RETURN
+across borrowed calls. Local INFDS requires matching scope and storage duration.
+Initialization errors release opened automatic handles. Earlier global parents
+remain available to copies declared before a later local name shadow; both
+DISK and WORKSTN family graphs retain that ancestry. Same-named files in different
+procedures remain distinct. Version-5 saved WORKSTN bindings verify scope,
+STATIC flags, runtime targets, layouts and families; versions 1–4 remain
+supported. Source and separate description removal are supported. Existing
+visible-file/storage/metadata bounds remain active. All 5486 solution tests
+pass with zero failures/skips in 8m46s, including 48 new cases: 42 local
+WORKSTN/metadata/integration cases and six external-process cases. All 48 final
+focused checks and 1686 other broad regression cases pass. Locked restore,
+a zero-warning/error Release build, expanded RPGWLOCAL terminal compile/call
+acceptance, generated inventory, local links and whitespace checks pass.
+Process tests cover CCSIDs 37/1208 and valid/malformed atomic result writeback;
+file arguments reject external protocols 1/2 before side effects. RPGWLOCAL
+runs twice at 24x80 against one STATIC file; general display acceptance covers
+27x132. Zero-field extracts, nested/multi-format/null layouts, blocked I/O,
+broader external/member/CCSID options, ILE linking and independent native golden/
+scale acceptance remain open. C09 stays partial; schema 31, catalog 306 and
+checklist 36 complete / 70 open remain unchanged. See docs/rpg-local-workstations.md.
+
+Nested native structure checkpoint (2026-10-18): qualified structures now support
+inline DCL-DS, LIKEDS and LIKEREC children, including nested arrays and traditional
+fixed referenced subfields. Children share the enclosing byte storage; aliases,
+POS/OVERLAY strides, recursive initialization and selected CLEAR preserve sibling
+bytes. INZ(*LIKEDS) retains explicit defaults and uninitialized parent bytes;
+ordinary INZ supplies recursive defaults. Nested views retain their own widths
+inside multiple-occurrence structures. Forward metadata resolves nested scalar
+LIKE, templates, layout inquiries and return types without runtime storage.
+Reference/CONST/VALUE parameters, EXACT ancestry, detached returns and RTNPARM
+retain nested layouts and shared scalar aliases. Nested arrays support %SUBARR,
+keyed SORTA/%FIELDS and keyed lookup. DISK and WORKSTN result I/O accept selected
+nested LIKEREC children with checked record/extract ancestry. %KDS accepts nested
+key structures and selected native array elements, capturing indices once.
+Saved programs reconstruct layouts after source removal; existing file binding
+versions remain unchanged. Protocol-2 processes receive contiguous nested
+buffers with unchanged binary layout and atomic writeback. Bounds are 64 nesting
+levels, 1024 recursive subfield definitions and the existing native byte/storage
+limits. Invalid/cyclic declarations, unsupported nested storage keywords and
+CONST writes reject before execution with source locations. Column-limited
+inline header continuations retain their physical positions.
+All 5540 solution tests pass with zero failures/skips in 9m01s,
+including 54 new cases: 42 structure/metadata/ABI cases, eight real saved-record
+cases and four external-process cases. All 1957 broad and 311 final focused
+checks, locked restore, a zero-warning/error Release build, expanded RPGNESTED
+terminal acceptance, generated inventory, local links and whitespace checks
+pass. Record/process cases cover CCSIDs 37/1208. RPGNESTED runs at 24x80; general
+display acceptance covers 27x132. Multi-format/null external layouts, zero-field
+record extracts, broader external/member/CCSID options, blocked I/O, ILE linking,
+complex nested keyed paths and independent native golden/scale acceptance remain
+open. C09 stays partial; schema 31, catalog 306 and checklist 36 complete / 70 open
+remain unchanged. See docs/rpg-nested-structures.md.
+
+External structure checkpoint (2026-10-18): free and fixed EXT/EXTNAME definitions
+now obtain native database/display fields without declaring or opening files.
+First/explicit format selection, INPUT/OUTPUT/ALL/KEY extraction, PREFIX replacement,
+EXTFLD renames/initializers/DIM, additional subfields and inline END-DS headers
+retain native storage. EXTFLD names bypass PREFIX; file prefixes remain independent.
+INZ(*EXTDFT) initializes original field storage before DIM interpretation and
+preserves inherited defaults through LIKEDS. Current date/time defaults evaluate
+at runtime, with zero-argument DATE/TIME/TIMESTAMP using the host clock and native
+second/microsecond precision. Qualified/unqualified, template, array, nested,
+multiple-occurrence and local STATIC forms retain existing storage rules.
+Compatible unqualified imported fields share native scalar/array storage;
+implicit DISK/WORKSTN I/O transfers the original complete field with conversion
+preflight. Explicit result buffers map renamed/divided fields and require an
+explicit compatible extract. Format/byte checks preserve compatible logical
+access paths independently of key order. Forward types, EXACT ancestry, parameters,
+returns and protocol-2 process buffers use cached descriptions; canonical aliases
+share type identity and conflicting snapshots reject.
+Version-1 ipc.rpg.externalstructures metadata is source-bound, verifies every
+binding, rejects malformed/stale/unused descriptions and enforces 256 requests
+and 1 MiB while writing. Activation fingerprints include it; existing DISK and
+WORKSTN binding versions remain unchanged. Source and separate descriptions can
+be removed before calls; actual runtime file authority/layout checks remain live.
+All 5602 solution tests pass with zero failures/skips in 8m51s,
+including 63 new accepted cases: 40 structure/metadata/default/ABI cases, 19 real
+record/integration cases and four process cases. One obsolete external-E rejection
+case is replaced by positive saved-program acceptance; data-area U still rejects.
+All 2025 broad and 324 final focused checks, locked restore, a zero-warning/error
+Release build, expanded RPGEXTDS terminal acceptance, generated inventory, local
+links and whitespace checks pass. Record/process cases cover CCSIDs 37/1208.
+RPGEXTDS runs at 24x80; general display acceptance covers 27x132. Null/varying/opaque
+layouts, wider external/CCSID settings, multi-format file I/O, blocked I/O, ILE
+linking, complex nested keyed paths and independent native golden/scale acceptance
+remain open. C09 stays partial; schema 31, catalog 306 and checklist 36 complete /
+70 open remain unchanged. See docs/rpg-external-structures.md.
+
+Native null-value checkpoint (2026-10-18): global CTL-OPT/H ALWNULL now accepts
+nullable database descriptions. *NO raises file status 1299 before changing
+receiver data/flags when input contains NULL; *INPUTONLY supplies live DDS/system
+defaults and rejects nullable output/key searches. *USRCTL adds argument-free
+NULLIND, scalar/indexed %NULLIND and independent native null state. Nullable
+imports, LIKEREC/EXTNAME subfields, LIKEDS, nested arrays, occurrences, globals
+and automatic/STATIC procedures retain their storage rules. STATIC flags survive
+LR restart in named activations. Ordinary data operations leave flags unchanged;
+normal aggregate parameters do not implicitly borrow null maps. Implicit/result
+record input updates only its target, preserves data/flags on not-found or staged
+conversion failure and invalidates failed update-read cursors. WRITE/UPDATE
+validate data even with flags on. Scalar/list/KDS keys use native flags; KFLD
+accepts explicit scalar indicators. Singleton EXTFLD arrays route the indexed
+indicator through implicit and result-buffer I/O. Borrowed/local files use executing-frame flags.
+All nine database field types use valid native placeholders for NULL under
+*USRCTL; input-only defaults remain live after file replacement. Source and
+separate nullable descriptions can be removed before calls.
+Nullable DISK/EXTNAME snapshots use versions 7/2, preserve nonnullable signatures,
+reject nullable attributes in older envelopes and retain strict source/layout/
+family/bounds checks. WORKSTN metadata versions, schema 31 and catalog 306 stay
+unchanged. All 5667 solution tests pass with zero failures/skips in
+9m09s, including 65 new cases: 15 native/control/metadata cases and 50
+real-database/integration/metadata cases. The obsolete blanket nullable-schema
+rejection assertion now has positive schema acceptance and null-row mapping
+coverage. All 3409 broad and 292 final focused checks, locked restore, a Release
+build with zero warnings/errors, expanded RPGNULL terminal acceptance, generated
+inventory, local links and whitespace checks pass. Record acceptance covers
+CCSIDs 37/1208. RPGNULL runs at 24x80; general display acceptance covers 27x132.
+Named NULLIND associations, OPTIONS(*NULLIND) maps, *NULL extracts, aggregate/
+whole-array indicators, divided nullable EXTFLD arrays, EVAL-CORR, varying/opaque
+layouts, multi-format I/O, wider external/CCSID settings, blocked I/O, ILE linking
+and independent native golden/scale acceptance remain open. C09 stays partial;
+checklist 36 complete / 70 open is unchanged. See docs/rpg-null-values.md.
+
+Named null-map checkpoint (2026-10-18): NULLIND(name) now associates native
+variables and program-described subfields with live IND storage. Forward names,
+scalar/array shapes, scope, automatic/STATIC lifetime, nonnullable targets and
+unique ownership are checked before execution. Named flags preserve global and
+CONST protections; selected array indices are captured once. LIKEDS and nested
+layouts inherit internal sibling relationships, while scalar LIKE and an outer
+LIKEDS copy do not inherit an outer named association. Named IND subfields move
+and borrow as ordinary aggregate data; automatic maps retain independent formal
+state. STATIC named maps survive LR restart in retained activations.
+LIKEREC/EXTNAME now accept *NULL with INPUT/OUTPUT/ALL/KEY in either order;
+NULL alone selects INPUT. Indicator-only layouts preserve external identities
+through PREFIX/EXTFLD and use original database field or selected key/display
+order. Null maps reject as I/O buffers, and EXACT distinguishes data/map roles
+even when the data consists only of indicators. Named maps supply implicit and
+result-buffer null I/O and KEY/KDS searches. Successful input clears nonnullable
+map bits, including received WORKSTN fields. Nested arrays and occurrences select
+corresponding sibling maps without changing the map's current occurrence.
+Native templates, ordinary aggregate parameters and return values retain IND
+bytes as data. Saved source/descriptions reconstruct map roles without live
+resolution; separate descriptions/source can be removed before calls.
+All 5715 solution tests pass with zero failures/skips in 9m16s,
+including 48 new cases: 28 native/control/metadata/ABI cases and 20 real record/
+integration cases. Four obsolete *NULL-rejection cases now reject malformed
+or duplicate extracts, with positive extraction and saved-program coverage.
+All 3459 broad and 160 final focused checks, locked restore, a zero-warning/error
+Release build, expanded RPGNMAP terminal acceptance, generated inventory, local
+links and whitespace checks pass. Record cases cover CCSIDs 37/1208; RPGNMAP
+runs at 24x80, and general display acceptance also covers 27x132.
+Formal-parameter named associations, OPTIONS(*NULLIND) maps, aggregate/whole-array
+%NULLIND, null-map INZ(*EXTDFT), divided nullable EXTFLD arrays and EVAL-CORR remain
+open, alongside broader external/CCSID settings, varying/opaque database layouts,
+multi-format I/O, blocked I/O, ILE linking and independent native golden/scale
+acceptance. Binding versions stay DISK 7, external descriptions 2 and WORKSTN 5;
+schema 31, catalog 306 and checklist 36 complete / 70 open remain unchanged.
+C09 stays partial. See docs/rpg-null-maps.md.
+
+Null-parameter checkpoint (2026-10-18): OPTIONS(*NULLIND) now borrows live null
+maps through native procedures and stored RPG calls. ALWNULL(*USRCTL), exact
+variable types/dimensions/related structures and matching structure capabilities
+are checked, including for CONST. Scalar/array formals become null-capable;
+nonnullable scalar/array actuals receive scoped, initially-off maps. Only *NOPASS
+and *OMIT companion options are accepted. Nested/array forwarding, repeated
+aliases, named indicators, strided overlay fields, anonymous padding and empty
+LEN structures retain data/map identity and bounds. Scalar views are limited by
+both declared width and actual stride, preserving VARSIZE element isolation.
+Named NULLIND parameters bind one nonnullable indicator or matching external
+*NULL-map parameter in the same signature. PR/PI source names may differ, but
+association positions and modes must match. Explicit indicator parameters remain
+ordinary data and do not implicitly borrow the data actual's automatic map.
+Readonly maps are preflighted before record input; successful input/output uses
+borrowed attributes. Runtime entry maps validate presence, size and capabilities
+before execution; data plus maps share the 1 MiB call bound. ProgramArgument.NullMap
+exposes bounded synchronous access to aware hosts, with readonly/capability
+checks and call-lifetime invalidation. Cleanup detaches private map snapshots
+alongside data; retained activations rebind fresh maps on subsequent calls.
+Existing process protocols 1/2 and built-in APIs without map contracts reject
+sidebands before execution rather than silently dropping them.
+All 5761 solution tests pass with zero failures/skips in 9m18s,
+including 46 new cases: 30 native/compiler cases, eight core/host map cases,
+six real saved-program/record cases and two external-process rejection cases.
+All 3505 broad and 174 final focused checks, locked restore, a Release
+build with zero warnings/errors, expanded RPGNPRM terminal acceptance, generated
+inventory, local links and whitespace checks pass. Native/record cases cover
+CCSIDs 37/1208; RPGNPRM runs at 24x80 and general display acceptance also covers
+27x132. Binding versions remain DISK 7, external descriptions 2 and WORKSTN 5;
+schema 31, catalog 306 and checklist 36 complete / 70 open are unchanged.
+Process null-map sidebands/foreign-language ABI, aggregate/whole-array %NULLIND,
+null-map INZ(*EXTDFT), divided nullable EXTFLD arrays, EVAL-CORR, wider external/
+CCSID settings, varying/opaque database layouts, multi-format/blocked I/O, ILE
+linking and independent native golden/scale acceptance remain open. C09 stays
+partial. See docs/rpg-null-parameters.md.
+
+Process null-map checkpoint (2026-10-18): registered process protocol 3 now
+carries aligned nullable/value/readonly maps alongside existing scalar/buffer
+arguments. Requests preserve OMIT/NOPASS slots, empty structures, declaration
+and array order, nested/mixed nullable layouts and supported buffer CCSIDs.
+Strict responses preserve map capabilities, mutability, counts and slots;
+unknown/duplicate fields, wrong types, missing maps, changed CONST and nonnullable
+flags reject. Session writeback validates all data and maps before publication,
+records flag changes before data writes, accepts map-only updates and preserves
+valid updates on success:false. The service returns staged map values without
+mutating callers. Known overlapping null maps and named indicators shared with
+data reject before process side effects, including forwarded storage. Scoped
+storage identities expire at call return; detached snapshots own private state.
+Protocols 1/2 still reject sidebands; ordinary legacy behavior and registration's
+protocol 1 default are preserved. Executable/dependency pinning, authority,
+private directories, cleanup, cancellation, timeout and stream limits remain
+in force; large maps reject before wire snapshots/process startup.
+All 5791 solution tests pass with zero failures/skips in 9m05s,
+including 30 new cases: 29 process/ABI/integration cases and one scoped identity
+case. All 3535 broad and 38 final focused checks, locked restore,
+a Release build with zero warnings/errors, expanded RPGNWIRE terminal acceptance,
+generated inventory, local links and whitespace checks pass. Process buffers
+cover CCSIDs 37/1208; RPGNWIRE runs at 24x80 and general display acceptance covers
+27x132. The terminal fixture references the process executable and its updated
+lock file passes locked restore. Schema 31, catalog 306 and binding versions
+DISK 7/external descriptions 2/WORKSTN 5 remain unchanged. Alias-capable process
+protocols, native foreign-language ABI, aggregate/whole-array %NULLIND, null-map
+INZ(*EXTDFT), divided nullable EXTFLD arrays, EVAL-CORR, wider external/CCSID
+settings, varying/opaque database layouts, multi-format/blocked I/O, ILE linking
+and native golden/scale acceptance remain open. C09 stays partial; checklist
+36 complete / 70 open is unchanged. See docs/rpg-process-null-maps.md.
+
+Corresponding-assignment checkpoint (2026-10-18): EVAL-CORR now assigns native
+structure variables in free source and fixed extended factor 2, with free H
+numeric half adjustment. Compatible local names select fields after PREFIX/
+EXTFLD naming, independently of external identity and offsets. Nested structures
+recurse; scalar/array subfield ranks must agree. Structure arrays and SUBARR
+slices use common prefixes or scalar broadcast; unused source tails are not
+decoded and extra target data/flags stay unchanged. Source and target indices
+are captured once; multiple occurrences retain their independent selection.
+Assignments follow source declaration order, including overlays and live named
+IND data. Related identical layouts capture whole images, preserving padding and
+overlapping array slices without decoding overlaid numeric data. The optimization
+checks full layout/name/rank/null-capability identity; different record extracts
+or prefixes retain field correspondence. Selected nullable leaves copy source
+flags or clear them for nonnullable sources; nonnullable targets ignore flags.
+Named and borrowed maps remain live, CONST targets reject at compilation and
+readonly maps preflight associated movement. Native conversion/overflow monitor
+statuses preserve failing fields while completed earlier fields remain assigned.
+Saved nullable record output, source/description deletion and both supported
+CCSIDs have acceptance coverage. The IR opcode is appended without renumbering
+existing values; schema 31, catalog 306 and DISK 7/external description 2/WORKSTN 5
+bindings remain unchanged.
+All 5844 solution tests pass with zero failures/skips in 9m27s,
+including 53 new cases: 39 native/compiler/ABI cases and 14 saved-program/record
+cases. All 3588 broad and 53 final focused checks, locked restore, a Release
+build with zero warnings/errors, expanded RPGCORR terminal acceptance, generated
+inventory, local links and whitespace checks pass. Native/record coverage includes
+CCSIDs 37/1208; RPGCORR runs at 24x80 and general display acceptance also covers
+27x132. Fixed EVAL-CORR extenders, M/R precision/procedure expressions, aggregate/
+whole-array %NULLIND, null-map INZ(*EXTDFT), divided nullable EXTFLD arrays, wider
+external/CCSID settings, varying/opaque database layouts, multi-format/blocked I/O,
+ILE linking, alias-capable process protocols, native foreign-language ABI and
+independent native golden/scale acceptance remain open. C09 stays partial;
+checklist 36 complete / 70 open is unchanged. See docs/rpg-corresponding-assignment.md.
+
+Right-adjustment checkpoint (2026-10-18): EVALR now assigns fixed-length native
+character fields, structures and arrays in free source and fixed extended factor
+2. It pads or truncates on the left without trimming source blanks. Scalar
+expressions broadcast once; elementwise character expressions and explicit (*)
+arrays use common prefixes, preserving extra target elements. SUBARR aliases
+snapshot source bytes before publication. Nested structures, opaque HEX data and
+selected multiple occurrences retain byte layout and bounds. Writable SUBST
+aligns within its selected width, preserves neighbors and permits bounded empty
+end slices. Its selectors require non-float integer values with zero decimal
+positions, capture indices once and check actual VARSIZE capacity before writing.
+Shared native index type checks now use static metadata rather than resolving
+indexed references again, preventing repeated subscript procedure effects.
+Native conversion and host validation stage complete array images before
+writeback. CONST targets and known incompatible direct types/ranks reject at
+compilation; runtime values require character data and matching buffer CCSIDs.
+Native statuses distinguish invalid positions, bounds and unrepresentable text.
+Data movement leaves automatic/named/borrowed null flags unchanged. Nullable
+implicit and result-buffer output preserves nulls and leading blanks; saved
+programs work after source removal and retained calls rebind fresh parameters
+and maps. The opcode is appended without renumbering existing IR values; schema
+31, catalog 306 and DISK 7/external description 2/WORKSTN 5 bindings are unchanged.
+All 5901 solution tests pass with zero failures/skips in 8m54s,
+including 57 new cases: 47 native/compiler/host cases and ten saved-program/record
+cases. All 3645 broad and 57 final focused checks, locked restore, a Release
+build with zero warnings/errors, expanded RPGRIGHT terminal acceptance, generated
+inventory, local links and whitespace checks pass. Native/record coverage includes
+CCSIDs 37/1208; RPGRIGHT runs at 24x80 and general display acceptance also covers
+27x132. EVALR M/R precision, varying/graphic/UCS-2 targets, broader CHARCOUNT/CCSID,
+null-map INZ(*EXTDFT), divided nullable EXTFLD arrays, aggregate/whole-array
+%NULLIND, EVAL-CORR precision/procedure extensions, multi-format/blocked I/O, ILE
+linking, native foreign-language ABI, process aliases and independent native
+golden/scale acceptance remain open. C09 stays partial; checklist 36 complete /
+70 open is unchanged. See docs/rpg-right-assignment.md.
+
+Static-module checkpoint (2026-10-18): CRTRPGMOD now creates source-bound RPGLE
+module objects; CRTPGM binds explicit module lists and ENTMOD, while DSPMOD lists
+saved imports/exports and main eligibility. NOMAIN permits global declarations
+and exported native procedures without a main PI/calculations. ALWNULL/NOMAIN may
+be combined or separate before declarations without repetition. Normal CRTBNDRPG
+still requires local resolution. Binding checks distinct modules, eligible entry,
+case-sensitive exports, missing/private/duplicate symbols and native return/
+parameter modes/layouts before program creation. Native CALLP, prototyped CALLB,
+functions and callbacks use the owning module's globals and existing borrowed
+argument scopes, including null maps, file parameters and structural ABIs. Bound
+lookup is separate from legacy semantic dispatch; unprototyped module CALLB fails
+compilation. Captured source maps and file/external descriptions survive source,
+module and compile-time-only description deletion. Global data initializes on
+first module use; separate bound programs have separate activation resources.
+RETURN and entry LR retain other module globals/cursors; reclaim/job end/failure
+close owned resources. Live file authority is rechecked and failed activations
+are discarded. Bind/inspect enforce module use and signing policy; calls enforce
+program use/signing while retaining live runtime-file authority. Module owners
+do not introduce separate adopted authority. Current-library defaults and QTEMP
+job isolation are covered. Strict version 1 images reject unknown/duplicate/case-
+variant fields, noncanonical identities, stale maps and inconsistent descriptions.
+Module arrays are bounded before deserialization; limits are 16 modules, 4 MiB
+UTF-8 source, 16 MiB metadata, 32 MiB encoded image and 64 MiB declared globals.
+Schema 31 and DISK 7/external description 2/WORKSTN 5 bindings are unchanged.
+Module metadata uses ipc.rpg.moduleVersion=1 and bound programs use RPGBOUND with
+a captured-module envelope. Catalog now has 307 names: existing CRTRPGMOD/CRTPGM
+contracts become partial implementations and DSPMOD is added. The interop.md
+stub is replaced with current supported contracts and remaining scope.
+All 5962 solution tests pass with zero failures/skips in 9m31s,
+including 61 new cases: 26 compiler/binder cases, 28 command/metadata/security/
+lifecycle cases and seven real file/ABI cases. All 3706 broad and 61 final
+focused checks, locked restore, a Release build with zero warnings/errors,
+expanded terminal CRTRPGMOD/DSPMOD/CRTPGM/CALL acceptance, generated inventory,
+local links and whitespace checks pass. Native/file cases cover CCSIDs 37/1208;
+the RPGBIND terminal case runs at 24x80 and general display acceptance covers
+27x132. Service programs, binding directories, binder source/signatures, update/
+rebind, data exports/imports, wider language/calling conventions and procedure
+pointers remain open, alongside full cycle/exception/activation semantics, wider
+RPG null/CCSID/database contracts and independent native golden/scale acceptance.
+C09 stays partial; checklist 36 complete / 70 open is unchanged. See
+docs/rpg-module-binding.md and docs/interop.md.
+
+Service-definition checkpoint (2026-10-18): CRTSRVPGM now creates source-bound
+RPGSERVICE objects from captured modules using EXPORT(*ALL) or saved binder
+source; DSPSRVPGM validates and displays their exports, signatures, modules and
+activation policy. Service module binding needs no main entry and checks internal
+imports and native interfaces before publication. Binder source supports one
+CURRENT plus append-only PRV levels, quoted case-sensitive symbols, uppercase
+unquoted symbols, EBCDIC 37 literal/hex signatures and deterministic emulator
+*GEN signatures. Unsupported options, invalid levels, duplicate/missing/private
+exports and incompatible interfaces reject. Strict version 1 images rebuild and
+compare definitions, bound arrays before deserialization, and retain source maps
+and file/external metadata after original module/source/binder deletion. Source,
+module and destination authority, service inspection authority, module/service
+signing, current-library lookup and QTEMP isolation have acceptance coverage.
+ACTGRP records *CALLER or named policy; creation and inspection do not run code.
+Catalog now has 308 names: CRTSRVPGM becomes partial and DSPSRVPGM is added.
+Schema 31 and DISK 7/external description 2/WORKSTN 5 bindings are unchanged.
+All 6056 solution tests pass with zero failures/skips in 9m40s,
+including 94 new cases: 47 binder/compiler cases and 47 command/image/security
+cases. All 3800 broad and 148 focused checks, locked restore, a Release
+build with zero warnings/errors, expanded terminal service creation/inspection,
+generated inventory, local links and whitespace checks pass. Dynamic BNDSRVPGM
+linking, activation-time signature/ordinal checks, shared service state, service
+dependencies, binding directories, update/rebind, data exports/imports, broader
+ABI/calling conventions and independent native acceptance remain open. C09 stays
+partial; checklist remains 36 complete / 70 open. See docs/rpg-service-definitions.md.
+
+Dynamic-service checkpoint (2026-10-18): CRTPGM and CRTBNDRPG now accept explicit
+BNDSRVPGM lists and *NONE. Static procedures resolve first, followed by services
+in list order; unused services are excluded. Binding checks native interfaces,
+while programs capture service identity/signature/export references without
+copying service code. Before main side effects, activation checks live use and
+signing, matching CURRENT/PRV signature levels, export positions and native
+interfaces. Native CALLP/prototyped CALLB/functions retain existing parameter,
+return, file and null-map contracts. Argument effects occur in the caller group
+before entering the service scope. Services own independent module/global/STATIC
+storage and declared files: *CALLER shares within a caller group, named services
+share across caller groups, and jobs remain isolated. Caller LR/failure/reclaim
+does not dispose service state. Reentrancy preserves global updates; automatic
+frames and borrowed references unwind on errors. Activated code/group policy is
+pinned until service reclaim, while object/file authority, signing and trust stay
+live. Reclaim refreshes cached bindings; active services cannot be reclaimed.
+Service-group reclaim, transient caller-group exit and job end close owned
+resources. Weak caller bindings and disposed runtime contexts release reclaimed
+module storage. Service owners add no adopted authority. Trusted jobless calls
+share services only within the outer call. Deleted sources/modules/descriptions,
+nullable structure and LIKEFILE interfaces, file cursors and job-end lock cleanup
+have acceptance coverage at CCSIDs 37/1208.
+Dynamic programs use a strict version 2 RPGBOUND reference envelope; version 1
+static programs and RPGSERVICE service definitions remain supported. Catalog
+remains 308 names, with BNDSRVPGM metadata added to CRTPGM/CRTBNDRPG. Schema 31 and
+DISK 7/external description 2/WORKSTN 5 are unchanged.
+All 6114 solution tests pass with zero failures/skips in 10m00s,
+including 58 new cases: 48 binding/activation/security/lifecycle cases and ten
+real file/structure/null-map cases. All 3858 broad and 206 focused checks,
+locked restore, a zero-warning/error Release build, expanded terminal dynamic
+binding/native-null-map/shared-counter/caller-and-service-reclaim acceptance,
+generated inventory, local links and whitespace checks pass. Service dependencies,
+binding directories, update/rebind, data exports/imports, deferred activation,
+broader ABI/calling conventions and independent native acceptance remain open.
+C09 stays partial; checklist remains 36 complete / 70 open. See
+docs/rpg-service-definitions.md and docs/interop.md.
+
+Binding-directory/dependency checkpoint (2026-10-18): CRTBNDDIR, DLTBNDDIR,
+ADDBNDDIRE, RMVBNDDIRE and DSPBNDDIR manage ordered strict object payloads.
+Positioned add/replace, generic removal and complete-batch validation are atomic;
+concurrent additions read fresh payloads inside write transactions. Native add/
+remove data-authority requirements do not introduce read/management requirements.
+Library authority, create-authority defaults, authorization-list attachment,
+current library, QTEMP isolation and object copy/rename are covered. Directories
+hold at most 256 entries and 512 KiB encoded UTF-8, rejecting malformed/unknown/
+duplicate/case-variant data. CRTPGM, CRTBNDRPG and CRTSRVPGM accept BNDDIR lists
+and *NONE, select providers for unresolved imports in order, revisit earlier
+providers for newly introduced imports, ignore duplicate resolved identities and
+stop before unused trailing entries. Missing providers produce nonfatal CPD5D1D
+diagnostics. Live provider authority/signing and native interface checks precede
+publication. Directory-selected modules are captured; services remain references.
+Legacy semantic procedure nodes cannot hide native imports or bound targets.
+CRTSRVPGM also accepts BNDSRVPGM dependencies. Version 2 RPGSERVICE images retain
+only used qualified service references while version 1 remains supported. Graph
+preflight checks every dependency edge's authority, signing, signature, export
+positions and native interface before main side effects, in the parent service's
+activation group. Cycles terminate without initializing data. Limits are 64
+dependency levels and 256 activations; child reclaim refreshes weak parent bindings.
+Directory/source/module/description deletion, transitive nullable structure
+aliases and leaf-owned cursor state have acceptance coverage at CCSIDs 37/1208.
+Examined directory artifacts are bounded to 64 MiB UTF-8, with existing selected
+module/service/source/image/storage limits retained. Catalog now has 313 names;
+BNDDIR metadata is added to the three RPG creation commands and BNDSRVPGM to
+CRTSRVPGM. Schema 31 and DISK 7/external description 2/WORKSTN 5 are unchanged.
+All 6199 solution tests pass with zero failures/skips in 9m58s,
+including 85 new cases: 40 directory lifecycle/authority/image/concurrency cases,
+19 discovery cases, 22 service dependency cases and four real record/ABI cases.
+All 3943 broad and 291 focused checks, locked restore, a zero-warning/error
+Release build, expanded terminal directory CRUD/static discovery/service dependency/
+shared-leaf/reclaim/source-independence acceptance, generated inventory, local
+links and whitespace checks pass. Module-embedded directory references/control
+specifications, deferred activation, update/rebind, data imports/exports, richer
+work/output operations, wider binder/ABI conventions and independent native
+acceptance remain open. C09 stays partial; checklist remains 36 complete / 70 open.
+See docs/rpg-binding-directories.md and docs/rpg-service-definitions.md.
+
+Source-reference/update checkpoint (2026-10-18): BNDDIR control literals are now
+captured from free/multiline source, includes and supported traditional H origins.
+CRTRPGMOD defers directory lookup to binding and DSPMOD lists saved references.
+CRTBNDRPG detects controls after preprocessing and automatically uses module
+binding. Explicit command directories precede module references; selected modules
+can introduce further reference directories, which are examined only while imports
+remain unresolved. Captured programs do not reopen directories at runtime.
+UPDPGM and UPDSRVPGM replace existing bound modules by name using RPLLIB(*ONLY,
+*FIRST, *MODULE or an origin library), preserving recorded origins and entry
+identity. Explicit/generic/*ALL module selection is bounded; MODULE(*NONE) rebinds
+current service signatures without original source/module objects. Previously
+bound services precede new providers and directory discovery. Ordinary saved
+CRTBNDRPG programs can become single-module RPGBOUND artifacts during update.
+UPDSRVPGM EXPORT(*CURRENT) preserves public levels/signatures, including synthetic
+exact-signature binder source when needed; *ALL and source export modes can
+publish new interfaces with prior-level compatibility. Missing exports and
+incompatible interfaces reject the entire update.
+Updates require owner/effective owner-group/nonadopted *ALLOBJ authority, library
+use/add and live target/provider integrity. ALWUPD(*NO) rejects updates. Complete
+artifact restoration precedes transactional publication, comparing current
+canonical contents, timestamp and signing data. Concurrent changes fail with
+IPC0130; cancellation/errors preserve the original object. Success retains owner,
+creation metadata, authority and activation policy while clearing stale signing.
+Existing program/service activations keep old code, entry interfaces, data and
+cursors until reclaim; selection occurs before entry argument borrowing. New
+activations use the updated version. Live authority and trust checks still apply.
+ACTGRP/SRVPGMLIB *SAME remain the supported update policies. Object image versions,
+schema 31 and DISK 7/external description 2/WORKSTN 5 are unchanged. Catalog now
+has 315 names, adding UPDPGM/UPDSRVPGM and ALWUPD creation metadata.
+All 6253 solution tests pass with zero failures/skips in 10m26s,
+including 54 new cases: 19 source-control cases, 33 update/binding/security/
+publication cases and two real retained-cursor cases at CCSIDs 37/1208. All
+3997 broad and 345 focused checks, locked restore, a zero-warning/error
+Release build, expanded terminal source-BNDDIR/module-update/retained-code/service-
+update/reclaim/MODULE(*NONE) acceptance, generated inventory, local links and
+whitespace checks pass. Named activation changes, service-library relocation,
+per-provider deferred activation, ALWLIBUPD, wider update/listing/event options,
+data exports/imports, broader language/ABI and independent native golden/scale
+acceptance remain open. C09 stays partial; checklist remains 36 complete / 70 open.
+See docs/rpg-program-updates.md.
+
+Deferred service activation checkpoint (2026-10-18): BNDSRVPGM now accepts native
+(service *IMMED/*DEFER) tuples in CRTPGM, CRTBNDRPG and CRTSRVPGM, including the
+single flat tuple form. Directory service entries retain their activation mode
+when selected. Creation still validates available providers and native interfaces;
+runtime preflight follows immediate edges only. Unused deferred providers are not
+located or checked for authority, signing, signatures or interfaces until called.
+Earlier caller effects survive a later activation failure. First use checks the
+provider's immediate dependency closure before its procedure body; deferred child
+edges wait for their own calls. Parent-group ownership, shared service state,
+cyclic/reentrant graphs and existing preflight/invocation budgets remain enforced.
+First use selects the then-current service version; active services retain code,
+globals and cursors until owning-group reclaim. Live authority/signing and retained
+snapshot trust remain mandatory. UPDPGM/UPDSRVPGM preserve modes by default and
+accept per-provider *SAME/*IMMED/*DEFER; *SAME for a new provider uses *IMMED.
+Existing caller activations retain their prior binding policy after an update.
+RPGBOUND/RPGSERVICE version 3 captures deferred references. Immediate-only images
+retain versions 1/2 and omit the activation property. Strict image checks reject
+invalid modes and inconsistent versions; older snapshots remain readable. Binding
+directory image version 1, schema 31, DISK 7/external description 2/WORKSTN 5 and
+catalog 315 are unchanged.
+All 6297 solution tests pass with zero failures/skips in 10m21s,
+including 44 new cases: 40 activation/binding/update/security/version cases and
+four real nullable-record/cursor cases covering CCSIDs 37/1208. All 4041
+broad and 210 focused checks, locked restore, a zero-warning/error Release build,
+expanded terminal unused-missing-provider/first-call-failure/recovery/*SAME
+acceptance, generated inventory, local links and whitespace checks pass.
+Named activation-group updates, service-library relocation/ALWLIBUPD, data imports/
+exports, procedure pointers, wider update/listing/ABI controls and independent
+native golden/scale acceptance remain open. C09 stays partial; checklist remains
+36 complete / 70 open. See docs/rpg-deferred-activation.md.
+
+Activation/library update policy checkpoint (2026-10-18): UPDPGM and UPDSRVPGM
+support ACTGRP(*SAME) and changes between named groups. *CALLER/*NEW policies
+cannot become named policies or replace named policies. Group changes publish
+atomically with the validated artifact; cancellation, concurrent modification,
+denied policy and invalid providers preserve the entire original object.
+Program calls select the requested group while old groups retain captured code,
+interfaces, globals and cursors. Existing service connections retain their old
+service group/version; new connections use the updated policy, and owning-group
+reclaim refreshes old connections.
+CRTPGM, CRTBNDRPG and CRTSRVPGM capture ALWLIBUPD(*YES/*NO), defaulting to *NO for
+new and older objects. Non-*SAME SRVPGMLIB updates require *YES. Named policies
+relocate each found existing provider and preserve original references when a
+preferred object is missing. Authority, signing, image or interface failures never
+trigger fallback. *LIBL policies record runtime lookup with the resolved binding
+origin. *SAME preserves lookup policy while rebinding current signatures; named
+relocation can restore fixed lookup. Existing activation modes remain preserved.
+Dynamic references resolve per caller image at activation/first deferred use.
+Connected references pin their actual provider despite library-list changes;
+other callers/jobs can resolve a different provider. Connections to the same
+qualified object/group share service storage. Live authority and signing checks
+apply to the actual connected provider and retained snapshot trust. Reclaim or
+fresh caller activation permits lookup again; runtime lookup does not fall back
+to a binding origin outside the current list.
+RPGBOUND/RPGSERVICE version 4 captures runtime lookup metadata; explicit references
+retain versions 1/2/3. Strict validation and DSPSRVPGM support lookup metadata.
+Schema 31, DISK 7/external description 2/WORKSTN 5 and catalog 315 are unchanged;
+creation metadata now includes ALWLIBUPD.
+All 6347 solution tests pass with zero failures/skips in 10m32s,
+including 50 new cases: 46 policy/binding/security/publication/image cases and
+four real cursor cases at CCSIDs 37/1208. All 4091 broad and 260 focused
+checks, locked restore, a zero-warning/error Release build, expanded terminal
+named group/explicit relocation/runtime lookup/connection pinning/reclaim
+acceptance, generated inventory, local links and whitespace checks pass.
+Implicit system service providers, data imports/exports, procedure pointers,
+wider update/listing/ABI controls and independent native golden/scale acceptance
+remain open. C09 stays partial; checklist remains 36 complete / 70 open. See
+docs/rpg-update-policies.md.
+
+Module/service data binding checkpoint (2026-10-19): global IMPORT/EXPORT
+standalone fields and native structures now resolve across static modules,
+BNDSRVPGM services and binding directories. Literal/constant external names and
+free *DCLCASE retain case; supported traditional D origins share the same model.
+Missing/duplicate symbols, procedure/data collisions, incompatible representations,
+widths, scales, dimensions, nested offsets, occurrences and null capabilities
+reject before publication. Procedure-local/template/entry bindings, import INZ
+(including nested initialization) and compile-time imported data reject explicitly.
+Imports alias exporter-owned bytes and null maps, including arrays, nested
+structure arrays and independently selected multiple occurrences. Typed CL calls
+can borrow the aliases. Exported module data initializes before main effects and
+retains values/null flags through LR and abnormal returns while ordinary cycle
+storage restarts. Services share data with their procedures within the owning
+group; caller reclaim does not discard separately owned data. Service reclaim
+refreshes surviving imports, and disposed borrowed memory/null maps reject access.
+Data imports force service storage activation and integrity/interface checks before
+main even with *DEFER. Procedure-only deferred imports remain deferred when a
+provider also exports data. Dependency checks preserve parent-group ownership,
+cycle/graph limits, live authority/signing and original CCSIDs.
+CRTSRVPGM public tables and binder source support data-only and mixed exports.
+CURRENT/PRV signatures preserve typed positions; EXPORT(*CURRENT) updates cannot
+change a data symbol into a procedure or vice versa. Ordinary service replacement
+and fixed/*LIBL relocation retain old activations and typed metadata until reclaim.
+RPGBOUND/RPGSERVICE version 5 records ordered data-export subsets; strict checks
+reject forged, missing, duplicate or oversized kind metadata. Interfaces without
+data retain previous shapes. Static links rebuild from captured module source;
+module version 1, schema 31, DISK 7/external description 2/WORKSTN 5 and catalog
+315 are unchanged. DSPSRVPGM lists public data symbols.
+All 6422 solution tests pass with zero failures/skips in 10m57s,
+including 75 new cases: 36 compiler/static/lifetime cases, 37 service binding/
+interface/security/lifetime cases and two real nullable-record round trips at
+CCSIDs 37/1208. All 4166 broad and 502 focused checks, locked restore,
+a zero-warning/error Release build, expanded terminal mixed data/procedure
+sharing/LR/caller reclaim/service reclaim acceptance, generated inventory,
+local links and whitespace checks pass.
+Procedure/data pointers, weak/activation-group exports, wider native binder/
+language/ABI controls and independent native golden/scale acceptance remain open.
+C09 stays partial; checklist remains 36 complete / 70 open. See
+docs/rpg-data-binding.md.
+
+Native procedure pointers checkpoint (2026-10-19): POINTER(*PROC), traditional
+*/PROCPTR definitions and PR/PI types, %PADDR and pointer-based EXTPROC now carry
+opaque 16-byte addresses through native scalar/array/structure references,
+CONST/VALUE arguments and scalar/array/LIKEDS/RTNPARM returns. Pointer fields and
+nested containers align to sixteen bytes; invalid explicit positions/lengths
+reject. Arrays, indexed structure members, LIKE and LIKEDS retain typed layouts.
+%PADDR accepts bound procedure prototypes and case-sensitive literal/constant
+entry symbols, including hex constants. Pointer-based prototype addresses can be
+read at runtime but cannot initialize definitions. EXTPGM/variable-name operands,
+whole pointer-array call targets, character/numeric assignments and ordinary
+scalar conversions reject. Pointer targets and interfaces validate before
+argument effects, including null/expired/foreign/forged values and incompatible
+origin CCSIDs. Target selection remains stable while arguments change a pointer.
+Address references participate in captured module/service/directory links;
+procedure-pointer imports force activation before effects even with *DEFER.
+Private service procedures can return callbacks without exporting their entries.
+Job-scoped registries retain origin code/storage and deduplicate at most 4096
+live targets. Callbacks re-enter their original activation group, including
+*CALLER service owners, so nested program calls use that group. Live authority,
+object signing, retained snapshot trust and original CCSIDs remain checked;
+procedure calls add no program-owner adopted authority. LR and abnormal returns
+restart ordinary cycle storage while retained callbacks use the current root.
+UPDSRVPGM preserves old callback code until reclaim. Reclaim/clear/job termination
+invalidates targets without rebinding old addresses; newly acquired addresses
+connect to the current activation. Legacy shorthand program-name PROCPTR fields
+retain their previous behavior. Module version 1, RPGBOUND/RPGSERVICE 1–5,
+schema 31, DISK 7/external description 2/WORKSTN 5 and catalog 315 are unchanged.
+All 6487 solution tests pass with zero failures/skips in 11m06s,
+including 65 new cases: 51 language/compiler/native-storage cases and 14 saved
+program/service activation, authority, signing, update, LR/error and reclaim cases.
+All 4231 broad and 314 focused checks, locked restore, a
+zero-warning/error Release build, expanded terminal callback-factory/retention/
+service-reclaim/expired-target acceptance, generated inventory, local links and
+whitespace checks pass. Native cases cover CCSIDs 37/1208; general display
+acceptance covers 24x80 and 27x132. Data/basing pointers, weak/activation-group
+exports, broader native binder/language/ABI controls and independent native
+golden/scale acceptance remain open. C09 stays partial; checklist remains
+36 complete / 70 open. See docs/rpg-procedure-pointers.md.
+
+Basing pointers/native heap checkpoint (2026-10-19): native POINTER and traditional
+* declarations now carry typed 16-byte data addresses, distinct from procedure
+pointers even when both variable values are null. BASED fields, arrays, structures,
+qualified/indexed basing variables and implicit local pointer names share native
+byte storage. LIKE/LIKEDS and pointer-bearing layouts preserve alignment; based
+pointer accesses check actual sixteen-byte alignment. Unsupported initialization,
+separate ownership, circular/function basing expressions and independent nested
+null metadata reject. %ADDR preserves field/array/member/occurrence identity and
+supplies array/wildcard/noncontiguous subfield addresses. Imported external fields
+become addressable in their owning module, including subprocedure address-taking;
+real database updates through packed/text aliases pass at CCSIDs 37/1208.
+Forward address initialization waits for storage, parameter initialization waits
+for actual binding, and initialization indexes must be compile-time constants.
+%SIZE/%LEN/%ELEM inspect null-based layouts without dereferencing or allocating.
+CONST parameter addresses support comparisons while rejecting storage/return for
+mutation; CONST pointer values can modify/free pointee storage without changing
+the pointer cell. Null/omitted/unpassed, expired, foreign, incompatible-CCSID and
+out-of-range access reject before mutation. Integer byte arithmetic and same-region
+subtraction work; incompatible assignments/conversions and overflow reject.
+%ALLOC/%REALLOC and fixed ALLOC/REALLOC share heap preparation; free/fixed DEALLOC
+supports E/N and traditional ER indicators. Failed allocation/reallocation keeps
+old pointers/bytes; successful reallocation/free expires all old aliases, including
+references captured before later argument effects. Native statuses 222/425/426
+participate in MONITOR, E handling and feedback. Per-allocation single-level
+maximum 16,776,704 bytes, 64 MiB execution heap and 4096 live regions are enforced;
+free/reclaim releases capacity and element addresses share regions.
+Job-scoped program/service aliases preserve live origin authority/signing,
+retained snapshot trust and original CCSIDs, including deferred bindings with no
+subsequent procedure call. Private service factories expose data addresses;
+UPDSRVPGM retains old storage until reclaim. LR/errors reinitialize globals in
+place while heap/STATIC allocations remain owned by the activation. Parameter
+address-taking marks the original owner for retention. Automatic/VALUE storage
+expires on return; valid caller references survive the callee. Reclaim/clear/job
+end invalidates addresses without reconnecting replacements. CL borrowing and
+writeback through based native storage pass at CCSIDs 37/1208.
+All 6567 solution tests pass with zero failures/skips in 11m11s,
+including 81 new cases: 45 language/storage/quota cases, 18 procedure/reference/
+lifetime cases, 16 saved activation/service/security cases and two real record
+round trips. The obsolete POINTER rejection case was removed because that native
+declaration is now supported; the traditional rejection fixture now uses an
+invalid fifteen-byte length. All 4311 broad and 394 focused checks,
+locked restore, a zero-warning/error Release build, expanded terminal service
+address/alias/reclaim/heap realloc/deallocation acceptance, generated inventory,
+local links and whitespace checks pass. General display acceptance covers 24x80
+and 27x132. Module version 1, RPGBOUND/RPGSERVICE 1–5, schema 31, DISK 7/external
+2/WORKSTN 5 and catalog 315 are unchanged. Cross-region subtraction, teraspace,
+varying/graphic/UCS-2 addresses, based null-map aliases, wider pointer/API/foreign
+ABIs, weak/activation-group exports and independent native golden/scale acceptance
+remain open. C09 stays partial; checklist remains 36 complete / 70 open.
+See docs/rpg-data-pointers.md.
+
+Durable record slots/deleted reuse checkpoint (2026-10-19)
+
+Schema 32 gives every member an immutable identity, durable allocated extent and
+transactional record incarnation tokens. Ordinary physical/logical addition,
+declared RPG WRITE and CPYF append allocate from that extent. Deleted trailing
+positions are retained; REUSEDLT(*NO) appends and *YES deterministically fills the
+lowest available deleted position. CRTPF/CHGPF accept persisted REUSEDLT options,
+including CHGPF *SAME and atomic rejection of invalid combined changes. This local
+reuse choice does not claim IBM reclaim-algorithm/FIFO/LIFO parity.
+
+Current-record UPDATE/DELETE checks the selected incarnation as well as schema
+and typed before image. Delete/reinsert of identical values cannot revive an old
+cursor target. Rollback restores versions/extents. CLRPFM and CPYF replacement
+reset allocation atomically. Object copy preserves deleted extents with fresh
+member identities; move/rename preserve identities and managed triggers. Live
+record-unit publication and journal recovery keep bookkeeping triggers; private workspaces and
+object copies exclude the original managed triggers appropriately.
+
+Migration seeds active sparse physical/source members, installs capture without
+changing record formats and rolls back schema/triggers/history on failure.
+Pre-32 deleted trailing extents were never recorded and cannot be reconstructed.
+The private commitment workspace and arbitrary raw SQL retain SQLite allocation;
+live publication updates the ledger but does not provide pending RRN reservation.
+
+All 6586 solution tests pass with zero failures/skips in 10m55s,
+including 19 new cases: twelve slot/identity/copy/rollback cases, two persisted
+command-policy cases, two compiled RPG WRITE round trips, two migration cases and
+one journal recovery/cursor identity case.
+All 498 focused checks and 4313 broad RPG/binding/work cases in the
+full suite pass, together with locked restore,
+a zero-warning/error Release build, display PTY acceptance, generated inventory,
+local links and whitespace checks pass. Catalog 315, DISK 7/external 2/WORKSTN 5,
+module 1 and RPGBOUND/RPGSERVICE 1–5 are unchanged. RECNO field writeback,
+slot-directed WRITE, INZPFM, global pending RRN/key reservation, native commitment
+flags/isolation, broader SQL allocation and multi-member relative mapping,
+scale budgets and independent IBM acceptance remain open. C08/C09/C11 stay
+partial; checklist remains 36 complete / 70 open. See docs/record-slots.md.
+
+Member initialization/SIZE/authority checkpoint (2026-10-19)
+
+INZPFM now initializes physical data/source members with DDS default records or
+allocated deleted positions. Explicit totals preserve existing records/gaps;
+FIRST/LAST use creation order, positional operands and NXTINCR/default behavior
+are supported. Deleted reservation reaches native RRN 4294967288 with constant
+metadata. Default materialization is bounded to one million rows and 64 MiB.
+
+CRTPF/CRTSRCPF and CHGPF persist SIZE lists/NOMAX, with default 10000/1000/3,
+individual SAME updates, atomic combined validation and existing-extent guards.
+Ordinary physical/logical/RPG additions and CPYF enforce capacity; deleted reuse
+can remain within a full extent. Failed copy restores the old records and extent.
+All-SAME changes preserve legacy definition bytes. Omitted size now enforces native
+default capacity on ordinary live additions; existing large data files can use
+CHGPF SIZE(*NOMAX). Private workspaces/raw SQL retain their existing allocation.
+
+Shared authorization now supports common required bits plus a genuine alternative
+bit set, preserving private/group/adopted/credential checks and selecting an
+actually granted bit for allocation. INZPFM checks OBJOPR/ADD plus OBJMGT or
+OBJALTER and DLT for deleted initialization. CHGPF/CHGLF accept either management
+bit without OBJOPR; ADDPFM/CLRPFM accept the same alternatives, and member addition
+requires library ADD. CLRPFM gains cancellable writer waits and live authority/job
+rechecks. Initialization checks cancellation/shutdown, live permissions/job state
+and commitment enlistment after a writer wait, and uses one file allocation.
+
+Application insert triggers reject initialization; quoted names/comments/body
+text do not confuse event classification. Managed journal/slot triggers remain
+recognized. Unsupported logical/custom WITHOUT ROWID members fail before reserve.
+One atomic F/IZ entry captures initialization extent, type and default image with
+caller/job and receiver accounting; ordinary PT capture is suppressed during
+initialization and resumes afterward. Native binary IZ ABI and initialization
+apply/remove remain open; recovery rejects those entries explicitly.
+
+All 6647 solution tests pass with zero failures/skips in 11m17s,
+including 61 new cases (44 initialization/size/default/rollback/cancellation/CL
+and 17 authority cases). All 598 focused checks and 4313 broad
+RPG/binding/work cases in the full suite pass, together with locked restore, a
+zero-warning/error Release build, expanded CL INZPFM/default/deleted/SIZE/CLRPFM
+and RPG slot-reuse terminal acceptance, generated inventory, links and whitespace.
+Display acceptance covers 24x80/27x132. Schema 32, module 1, RPGBOUND/RPGSERVICE
+1–5 and DISK 7/external 2/WORKSTN 5 are unchanged; catalog increases to 316.
+Native operator inquiry/size extension, file/member lock granularity, INZPFM
+recovery/ABI, complete native statuses, commitment/SQL allocation, RECNO writeback,
+slot-directed WRITE, multi-member mapping and independent native golden/scale
+acceptance remain open. C03/C07/C08/C09/C11 retain their existing acceptance
+boundaries; checklist remains 36 complete / 70 open. See docs/member-initialization.md.
+
+Initialization journal recovery checkpoint (2026-10-19)
+
+New F/IZ capture now carries IPCINIT2 count/range/type/default data and the existing
+version-1 physical-column/file-definition schema snapshot. Oversized schema capture
+rolls back initialization. Historical IPCINIT1 entries without their old schema
+remain explicitly unsupported rather than inferring layout from current defaults.
+
+APYJRNCHG/RMVJRNCHG now recover these captured initialization entries in the shared
+stream with ordinary record entries. Default apply restores only the recorded
+positions from the captured image; removal checks presence and atomic-mode images
+before deleting records. Prefix records, deleted gaps and later records/extent are
+preserved. Deleted initialization reserves metadata without creating rows; removal
+leaves positions allocated and refuses occupied positions. RRN 4294967288 works
+without enumerating holes. Generated values are recomputed and checked after each
+insert. Counts/header/type/image/schema/format/column/JSON-field checks reject
+malformed input before effects can commit. Default replay retains the one-million
+row/64 MiB bounds, and initialization payload reads are bounded before loading.
+
+Initialization uses existing receiver authorization/ranges, members, file allocation,
+commitment boundaries, entry savepoints, native End/Continue handling, application/
+journal-trigger suspension, slot incarnation capture, FK checking and recovery
+markers/accounting. Each initialization entry counts as one recovery change.
+Late constraints or marker failures restore all of the entry's rows/versions/extent.
+Recovery now links factory shutdown and rechecks the executing job after writer
+acquisition. Restart, explicit members, DDS defaults and CCSIDs 37/1208 are covered.
+
+All 6688 solution tests pass with zero failures/skips in 11m15s,
+including 41 new recovery cases; the two initialization-capture cases are updated
+for IPCINIT2/schema capture and ordinary journal resumption. All 403 focused
+journal/initialization/migration/record-unit checks and 4313 broad RPG/binding/
+work cases in the full suite pass. Locked restore, a zero-warning/error Release
+build, expanded compiled CL remove/apply and RPG all-default-record verification
+in real terminal acceptance at 24x80/27x132, generated inventory, links and
+whitespace checks pass. Schema 32, catalog 316, module 1, RPGBOUND/RPGSERVICE 1–5
+and DISK 7/external 2/WORKSTN 5 are unchanged.
+
+Native external IZ binary import/export, independent native replay/extent acceptance,
+complete record-codec validation, operator SIZE extension and global commitment/
+isolation allocation, wider object recovery, RECNO/slot-directed WRITE, member
+mapping and scale budgets remain open. C08/C09/C11 retain partial acceptance;
+checklist remains 36 complete / 70 open. See docs/initialization-recovery.md.
+
+RPG RECNO/relative output checkpoint (2026-10-19)
+
+Free DISK declarations and fixed F-specs now accept RECNO numeric zero-decimal
+scalar associations, including qualified native fields. Input OPEN writes zero;
+CHAIN, READ/READP/READE/READPE and successful SETLL/SETGT positioning return the
+physical RRN from the actual access path. EOF/misses preserve feedback. Checked
+conversion precedes input record import; overflow retains old fields and reports
+numeric status 103 through MONITOR. Output-only OPEN preserves the requested slot.
+CLOSE/reopen, retained calls/reclaim, result structures, global shadowing and
+local automatic/STATIC files use the correct owning storage.
+
+Non-keyed RECNO WRITE fills only an allocated deleted position from 1 through
+4294967288, preserving extent, cursor position and existing update ownership.
+Active/unallocated/invalid positions fail without record mutation. LIKEFILE can
+specify its own association but does not inherit RECNO; file parameters resolve
+the actual owner's association for input and output. Version-8 saved DISK metadata
+persists associations, validates targets/source requests and rejects downgraded
+images; historical versions retain their compatibility. RECNO implies unblocked
+processing. Native keyed input remains keyed, and ordinary keyed WRITE keeps its
+existing allocation policy.
+
+Relative output shares PF/LF selection, physical defaults, uniqueness, row locks,
+job/authority/schema/lifecycle checks, cancellation/rebinding/shutdown, live checks
+after writer acquisition, trigger rollback and ordinary job-attributed journal
+capture. Commitment workspaces are explicitly rejected. Sparse maximum-RRN output
+does not enumerate allocated holes. Real terminal acceptance compiles RECNO WRITE
+and verifies OPEN/SETLL/READ feedback at 24x80/27x132.
+
+All 6732 solution tests pass with zero failures/skips in 10m34s,
+including 44 new cases and an updated obsolete RECNO-rejection case; all 65 focused cases and 4348 broad
+RPG/binding/work cases in the full suite pass. Locked restore, zero-warning/error
+Release build, terminal acceptance, frozen-source checks, generated inventory,
+local links and whitespace checks pass. The final full run uses eight xUnit
+threads. The initial default-parallel run exposed one obsolete rejection assertion
+and three coincident timing failures; focused reruns cover all four. Native
+timeouts and implementation behavior were not relaxed. Schema 32, catalog 316, external layout 2,
+WORKSTN 5, module 1 and RPGBOUND/RPGSERVICE 1–5 are unchanged; associated DISK
+metadata advances to 8, and ordinary files retain the prior version selection.
+
+Eligibility errors currently use local IPC0138/RPG 1299. Complete native status
+mapping, indexed RECNO targets, program-described/multi-format and multi-member
+mapping, native COMMIT/open/isolation allocation, operator SIZE extension,
+independent native golden acceptance and scale budgets remain open. C08/C09/C11
+stay partial; checklist remains 36 complete / 70 open. See docs/rpg-recno.md.
+
+Job inquiry policy/system reply list checkpoint (2026-10-19)
+
+CHGJOB now changes durable INQMSGRPY(*RQD/*DFT/*SYSRPYL), with SAME preservation,
+normal job authority and active-job checks. CRTJOBD/CHGJOBD persist policy;
+submission snapshots it and later description changes do not alter an existing
+job. Interactive jobs default to RQD and group jobs inherit current policy.
+WRKJOB reports it, and job-description copy retains it.
+
+ADDRPYLE/CHGRPYLE/RMVRPYLE/WRKRPYLE supply ordered durable entries with native
+exact/generic/ANY matching, original replacement-data comparisons at offsets
+1–999, 28 encoded-byte comparison bounds, supported CCSID conversion and HEX.
+Explicit, DFT and RQD replies use first-match precedence. Invalid or unrepresentable
+automatic replies leave manual inquiries pending; immediate messages do not
+match entries. Defaults preserve return types 23/24; list replies carry 25.
+The send transaction includes inquiry, sender copy and automatic reply, so
+receiver-preparation failures roll back all of them. Existing queue authority,
+quotas, snapshots, reply delivery and job checks remain shared. Changes require
+QPGMR or non-adopted ALLOBJ, and read/modify/write is atomic.
+
+Schema 33 adds job/job-description policies and the reply list; existing rows
+get RQD defaults. Failure-injected upgrades roll back schema/history and preserve
+old jobs. Restart preserves policy, comparison bytes, offsets and replies.
+All 6771 solution tests pass with zero failures/skips in 10m54s,
+including 39 new cases and an updated native-ID migration retry check. All 222 focused checks and 4348 broad
+RPG/binding/work cases in the full suite pass. Locked restore, zero-warning/error
+Release build, compiled CL reply-list comparison and return-type-25 terminal
+acceptance at 24x80/27x132, frozen-source checks, generated inventory, links and
+whitespace pass. Final full acceptance uses eight xUnit threads. The native-ID retry test now
+checks its intended schema-28 upgrade independently of later added columns. Catalog increases
+from 316 to 320; RPG/record metadata versions are unchanged.
+
+This is the shared inquiry prerequisite for operator SIZE extension, whose
+CPA5305 emission, durable capacity grants and database retry remain open.
+DUMP(YES) is explicitly rejected pending native job-dump/spool delivery. Complete
+queue break/delivery modes, external batch queue defaults, inquiry exits, native
+job-information attribute formats and independent IBM acceptance remain open.
+C07/C08/C11 stay partial; checklist remains 36 complete / 70 open.
+See docs/inquiry-replies.md.
+
+Operator member-capacity recovery checkpoint (2026-10-19)
+
+Ordinary physical/logical additions, declared RPG WRITE and CPYF now issue
+CPA5305 to QSYSOPR when configured member capacity is exhausted. Shared job
+inquiry policy handles defaults, required replies and the system reply list.
+C/default 0 cancels, I adds one increment and 1–9999 adds that many. Invalid
+replies remain pending for correction. Trusted jobless calls retain CPF5030.
+
+Schema 34 persists allowance by immutable member ID and SIZE signature, without
+advancing allocated RRNs. Copy/move retains it, deletion cascades it, CLRPFM
+resets it, actual SIZE changes replace it and SAME/unrelated attributes preserve
+it. Existing allowances also support INZPFM explicit/next-increment initialization.
+Zero increments and physical-RRN overflow fail explicitly.
+
+Transactions unwind before inquiry wait. Grants commit separately before record
+retry and recheck executing job, authority, member/format/configuration and
+enlistment after writer acquisition. Later trigger/constraint failure preserves
+accepted capacity but rolls back records and journal effects. Private queues and
+MSGW state are cleaned on return/cancellation; registered waits close on job end
+or interrupted-job recovery, including absent workers. Shutdown cancels waits.
+A bounded QCPFMSG description is seeded without replacing existing descriptions;
+the generic CPF9898 CL adapter remains compatible.
+
+CPYF keeps its bounded TEMP snapshot across inquiry/retry, checks source/target
+identities and format again, publishes atomically and releases staging on pooled
+disk connections. Concurrent source-row changes cannot alter the captured copy.
+No SQLite writer is held while awaiting an operator. Ordinary journal capture
+records the successful requested RRN once with the executing job.
+
+All 6806 solution tests pass with zero failures/skips in 11m04s,
+including 35 new cases and an updated startup seed/count assertion. All 251 focused checks and 4350 broad
+RPG/binding/work cases in the full suite pass. Locked restore, zero-warning/error
+Release build, compiled RPG automatic CPA5305 grant/retry terminal acceptance at
+24x80/27x132, frozen-source verification, generated inventory, links and whitespace
+checks pass. Full acceptance uses eight xUnit threads. Catalog 320 and existing
+RPG/record/message metadata versions remain unchanged.
+
+INZPFM's own beyond-limit inquiry, native ALLOCATE/storage accounting, raw SQL/
+commitment/isolation allocation, complete file-status mapping and independent
+native catalog/layout/golden/scale acceptance remain open. The seeded message
+uses a bounded local typed representation. C08/C09/C11 stay partial; checklist
+remains 36 complete / 70 open. See docs/operator-capacity.md.
+
+INZPFM operator-capacity recovery checkpoint (2026-10-19)
+
+INZPFM now sends CPA3138 to QSYSOPR when an explicit or next-increment total
+exceeds configured/approved member capacity. Shared inquiry policy handles
+required/default/reply-list replies. I approves one increment; C/default C
+cancels with CPF3140. Numeric multi-increment replies reject without consuming
+the request. Successive I approvals can reach a larger requested total. Zero
+increments fail with CPF3143, and impossible default-materialization quotas
+reject before any inquiry or allowance. Trusted jobless calls retain CPF5030.
+
+The initial member identity/format and desired total are fixed across waits:
+adding a newer member cannot retarget LAST, and another writer reaching the
+NXTINCR target cannot advance it again. Transactions/file allocations unwind
+before waiting. Management/alter, object-operation/add and deleted-initialization
+delete authority are rechecked before grant and after writer acquisition, along
+with live job, member/format and commitment eligibility. Cancellation cleans
+private queues, registered waits and active-job MSGW state.
+
+Approved capacity commits separately. Default records/deleted positions and one
+F/IZ capture publish atomically after all required grants. Failed journal capture
+rolls back records/extent while retaining the accepted allowance; apply/remove
+of the successful initialization preserves allowance and original prefix records.
+Startup adds missing CPA3138 without replacing existing customized system
+messages. Schema 34, catalog 320 and RPG/record/message metadata versions remain
+unchanged.
+
+All 6832 solution tests pass with zero failures/skips in 11m20s,
+including 26 new cases. All 238 focused checks and 4350 broad RPG/binding/work
+cases pass. Locked restore, zero-warning/error Release build, compiled CL
+CPA3138 grant/default-record read and monitored CPF3140 cancellation at 24x80
+and 27x132, frozen-source verification, generated inventory, local links and
+whitespace checks pass. Full acceptance uses eight xUnit threads.
+
+The exact shipped CPA3138 text/default/severity and replacement ABI remain
+unverified; the seed uses a bounded local description and 42-byte representation.
+Native ALLOCATE/storage-byte accounting, raw SQL/private commitment allocation,
+complete native statuses, native initialization/journal ABI, independent IBM
+golden acceptance and scale budgets remain open. C08/C09/C11 remain partial;
+checklist stays 36 complete / 70 open. See docs/initialization-capacity.md.
+
+SQL table/RUNSQL checkpoint (2026-10-19)
+
+RUNSQL now implements CREATE TABLE, DROP TABLE and literal/default multirow
+INSERT VALUES through shared physical files. SQL-created descriptors, field/
+record layouts, first members, RRN slots, authorities, indexes and journal hooks
+publish atomically. CL DCLF/RCVF and RPG DISK read the same permanent/QTEMP rows.
+Concurrent creators publish one object, and failed creation leaves no fragments.
+SQL naming gives PUBLIC EXCLUDE and matching-schema-profile ownership with an
+ADD check for another creator. System naming retains creator ownership and uses
+library CRTAUT or its authorization list, all in the same creation transaction.
+
+The parser accepts native system/SQL naming, default schema/collection rules,
+explicit uppercase system identifiers, numeric/character/datetime types, column
+CCSIDs, nullable/NOT NULL metadata, literal/NULL/current/type defaults and compound
+primary/unique constraints. NUMERIC uses zoned and DECIMAL packed external
+storage. Primary keys keep the declared null layout and add null checks without
+aliasing RRNs or inventing a keyed file. Unique keys allow multiple NULL values
+and use exact decimal/encoded character comparisons. Named constraints are
+schema-unique; copying reconciles name collisions and moving into a conflict
+rejects atomically. Restart/copy/move retain data, defaults and constraints.
+
+RUNSQL exposes its 5000 encoded-byte limit in command/prompt metadata and checks
+it at CCSIDs 37/1208. Explicit COMMIT(*NONE/*NC) is supported; the native CHG
+default and other commitment modes reject pending real native commitment control.
+Existing record units are not implicitly committed or bypassed. Unsupported SQL
+and additional statements fail before effects; no input SQL is sent to SQLite.
+
+VALUES binding validates all columns/values/defaults and freezes current datetime
+values once per statement. One transaction includes rows, extents, versions and
+journal capture. CPA5305 recovery releases the writer, retains the bound values
+and retries without leaking prefix rows or duplicate entries. Cancellation,
+writer waits, live authority, QTEMP isolation and private error names are covered.
+Staging is bounded to one million normalized cells and 64 MiB.
+
+All 6898 solution tests pass with zero failures/skips in 11m17s,
+including 66 new SQL cases and an expanded real HTTP gateway test. All 250 focused cases and 4354 broad RPG/binding/work
+cases pass. Locked restore, zero-warning/error Release build, 24x80/27x132 PTY
+RUNSQL QTEMP create -> compiled CL INSERT/RCVF -> compiled RPG READ -> DROP,
+fixed binary/packed/zoned/EBCDIC byte fixtures, frozen-source verification,
+generated inventory, local links and whitespace checks pass. Full acceptance
+uses eight xUnit threads. The first full run exposed an obsolete RUNSQL
+unavailable-command assertion and was stopped. The revised HTTP test verifies
+authenticated SQL create/insert/duplicate-error/drop across distinct server jobs,
+and retains the planned-command check with RUNSQLSTM. A subsequent review
+identified and corrected SQL naming authority/ownership defaults; its obsolete
+full run was stopped before final acceptance. Schema 34, catalog inventory 320 and existing RPG/record
+metadata versions remain unchanged; RUNSQL moves from planned to partial.
+
+CREATE VIEW/INDEX, ALTER, foreign keys/general CHECK, identity/long SQL names,
+CTAS/INSERT SELECT, UPDATE/DELETE/MERGE, expressions/functions, query interfaces,
+RUNSQLSTM/STRSQL/QMQRY, native commitment/isolation, SQLSTATE/SQLCA/catalog ABI,
+exact native generated-constraint naming and independent IBM golden/scale
+acceptance remain open. C07/C08 stay partial; checklist remains 36 complete /
+70 open. See docs/sql-tables.md.
+
+Searched SQL mutation checkpoint (2026-10-19)
+
+RUNSQL now executes searched UPDATE and DELETE against shared single-format
+physical/QTEMP files. A bounded typed expression parser supports aliases,
+original-value SET assignments, DEFAULT/current datetime, exact numeric
+arithmetic, concatenation, COALESCE and three-valued comparisons/NULL/IN/BETWEEN/
+NOT/AND/OR predicates. Names and operand/assignment types bind before scanning.
+Integer ranges, decimal intermediate precision/scale and truncating exact
+assignments are checked without passing decimal arithmetic through SQLite REAL.
+Fixed CHAR padding and encoded CCSID comparisons use existing file rules.
+
+Selection and normalized assignment values are staged before publication, under
+one data transaction. The one-million-cell/64-MiB bounds include record numbers.
+Each selected original row changes once; unique key shifts/swaps validate at
+statement end. Constraint/trigger/journal/cancellation failures roll back rows,
+indexes, versions and capture together. Successful updates capture exact UB/UP
+pairs; DELETE captures DL and retains allocated sparse RRN extents. Referenced
+unique-key updates reject before index changes pending native FK semantics.
+
+Compact record-set holders protect selected RRNs through commit/rollback and
+interoperate with ordinary record/file locks, earlier waiters, same-job retained
+update-read cursors and authority. A 9,000-row SQL update exceeds the old holder
+budget without leaking allocations; a 10,000-record lease uses one holder plus
+its library parent. Cancellation unwinds leases, while job completion/recovery
+removes memberships transactionally. Lock coordination upgrades atomically from
+format 1 to 2; main catalog remains schema 34. WRKOBJLCK labels selected records.
+UPDATE/DELETE require their write authority plus READ only for column references.
+
+All 6949 solution tests pass with zero failures/skips in 8m07s,
+including 51 added cases. All 347 focused checks and 4354 broad
+RPG/binding/work cases pass. Locked restore, zero-warning/error Release build,
+authenticated HTTP INSERT/UPDATE/DELETE, compiled permanent/QTEMP RPG reads,
+24x80/27x132 terminal CL INSERT/UPDATE -> RPG read -> SQL DELETE -> RPG EOF,
+frozen-source verification, generated inventory, local links and whitespace pass.
+The first full run was stopped after an existing CLRPFM cancellation fixture
+timed out. Both cases passed in isolation; the fixture now uses a dedicated
+worker, confirms startup and always drains before releasing its writer. The
+five-second cancellation assertion is retained. An earlier terminal fixture
+ELSEIF was replaced with supported nested IF syntax before final acceptance.
+A second eight-worker full run hit process-startup/job-API catalog timeouts;
+all 12 cases in those suites pass directly. Final full acceptance uses four
+xUnit workers to reduce concurrent process/catalog pressure.
+
+Selection currently scans members. Index-driven selection, full native scale,
+foreign-key/trigger DDL and dependent-record locking, full conversion/constraint
+rules, job time zones/collations, SQLCA warnings/SQLSTATE/native message ABI,
+MERGE/positioned mutations, broader DDL/functions/queries, native embedded SQL,
+commitment/isolation and independent IBM golden acceptance remain open. Research
+also confirms that native COMMIT(*NONE) INSERT has partial-failure exceptions;
+the earlier deliberately atomic VALUES profile is stronger and native parity
+there remains open. Catalog inventory stays 320 with 175 defined adapters;
+C07/C08 remain partial and checklist stays 36 complete / 70 open.
+See docs/sql-mutations.md.
+
+RUNSQLSTM source-script checkpoint (2026-10-19)
+
+RUNSQLSTM now processes named source members, single-format physical-file source
+records and strict UTF-8 host streams through the shared SQL engine. The parser
+handles required statement semicolons, quoted delimiters/doubled quotes, line
+and nested block comments, source locations, source CCSIDs and member margins.
+SRCSEQ/SRCDAT are excluded; deleted records are skipped. Stream BOMs are removed
+and member margins do not truncate streams. Source snapshots are bounded before
+execution and an individual statement may exceed RUNSQL's 5000-byte limit.
+
+Explicit COMMIT(*NONE/*NC) runs statements in order, retaining completed work
+after a later error. Automatic allocations end per statement; an operator wait
+in a later statement does not retain a completed row's lock. Mixed CL commands
+use normal command resolution/binding/authority and affect subsequent SQL library
+resolution. ERRLVL uses strict severity comparison, stops execution above the
+threshold and syntax-checks the remainder. Located diagnostics/completions go to
+the job log; SQL9010 is monitorable by compiled CL. PROCESS(*SYN) executes no
+statements and does not start commitment control. Unsupported routine/trigger/
+compound sources reject before effects so their internal semicolons cannot
+expose body fragments, including under ERRLVL(40).
+
+A script sequence exposed a real in-memory UPDATE publication self-lock after
+unique-index DDL: final validation opened another connection against its own
+schema lock. Credentials and live job state now validate on the publisher's
+existing connection, matching record-unit publication. Profile/job failures and
+cancellation roll back data and indexes. Source and target authority, UTF-8
+margin boundaries, source self-clear snapshots, large statements, capacity-wait
+cancellation, final credential checks and HTTP/compiled CL/RPG paths are covered.
+
+All 6999 solution tests pass with zero failures/skips in 8m31s,
+including 50 added cases. All 397 focused checks and 4354 broad
+RPG/binding/work cases pass. Locked restore, zero-warning/error Release build,
+real authenticated HTTP script execution, 24x80/27x132 terminal compiled CL
+RUNSQLSTM INSERT/UPDATE -> DCLF read -> RPG read -> SQL DELETE -> RPG EOF,
+frozen-source verification, generated inventory, local links and whitespace pass.
+Full acceptance uses four xUnit workers. Focused development failures identified
+one over-margin fixture, one invalid test job-state value and the corrected
+publisher self-lock; the accepted source contains no diagnostic instrumentation.
+
+Native commitment/isolation/default-activation-group binding, printed listings,
+semantic catalog preparation in syntax-only mode, procedural/routine/trigger
+segmentation and execution, full source/CCSID/date/conversion and shipped-message
+parity, native SQLSTATE/SQLCA, queries, no-commit INSERT partial-failure parity
+and independent IBM golden/scale acceptance remain open. Execution requires
+explicit OPTION(*NOLIST); native LIST/default CHG and other unfinished options
+reject rather than silently print/commit. Host streams retain existing SERVICE
+source-access policy. Main schema 34, lock format 2 and catalog inventory 320
+remain unchanged; RUNSQLSTM moves from planned to partial and defined adapters
+increase from 175 to 176. C07/C08 remain partial; checklist stays 36 complete /
+70 open. See docs/sql-scripts.md.
+
+Typed SELECT service checkpoint (2026-10-19)
+
+The common SQL service now parses and binds SELECT projections/wildcards, aliases,
+INNER/outer/CROSS joins, WHERE and three-valued predicates, GROUP BY/HAVING,
+COUNT/COUNT_BIG/SUM/AVG/MIN/MAX with distinct values, ORDER BY/NULL placement and
+FETCH FIRST. Positional typed markers preserve exact values and validate empty
+results too. Generated SQLite SQL addresses authorized file members; input text
+cannot reach private catalog tables, PRAGMA/extensions or a second statement.
+Single-format logical sources expand physical-member bindings and select/omit
+rules. QTEMP remains private. The shared scalar binder also adds casts, LIKE,
+length/substrings/trim/case, NULLIF, ABS/ROUND and bounded datetime extraction and
+labeled arithmetic to searched mutations.
+
+Decimal expressions/results preserve up to 63 digits without SQLite REAL or
+System.Decimal conversion. Group/distinct/sort keys preserve exact numeric and
+space-padded CCSID equality. Aggregate widths/intermediate overflow, fixed versus
+varying character metadata, Unicode character versus byte substring semantics,
+SECOND versus EXTRACT precision and outer-join nullability are covered. Query
+errors expose reason-specific SQLSTATE/SQLCODE; CAST truncation retains bounded
+SQL0445/01004 diagnostics. Native message/SQLCA and broader conversion parity
+remain open.
+
+Forward cursors own one current row and a read transaction with bounded result,
+parameter and aggregate state, evaluation and structure quotas. Credentials,
+execution identity, job state and file/source read authority are rechecked on
+fetch. EOF/error/disposal remove per-query functions before pool return. Job end,
+end requests and factory shutdown close readers before QTEMP/workspace deletion;
+separate factories attached to one catalog coordinate job resources, with reusable
+128-cursor capacity. A private record-unit query first imports referenced members
+and pending intents, finishes its synchronous statement, anchors an independent
+read-only WAL snapshot and releases the thread-owned unit gate. Fetch/dispose can
+move between threads while later record statements execute; earlier query values
+remain stable. Commit/rollback/end explicitly require query readers closed until
+native hold/isolation policy is implemented.
+
+All 7116 solution tests pass with zero failures/skips in 8m19s,
+including 117 added cases (115 query cases and two script SELECT checks).
+All 514 focused SQL/record/initialization/lock/HTTP checks and 4354
+broad RPG/binding/work cases pass. Locked restore, zero-warning/error Release
+build, existing authenticated HTTP and compiled CL/RPG terminal acceptance at
+24x80 and 27x132, frozen-source verification, generated inventory, local links
+and whitespace checks pass. Acceptance uses four xUnit workers. Development
+checks caught missing lifecycle handling, logical-file query expansion and scalar
+padding/precision issues, all corrected before final acceptance; file-backed
+reopen/WAL/pool cleanup, cross-thread/cross-factory job cleanup, active-query
+cancellation, authority revocation and query capacity reuse are covered.
+
+The service is a foundation, not completed STRSQL/QMQRY/WRKQRY, embedded SQL,
+IWS SQL or the PostgreSQL reporting gateway. Native commitment/open/isolation/
+hold semantics, catalog/name/type/diagnostic ABI, broader DDL/functions/conversions,
+subqueries/CTEs/set operations, binary/graphic strings, general substring positions,
+no-commit INSERT partial-failure parity, whole-member workspace/WAL/metadata scale
+budgets and independent IBM golden/performance acceptance remain open. Main
+schema 34, coordination format 2, catalog inventory 320 and 176 defined adapters
+are unchanged. C07/C08 and G11 retain their existing partial/planned acceptance;
+checklist stays 36 complete / 70 open. See docs/sql-queries.md.
+
+STRSQL interactive session checkpoint (2026-10-19)
+
+STRSQL now opens Enter SQL Statements through the existing suspended-program
+terminal path. Default COMMIT(*NONE), system/SQL naming, interactive CL callers,
+F4 command prompting, CRUD and typed SELECT share the catalog/file/query engines.
+Display Data provides headings, NULL indicators, empty-result metadata, paging,
+line/column positioning and horizontal scrolling. F4 builds SELECT clauses,
+F9 retrieves history, F6/F10 edit lines, F13 changes supported attributes, and
+F1/F12 preserve drafts/forms and show full SQL diagnostics. Bracketed paste
+preserves SQL comment line breaks while retaining the terminal parser's pasted
+function/attention-key protections and other screens' existing paste behavior.
+
+Exit choices save, discard, resume or export terminated history through the
+source-file store. Schema 35 adds private profile-owned saved settings/history/
+drafts with optimistic revisions and cascading profile cleanup. Atomic save/
+delete rolls back audit failures and excludes SQL/draft text from audit payloads.
+Restored sessions retain saved attributes; conflicting sessions cannot replace
+newer state. Discard can exit while retaining another session's newer save.
+Source export uses live authority, CCSID and revision checks and reports a
+saved-state conflict after a successful source write without hiding that effect.
+
+The new shared ValidateSql/PrepareSqlQuery paths support PROCESS(*VLD) without
+executing statements or evaluating query rows. PROCESS(*SYN) only parses. Static
+mutation/creation binding is reused; actual data/constraint/trigger outcomes stay
+execution-time checks. Optional conversion settings normalize date/time and
+period/comma numeric input and session output/casts; QDECFMT is seeded without
+replacing customized values. Strict numeric text conversion also fixes silent
+scale changes from surrounding spaces, multiple points/signs and invariant
+floating strings mistakenly treated as grouped digits; signed zero is preserved.
+Full job attribute inheritance, century/timezone and conversion ABI remain open.
+
+Results use a private disk-backed bounded scroll cache, one page at a time.
+ALWAYS refresh reopens requested pages; FORWARD retains displayed rows and refreshes
+unseen simple-table pages while materialized query results retain their snapshot.
+Explicit refresh starts a new result. Per-statement automatic allocation scopes
+also surround display access checks, so completed operations do not retain file
+locks until STRSQL exits. Cached EOF results still validate original credentials,
+job and physical/logical source authority. Disconnect interrupts executing SQLite
+work and joins cleanup; job/factory end cancels readers and deletes caches.
+
+All 7170 solution tests pass with zero failures/skips in 8m30s,
+including 54 added interactive/persistence/security/history/validation cases.
+All 1004 focused SQL/migration/command/session/display/system-value/record/
+lock/HTTP checks and 4354 broad RPG/binding/work cases pass. Locked restore,
+zero-warning/error Release build, real STRSQL CRUD/SELECT/F4/history/save/CL return/
+RPG read/paste/validation at 24x80 and 27x132, the existing terminal acceptance
+suite, frozen-source verification, generated inventory, local links and whitespace
+checks pass. Full acceptance uses four xUnit workers. Development checks corrected
+a save audit failure, result/draft state, exit-choice editing after a conflict,
+locale/numeric conversions and the obsolete HTTP planned-STRSQL expectation.
+The authenticated HTTP bridge now returns SQL6141/400 without a terminal while
+another planned command still verifies the 501 fallback.
+
+Native non-*NONE commitment/open/hold/isolation, job attribute and native
+ISQL internal-object/device/history identity, complete services/list/prompt/
+print/outfile/source/diagnostic/display ABI, changed-key/membership/access-plan
+and scale semantics, broader SQL grammar, QMQRY/WRKQRY, embedded SQL, IWS/reporting
+and independent current-release IBM golden/performance acceptance remain open.
+C07/C08 remain partial; checklist stays 36 complete / 70 open. Main schema is 35,
+coordination format stays 2 and the catalog still has 320 entries. STRSQL moves
+from planned to partial; defined adapters increase from 176 to 177. See
+docs/sql-interactive.md.
+
+QMQRY saved SQL objects checkpoint (2026-10-19)
+
+C07/C08 now have CRTQMQRY/RTVQMQRY/STRQMQRY and exact-name DLTQMQRY adapters.
+Queries store source/CCSID/version/sort metadata in ordinary *QMQRY payloads,
+retain shared object copy/move/rename/delete and QTEMP privacy/cleanup, and survive
+restart without the source file. Create/replace audit publication is atomic;
+replacement preserves existing identity/authorities, invalidates signatures and
+retains required-signature policy. Explicit public/library-create/auth-list
+creation authority and live credentials/job checks apply.
+
+Source import obeys 79-byte truncation/padding and record continuation rules.
+Retrieval atomically creates/replaces source members with shared authority,
+CCSID/width/revision checks. Case-sensitive non-recursive substitution excludes
+comments/quoted constants/names, supports identifiers/expressions and native CL
+quoting, enforces 50 SETVAR pairs/55-character values and a 32767-byte substituted
+statement bound. Metadata reserves 8192 characters for the longest escaped lists.
+Missing variables prompt interactively in source order; empty Enter/F3/F12 cancels,
+and *BLANK supplies one space. SQL AST isolation and shared record authority
+remain in force. Typed CL variables and monitorable QWM2701 escapes with retained SQL diagnostics
+are verified; SQL naming with *LIBL returns QWM2707.
+
+Mutations/DDL use shared no-commit SQL, while SELECT uses bounded paged/shifted
+output with refresh and returns to interactive CL without changing STRSQL saved
+sessions. Query signatures/source identity, credentials/job and file authority
+are rechecked while displaying, including cached EOF results. Disconnect closes
+readers/caches/allocations. Authenticated HTTP creates and runs mutation queries;
+missing-variable or SELECT output without a terminal fails explicitly.
+
+All 7218 solution tests pass with zero failures/skips in 9:48.95, including
+48 new query-management cases. All 71 focused query/interactive-SQL/HTTP checks pass. Locked restore,
+zero-warning/error Release build, 993 frozen source/build/cache files, full
+existing PTY acceptance plus QMQRY create/retrieve/run/delete/SETVAR/prompt/cancel/
+CL return at 24x80 and 27x132, generated inventory, local links and whitespace
+checks pass. Full acceptance uses four xUnit workers. Research uses IBM's native
+command references and independent Query Management Programming source/variable
+rules; current-release native golden acceptance remains open.
+
+Print/outfile/QMFORM output, callable/global/DSQ state, externalized H/V and
+sort/language formats, QRYDFN fallback, WRKQRY/WRKQMQRY/STRQM, generic/multiple-
+library deletion, member text, exact native message/display/source/replace ABI,
+job locale/commitment/isolation, non-hex collations, remote RDB and independent
+native golden/scale acceptance remain open. C07/C08 stay partial; checklist
+remains 36 complete / 70 open. Main schema stays 35; coordination format stays 2.
+The catalog adds four partial commands: 324 entries and 181 defined adapters.
+See docs/query-management.md.
+
+QMQRY typed output files checkpoint (2026-10-19)
+
+C07/C08 now support STRQMQRY OUTPUT(*OUTFILE), including command-only/batch/HTTP
+execution, native *FIRST/*REPLACE/*ADD, current/library-list naming, output file/
+member overrides and ordinary CL/RPG reads. The shared WriteSqlQueryFile service
+spools a typed SELECT snapshot to bounded private disk storage before changing
+the target, including self-replace/self-append and current private record-unit
+source data. New output is a private physical table owned by the executing profile;
+source character CCSIDs/types/nulls survive and keys/constraints/defaults/triggers
+are not copied. Calculated/duplicate names follow IBM's SEL/COL shared-counter
+example. Calculated query metadata distinguishes numeric aliases from expressions.
+Existing targets match columns by ordinal with pre-clear layout/null checks.
+
+Native SAVE boundaries are preserved: an existing member is cleared separately,
+then answer rows publish in order through shared record/slot/constraint/journal/
+capacity paths. A later failure retains the clear and successful prefix; messages
+identify effects and count. CHANGE/OBJALTER, CLRPFM command authority, source/query
+signatures/access, current job/credentials and member/format identity are enforced.
+Per-row scopes keep allocations bounded past 8192 rows; operator recovery retries
+only the failing row. Final creation/clear/insert checks use the publisher's own
+connection, avoiding schema self-locks and rolling back failed publication hooks.
+Query warnings survive the spool and reach the job log. Job/factory cancellation
+interrupts spooling, joins work and closes/deletes temporary storage.
+
+All 7270 solution tests pass with zero failures/skips in 9:57.45, with
+53 added output cases and one obsolete unsupported-output case removed. All
+930 focused SQL/query/record/lock/file/migration/command/terminal/HTTP checks
+pass; the complete suite also verifies the 8203-row allocation case. Locked restore,
+zero-warning/error Release build, 1000 frozen source/build/cache files, full PTY
+acceptance plus native outfile create/empty-append/append and compiled CL/RPG reads
+at 24x80 and 27x132, generated inventory, local links and whitespace pass.
+Full acceptance uses four xUnit workers. Primary IBM command/SAVE documentation
+informs types, naming, authority, CCSID and partial-effect boundaries; independent
+current-release native golden acceptance remains open.
+
+Physical targets, the implemented external field range and current native-like
+prefix policy are partial. Print/QMFORM, LF/view output targets, wider decimals/
+names/types, automatic first-member creation, remaining overrides/open/hold/
+commitment/isolation, schema ownership, exact native clear/constraint/diagnostic/
+archive semantics, orphan recovery, remote output and native golden/scale budgets
+remain open. C07/C08 stay partial; checklist remains 36 complete / 70 open.
+Main schema stays 35 and coordination format stays 2; no catalog entry or adapter
+was added (324 entries / 181 defined adapters). See docs/sql-query-output.md.
+
+SQL keyed index objects checkpoint (2026-10-19)
+
+C07/C08 now support shared SQL CREATE/DROP INDEX execution through RUNSQL,
+RUNSQLSTM, STRSQL and saved QMQRY, with syntax/validation modes and authenticated
+HTTP use. SQL-created indexes are ordinary keyed *FILE/*LF objects with formats,
+one logical member, maintained SQLite paths and base-file dependencies. ASC/DESC,
+up to 120 distinct keys, exact decimals/CCSIDs, UNIQUE/UNIQUE WHERE NOT NULL and
+RCDFMT ADD ALL COLUMNS/KEYS ONLY/explicit columns are implemented. Searched unique
+updates validate at statement end. Compiled RPG keyed CHAIN consumes the index.
+
+Native INDEX privilege, CRTLF use/signature authority, schema create/dictionary
+authority and shared SQL ownership/public-authority rules apply. INDEX privilege
+does not confer base READ. Creation and deletion publish transactionally, with
+writer cancellation, live credential/job checks on the publisher connection,
+record-unit rejection and rollback of invalidation/cancellation hooks. Restart,
+competing factories, shared unique path retention and generic object/base rename,
+copy and deletion are covered. PF copy excludes index-owned unique constraints.
+Nonunique SQL index bindings follow base member addition/removal; unique indexes
+explicitly reject more than one physical member. SQL DROP TABLE preflights and
+cascades registered logical dependents atomically. Persistent allocations block
+deletion. CL DLTF keeps its existing dependency behavior.
+
+All 7316 solution tests pass with zero failures/skips in 10:32.76, including
+46 added index cases. All 1107 focused SQL/query/file/member/object/lock/
+migration/command/HTTP/terminal checks pass. Locked restore, zero-warning/error
+Release build, 1006 frozen source/build/cache files, full PTY acceptance with SQL
+index creation/deletion and compiled keyed RPG at 24x80 and 27x132, generated
+inventory, local links and whitespace pass. Full acceptance uses four xUnit
+workers and retains the 8203-row output allocation case. Primary IBM CREATE INDEX,
+DROP, authority and traditional-I/O references inform the implementation;
+independent current-release native golden acceptance remains open.
+
+Expression/repeated/filtered/EVI/INCLUDE/partition indexes, wider native layouts/
+names, DDS LF DROP INDEX, multi-member uniqueness, native optimizer/access-plan
+integration, commitment/isolation, full diagnostics/format-ID/save/restore and
+native golden/scale acceptance remain open. C07/C08 stay partial; checklist
+remains 36 complete / 70 open. Main schema stays 35, coordination format stays 2,
+and the catalog remains 324 entries / 181 defined adapters. See docs/sql-indexes.md.
+
+SQL stored view queries checkpoint (2026-10-19)
+
+C07/C08 now support CREATE VIEW, CREATE OR REPLACE VIEW and DROP VIEW through
+RUNSQL/RUNSQLSTM, STRSQL, saved QMQRY, typed query output and authenticated HTTP.
+Views are ordinary nonkeyed *FILE/*LF objects with external formats, logical
+members and source dependencies. Stored SELECT definitions share typed nested
+joins/projections/predicates/grouping/aggregates, exact wide decimals, nulls,
+CCSIDs, one statement clock/evaluation budget and retained warning diagnostics.
+Actual source identities and wildcard columns bind at creation and survive
+library-list changes, source/view rename/move/copy and catalog restart.
+
+Creation checks SELECT, sole-base OBJMGT, schema/CRTLF/dictionary authority and
+SQL/system ownership rules. View-owner direct/indirect source READ is checked
+without changing reader identity or granting base access. Live authority,
+credentials, jobs and changed view ownership/definition are rechecked, including
+cached EOF results. Owner login status is distinct from object rights. Replacement
+preserves existing granted/public/AUTL authority and atomically checks dependent
+layouts/cycles. DROP VIEW/TABLE preflight all logical descendants and delete in
+dependency order; failed/cancelled/invalid publication hooks roll back the graph.
+Private QTEMP dependencies and persistent allocations remain enforced.
+
+SQL view queries read pending record-unit data through shared private snapshots.
+Native record input uses a bounded lazy disk scroll cache, with CL DCLF/RCVF and
+RPG nonkeyed READ, forward/reverse snapshot navigation, access checks and resource
+cleanup. A 20000-row first-read case allocates less than 4 MiB on the managed
+calling thread. Snapshot positions are ordinals; native key/RRN/update and record-
+unit boundary behavior remain unimplemented and reject explicitly, including late
+enlistment. Native record decimals retain the current codec bounds; wider query
+results remain exact and require CAST for native input.
+
+All 7361 solution tests pass with zero failures/skips in 9:56.31, including
+45 added view cases. All 1308 focused SQL/query/file/member/object/lock/
+migration/command/authority/security/HTTP/terminal checks pass. Locked restore,
+zero-warning/error Release build, 1015 frozen source/build/cache files, full PTY
+acceptance including SQL view create/query/drop and compiled CL/RPG input at
+24x80 and 27x132, generated inventory, local links and whitespace pass. Full
+acceptance uses four xUnit workers and retains the 8203-row output allocation
+case. Primary IBM CREATE VIEW and SQL ownership references inform the design;
+independent current-release native golden acceptance remains open.
+
+View INSERT/UPDATE/DELETE, LOCAL/CASCADED CHECK OPTION, ALTER VIEW, INSTEAD OF
+triggers, complete updatability/default/grant-option provenance, native record
+identity/update/commitment behavior, wider names/layouts/grammar, archive lifecycle,
+format-ID/diagnostic ABI and native golden/scale acceptance remain open.
+C07/C08 stay partial; checklist remains 36 complete / 70 open. Main schema stays
+35, coordination format stays 2 and the catalog stays 324 entries / 181 defined
+adapters. See docs/sql-views.md.
+
+SQL view writes and CHECK OPTION checkpoint (2026-10-19)
+
+C07/C08 now support SQL INSERT/UPDATE/DELETE through single-source view chains
+ending in a single-format PF. Direct projected columns remain writable through
+aliases and nested views; derived columns work in predicates and reject target
+assignment. Hidden columns and DEFAULT retain base nullability, defaults,
+conversions and constraints. Constant-only views remain deletable. Joins,
+DISTINCT and aggregate/grouped views reject writes before publication.
+
+WITH [LOCAL|CASCADED] CHECK OPTION persists with the definition; omitted kind
+means CASCADED. LOCAL checks the declaring predicate and inherited explicit
+checks; CASCADED adds underlying predicates. The independent IBM five-view
+matrix, NULL/UNKNOWN, normalized proposed rows, inherited hidden defaults and
+unstable/nondeletable checked definitions are covered. Failed checks return
+SQL0161/44000 and roll back the current SQL statement. Unchecked inserts may
+create rows outside the view. UPDATE/DELETE respect all source visibility filters.
+
+Root write rights and READ for referenced view columns remain the caller's.
+View owners need READ on direct/indirect sources and the requested write right
+on each direct source. Publisher-connection checks catch changed authority,
+credentials, ownership, definitions and jobs without impersonation or granting
+base access. Delegated capacity recovery revalidates the bound path. Shared
+record allocations, unique swaps, slots and journals remain in force; journal
+entries retain the real caller. Cancellation and job cleanup join blocked SQL
+writers before job-catalog publication. Enlisted base resources reject with
+IPC0211. Restart and competing factories preserve checks/base uniqueness.
+
+All 7406 solution tests pass with zero failures/skips in 10:24.47; this phase
+adds 46 cases and removes one obsolete unsupported-CHECK-OPTION rejection case.
+All 1353 focused SQL/query/file/member/object/lock/migration/command/
+authority/security/HTTP/terminal checks pass. Locked restore, warning-free Release
+build, 1021 frozen source/build/cache files, full PTY including checked view writes
+and failed-update rollback at 24x80 and 27x132, generated inventory, local links
+and whitespace pass. SQL scripts, saved QMQRY and authenticated HTTP exercise
+view writes. Full acceptance uses four xUnit workers and retains the 8203-row
+output allocation test. Primary IBM CREATE VIEW/INSERT/SQL ownership references
+inform the implementation; independent current-release native acceptance is open.
+
+ALTER VIEW, INSTEAD OF triggers, DDS LF/source-file view writes, complete grant-
+option/default provenance, native record identity/update/commitment/isolation,
+native COMMIT(*NONE) partial-prefix policy, wider names/layouts/grammar, archive
+lifecycle, format-ID/diagnostic ABI and native golden/scale acceptance remain
+open. C07/C08 stay partial; checklist remains 36 complete / 70 open. Main schema
+stays 35, coordination format stays 2 and the catalog stays 324 entries / 181
+defined adapters. See docs/sql-views.md.
+
+SQL ALTER TABLE checkpoint (2026-10-19)
+
+C07/C08 now support ALTER TABLE for SQL-created PFs through RUNSQL/RUNSQLSTM,
+STRSQL, saved QMQRY and authenticated HTTP. Consecutive clauses add columns with
+optional BEFORE, drop columns with default CASCADE or RESTRICT, alter compatible
+types/defaults/nullability and add/drop primary or unique constraints. Existing
+rows receive native addition defaults, including historical values for implicit
+nonnullable datetime defaults. Explicit CURRENT defaults share one statement
+clock across all rows and members. Character shrinkage respects encoded character
+boundaries; exact numeric conversion preserves the shared assignment rules.
+
+Pure proposed-metadata binding validates dependent view/index layouts without
+rewriting data or running catalog hooks. Added columns retain frozen view stars
+and index projections; type changes refresh nested view and logical record
+formats and exact keys. Shared DDS formats follow supported base layout changes.
+DROP COLUMN enforces actual referenced-column RESTRICT rules or cascades affected
+views/indexes and their descendants. Whole dropped keys disappear under either
+mode; partially affected keys require CASCADE. Invalid select/omit constants and
+failed conversions/constraints roll back metadata, data and the dependency graph.
+
+ALTER-only authority requires no caller data READ/ADD/UPDATE. Publication checks
+live credentials, jobs, ALTER rights, intended definition/owner and member
+identities on its writer connection. Object ownership, creation time and granted
+private/public/AUTL authorities remain. Streaming transactional rewrites preserve
+RRNs, sparse extents, capacity, member identity and record incarnations. Persistent
+allocations block changes; enlisted resources reject IPC0211. Journal capture is
+reinstalled for new layouts without emitting false record entries while copying;
+compatible application hooks are recreated after loading. Restart, competing
+factories, cancellation, metadata-hook rollback, UTF-8, multi-member consistency,
+scripts, QMQRY and HTTP are covered.
+
+All 7449 solution tests pass with zero failures/skips in 10:24.39, including
+43 added ALTER TABLE cases. All 1396 focused SQL/query/file/member/object/
+lock/migration/command/authority/security/HTTP/terminal checks pass. Locked restore,
+warning-free Release build, 1031 frozen source/build/cache files, full PTY with
+ALTER and compiled CL/RPG reads of a newly added column at 24x80 and 27x132,
+generated inventory, local links and whitespace pass. The full suite uses four
+xUnit workers and retains the 8203-row output and 20000-row view allocation cases.
+Primary IBM ALTER TABLE, cascaded-effect, privilege and SQL-message references
+inform the implementation; current-release native golden acceptance is open.
+
+DDS-created/source-file ALTER, foreign/general CHECK constraints and public
+triggers, generated/identity/hidden/LOB/distinct/temporal/partition columns,
+wider names/types/layouts, native format-ID/DDL-journal/diagnostic ABI,
+commitment/isolation/partial-failure policy, archive lifecycle and independent
+native golden/scale acceptance remain open. Unregistered physical constraints,
+external SQL relationships and column drops with unregistered hooks/indexes
+reject before rewrite. Multi-member keys reject pending file-wide uniqueness.
+C07/C08 stay partial; checklist remains 36 complete / 70 open. Main schema stays
+35, coordination format stays 2 and catalog stays 324 entries / 181 defined
+adapters. See docs/sql-alter-tables.md.
+
+SQL CHECK constraints checkpoint (2026-10-19)
+
+C07/C08 now accept named or anonymous column/table CHECK constraints in CREATE
+TABLE and ALTER TABLE ADD, with DROP CHECK/CONSTRAINT. TRUE and UNKNOWN satisfy a
+check; FALSE reports SQL0545 / 23513. Column checks reference only their own
+column. Definitions reject parameters, aggregates, special registers, unsupported
+functions and invalid references with SQL0546 / 42621. Existing typed expressions
+retain exact decimals, character padding, CCSIDs, deterministic scalar functions
+and expression diagnostics.
+
+A shared Ipc.Sql assembly places SQL models, definitions, parsing, binding and
+record conversion below services, with original public type names forwarded and
+legacy constructor signatures retained. Every normal/private SQLite connection
+registers the same bounded versioned evaluator. Physical/logical record writes,
+retained cursors, compiled RPG, native copies/initialization, query output and
+record-unit publication therefore enforce the same predicates. Descriptions and
+row frames are bounded; referenced columns travel in 64-column chunks, and
+per-connection caches retain at most 16 plans/two million description characters.
+
+ALTER validates all members atomically, rebinds checks after type changes and
+evaluates normalized values. Dropped-column dependencies follow RESTRICT/CASCADE;
+constraint names share a schema namespace, and object copies rename conflicts in
+both catalog definitions and member schema. Restart and relocation preserve
+predicate meaning. PROCESS(*VLD) checks metadata without evaluating data or
+running publication hooks. ALTER-only authority, live publication checks,
+cancellation, multi-member consistency, journal/slot rollback and private
+workspaces retain their existing contracts. CPYF/INZPFM report CPF502F; RPG file
+error handling recovers after a subsequent successful write. Query-output append
+retains its documented accepted-prefix behavior.
+
+All 7481 solution tests pass with zero failures/skips in 10:51.13. The phase adds
+33 checks and replaces one obsolete unsupported-CHECK rejection case. All
+1428 focused SQL/query/file/member/object/lock/migration/command/authority/
+security/HTTP/terminal checks pass. Locked restore, warning-free Release build,
+1045 frozen source/build/cache inputs, full PTY CHECK/CL/RPG failure and recovery
+at 24x80 and 27x132, generated inventory, local links and whitespace pass. The full
+suite uses four xUnit workers and retains the 8203-row output and 20000-row native record
+allocation cases. Primary IBM constraint/CREATE TABLE/ALTER TABLE/SQL-message/file
+status references inform the implementation; independent native acceptance is
+still open.
+
+The initial focused run passed 1426/1428 and exposed two timing-sensitive
+cancellation failures (query-output shutdown and a view writer wait). The same
+frozen inputs then passed all five isolated cancellation cases and the full
+1428-case focused repeat; the final full-suite result is recorded above. The
+initial failure log is retained at /tmp/iseriespc-sqlcheck-focused-initial-failed.log.
+
+Foreign keys, public triggers, check-pending administration and native violation
+actions, DDS-created/source-file ALTER, wider generated/identity/LOB/distinct/
+temporal/partition/name/type/layout options, native format-ID/diagnostic/DDL-
+journal/commitment/isolation ABI, archive lifecycle and independent current-
+release golden/scale acceptance remain open. C07/C08 stay partial; checklist
+remains 36 complete / 70 open. Main schema stays 35, coordination format stays 2
+and catalog stays 324 entries / 181 defined adapters. See
+docs/sql-check-constraints.md.
+
+SQL referential integrity development checkpoint (2026-10-19)
+
+C08 referential integrity now has a working SQL core: named/anonymous column and
+table foreign keys, CREATE/ALTER ADD/DROP, matching parent key/field binding,
+MAXMBRS(1), composite and NULL semantics, exact decimal and padded-character
+comparisons. All five delete actions are implemented, including partial nullable
+SET NULL keys. NO ACTION validates complete statements and self references;
+RESTRICT rejects a changed parent key immediately. Parent key swaps, SQL0530/
+0531/0532 diagnostics, atomic schema constraint cascades, SQL DROP retaining
+child rows, unrelated ALTER, physical/logical/cursor writes and journaled private
+workspace publication are covered by 26 added checks. Reference/child indexes
+and registered collations retain external record layouts. Referential checks are
+disabled only during physical rewrites, preserving ordinary catalog cascades.
+
+All 1454 focused SQL/query/file/member/object/lock/migration/command/authority/
+security/HTTP/terminal regressions pass with zero failures/skips on a warning-free
+Release build and 1054 unchanged source/build/cache inputs. An initial broad run
+passed 1453/1454, reproducing the query-output shutdown timing failure seen in
+the preceding CHECK phase. Query-output and view-writer cancellation controllers
+and synchronous workers now run on dedicated tasks; the complete focused repeat
+passes, including both shutdown cases. No timeout was increased and no assertion
+was removed. The earlier failed log is retained in
+/tmp/iseriespc-sqlforeign-focused4.log; the successful log is focused5.log in the
+same directory prefix.
+
+This is a development checkpoint, not complete referential-integrity acceptance.
+Rename/move/duplicate/member/archive rebinding, cascading record/file allocations
+and authority delegation, live indirect publication checks, native command/RPG/
+HTTP/terminal flows, old-database/restart/concurrency/scale fixtures, native
+constraint states and journal/diagnostic/commitment/delete-path rules remain.
+Final locked restore, full solution tests, both PTY geometries and final inventory/
+link/input acceptance must follow the completed implementation. The last full
+solution/PTY checkpoint remains SQL CHECK with 7481 tests. C07/C08 stay partial;
+checklist remains 36 complete / 70 open. Main schema stays 35, coordination stays
+2 and catalog stays 324 entries / 181 defined adapters. See
+docs/sql-foreign-keys-progress.md. Continue with lifecycle metadata rebinding and
+cascading record allocation enforcement before marking this work accepted.
+
+SQL referential lifecycle and allocation development checkpoint (2026-10-19)
+
+C08 now rebinds incoming references across parent rename/move and library rename,
+remaps self references on duplicate objects, binds same-library copied parent
+names in the destination and retains external-library parents. Managed partial
+SET NULL hooks and schema constraint names follow those identities. Retained
+queries/allocations block relocation. ALTER publication rechecks new REFERENCES
+rights and the bound parent/member identity after catalog hooks.
+
+Live searched, keyed/logical and retained-cursor parent deletes now protect child
+file allocations and affected record sets through commit/rollback. Relationship
+walks cover empty descendant paths; transaction-local tracking captures additional
+rows reached after a publication hook changes the dependent set. Late allocations
+validate live caller/job state on the publishing connection, preserving catalog
+hook atomicity without opening a competing reader. One holder per member handles
+an 8301-row cascade without exhausting the 8192-holder budget. Child actions
+operate under constraint delegation without granting caller child data access.
+
+CLRPFM rejects a nonempty parent even without child rows; native CPYF/INZPFM report
+CPF502D with rollback. RPG WRITE and RESTRICT UPDATE report 1022 and recover after
+valid I/O. Saved scripts, QMQRY, compiled CL MONMSG, HTTP and real terminal flows
+exercise violation diagnostics and cascades. DISK/WORKSTN PREFIX now accepts an
+uppercase character literal and persists imported field names after source removal.
+This continuation adds 40 cases: 32 foreign-key and eight PREFIX cases. The full
+foreign-key phase contains 58 referential cases and eight PREFIX cases.
+
+All 7547 solution tests pass with zero failures/skips in 10:58.84; all 67 targeted
+foreign-key/PREFIX/HTTP checks pass. Locked restore, warning-free Release build,
+1064 unchanged source/build/cache inputs, full PTY including SQL-FK-CL-RPG-CASCADE
+at 24x80/27x132, generated inventory, local links and whitespace pass. Full-suite
+concurrency remains four xUnit workers and retains the 8203-row output and
+20000-row native record allocation cases. An initial 1240-case foreign-key/RPG
+run passed 1238 and exposed two duplicate-audit failures during SET NULL/DEFAULT;
+explicit existence checks replaced trigger OR IGNORE, whose policy was overridden
+by the outer update. The 67-case repeat and complete solution suite pass. The first
+PTY run rejected missing EVAL keywords in the new fixture; the corrected full
+smoke passes. Failed logs remain at /tmp/iseriespc-sqlforeign-focused11.log and
+/tmp/iseriespc-sqlforeign-pty-initial-failed.log.
+
+This remains development verification, not complete native referential-integrity
+acceptance. Defined/disabled/check-pending states, missing-parent/mismatched-data
+copy transitions, member/archive rebinding, CPYF CRTFILE, private-unit delegation
+and indirect publication, full publication-authority coverage, parent UPDATE
+indirect allocations, dedicated legacy/
+restart/competing-writer fixtures, native journal/cause/feedback/commitment and
+delete-path contracts, incoming constraint limits and independent current-release
+golden/scale acceptance remain open. C07/C08/C09 stay partial; checklist stays
+36 complete / 70 open. Main schema remains 35, coordination remains 2 and catalog
+remains 324 entries / 181 defined adapters. See docs/sql-foreign-keys-progress.md
+and docs/rpg-file-definitions.md. Continue with native constraint states and member/
+archive transitions, without treating this checkpoint as feature completion.
+
+SQL parent validation and publication development checkpoint (2026-10-19)
+
+C08 parent-key UPDATE now protects dependent file allocations and stable reads
+of the first matching dependent per parent row. SQL tables/views, physical keyed
+files, logical files and retained cursors share this validation. NO ACTION and
+RESTRICT deletes acquire the same stable reads across the planned cascade graph.
+Read sets allow concurrent readers and the caller's own retained update read,
+while rejecting a competing update. Validation filters assigned parent-key fields,
+uses bounded record-set holders, retains them through commit/rollback and delegates
+child validation without requiring child data permissions or parent DELETE rights.
+
+A misplaced cascade-planner call in physical keyed UPDATE has been replaced with
+parent validation; physical keyed DELETE now plans and locks its actual indirect
+actions. Unrelated updates avoid cascading child write locks. Member publication
+checks both registry bindings and slot identities. Publisher-aware file and row
+allocations use the existing writer connection for live caller/job/resource
+validation, including hooks that own catalog table/schema locks.
+
+SQL UPDATE/DELETE now recheck all required root object permissions immediately
+before publication, including READ needed by predicates or expressions. Constant-
+only statements retain their narrower requirements. Revocation by parent or child
+hooks rolls back data, indirect changes and authority edits. Existing view-owner
+and grant semantics remain enforced through their existing publication callback.
+
+The continuation adds 46 cases. All 7593 solution tests pass with zero failures/
+skips in 11:02.71; all 824 focused SQL/view/file/lock/transaction/object/HTTP checks
+pass. Locked restore, zero-warning/error Release build, 1068 unchanged source/
+build/cache inputs, complete display PTY at 24x80 and 27x132, generated inventory,
+local links and whitespace pass. The full suite retains four xUnit workers and
+the 8203-row output and 20000-row native record allocation cases.
+
+Initial probes reproduced missing publication checks (3/10 passed) and coordination
+gaps (1/13 passed). The first expanded run (75/81) also exposed that ordinary read
+mode allowed retained updates and that the new logical fixture used its physical
+format name instead of the logical format name. Later runs (90/91 and 100/101)
+showed the member guard needed to inspect the registry in addition to slot identity;
+final focused and full repeats pass. Logs remain under
+/tmp/iseriespc-sqlforeign-update- for review. IBM's referential-integrity locking
+reference informed the stable-read/cascading-write distinction; independent
+current-release native acceptance remains open.
+
+Full-suite stress also found a production shutdown ordering bug: connection setup
+held the factory lifecycle lock while waiting on SQLite, delaying cancellation.
+Connection opening and initial memory keepalive setup now run outside that lock;
+disposal signals cancellation, closes runtime resources and joins in-flight opens
+before closing the pool. An owned session closes its captured job's query resources
+before catalog access, while catalog changes still authorize normally. Three
+schema-writer/session regressions cover warm/cold opening and owned cleanup.
+
+The first full run passed 7588/7590 and exposed two existing lifecycle timing
+failures: journal recovery cancellation and cross-factory private-query shutdown.
+Their controllers and synchronous workers now use dedicated tasks, with a start
+signal for recovery and unconditional cleanup joins. Existing four-/ten-second
+bounds and all cancellation/authority/data/cleanup assertions remain. The 770-case focused repeat passed, but the second full run (7589/7590) exposed
+query-spooling shutdown exhausting its evaluation budget. Dedicated schema-writer
+probes reproduced the production lock ordering; their original two cases failed,
+and all three strengthened warm/cold/session cases pass after the fix. The final
+expanded focused and complete full repeats pass. Initial/second full logs remain
+at /tmp/iseriespc-sqlforeign-update-full-initial-failed.log and
+/tmp/iseriespc-sqlforeign-update-full-second-failed.log. No timeout or query budget
+was increased, no cancellation assertion was removed, and runtime/terminal inputs
+were reverified after the production fix.
+
+This is development regression verification, not complete referential-integrity
+acceptance. Native constraint states and CHECK administration, member/archive and
+missing-parent/mismatched-data copy transitions, private-unit delegation and
+publication, outgoing foreign-key parent read allocations, implicit child file
+allocation lifetimes through parent close, native file/cursor publication-authority
+coverage, CPYF CRTFILE, dedicated legacy/restart/competing-writer fixtures, incoming
+constraint limits, journal/cause/diagnostic/feedback/commitment/delete-path rules
+and native golden/scale acceptance remain open. C07/C08/C09 stay partial; checklist
+stays 36 complete / 70 open. Main schema stays 35, coordination stays 2 and catalog
+stays 324 entries / 181 defined adapters. See docs/sql-foreign-keys-progress.md.
+
+SQL constraint relation limits development checkpoint (2026-10-19)
+
+C08 now counts primary, unique and CHECK constraints, outgoing foreign keys and
+incoming referential relations across libraries against the same 5000-relation
+limit. A self reference consumes one relation. Proposed definitions replace their
+old versions, and cascaded incoming removals release capacity within the same
+ALTER statement. SQL validation and execution share the limit check, including
+tables without outgoing foreign keys. Overflow reports SQL0642 / 54021.
+
+Object copies count their remapped destination parents before physical copying.
+Final writer checks catch overflow introduced by catalog hooks and roll back
+metadata, schema and indirect changes together. Concurrent CREATE statements
+cannot both consume the last parent slot. Dropping constraints or child tables
+releases capacity for subsequent CREATE, ALTER and copy operations.
+
+Eleven new cases cover 5000/5001 CHECK boundaries, mixed own/incoming relations,
+self references, copies, destination-library parent binding, competing writers,
+post-hook rollback, definition replacement and atomic/cascaded capacity reuse.
+The original two CHECK-overflow probes failed because validation and execution
+accepted 5001 constraints. Their fixtures use simple IS NULL predicates to stay
+within the existing expression-node budget, which remains unchanged.
+
+All 7604 solution tests pass with zero failures/skips in 11:00.96, using four xUnit
+workers. All 348 broader focused checks and the final eleven boundary cases pass.
+Locked restore, a zero-warning/error Release build, 1069 unchanged source/build/
+cache inputs and complete display PTY at 24x80 and 27x132 pass. Generated inventory,
+local links and phase whitespace pass. Logs remain under /tmp/iseriespc-sqllimits-.
+
+This closes the implemented-path constraint-counting gap, not native referential
+acceptance. Independent native boundary/golden verification, defined/disabled/
+check-pending states and CHECK administration, member/archive/copy transitions,
+private-unit delegation/publication, outgoing parent read allocations, implicit
+child allocations through parent close, native publication-authority coverage,
+CPYF CRTFILE, legacy/restart/scale and journal/feedback/commitment/delete-path
+contracts remain open. C07/C08/C09 stay partial; checklist stays 36 complete / 70
+open. Main schema stays 35, coordination stays 2 and catalog stays 324 entries /
+181 defined adapters. See docs/sql-foreign-keys-progress.md.
+
+SQL constraint administration development checkpoint (2026-10-19)
+
+C07/C08 now provide CHGPFCST FILE/CST positional or keyword arguments, up to 300
+explicit names or *ALL/*CHKPND, STATE(*SAME/*ENABLED/*DISABLED) and CHECK(*YES/*NO).
+Each constraint commits separately; a failed name leaves preceding successful
+changes intact and processing continues. Management or alter authority on the
+physical child and library execute authority suffice. Parent validation delegates
+reads without granting parent or child data authority.
+
+Disabled constraints retain their access paths and permit I/O without that
+constraint's enforcement. Verification on enable commits check-pending state for
+invalid existing rows with CPF32B2 diagnostics. Pending selection history survives
+disable/repair so *CHKPND can select the constraint again. CHECK(*NO) skips old-row
+verification, with valid existing data remaining the caller's responsibility;
+subsequent writes enforce enabled constraints. SQL0971/57011 blocks all dependent
+I/O and parent UPDATE/DELETE for enabled pending foreign keys. Pending CHECKs block
+reads and operations requiring reads while enforcing new insert/update values.
+SQL, view, logical and native data authorization share the restrictions.
+
+State changes acquire related exclusive file allocations, reject retained query/
+update opens, and retain their leases through commit/rollback. Publication checks
+live management authority, owner, definitions, member registries and slot identities.
+Trusted CHECK row copying restores normal enforcement after success or failure.
+Old JSON omits false state flags, existing constructors/deconstruction remain,
+and CHECK program serialization excludes administration flags.
+
+Copies preserve disabled CHECK/foreign state and managed partial SET NULL hooks.
+Absent/incompatible destination parents now leave defined relationships; matching
+parents with copied-data mismatches leave pending relationships. CHGPFCST can
+establish/reverify them later. Automatic parent/member/attribute/archive transitions
+remain unfinished. CLRPFM permits clearing a parent whose relationships are disabled.
+
+The continuation adds 35 cases: 33 state/administration/copy/metadata cases and
+two job-owned initialization-recovery cases. All 7639 solution tests and 806 focused checks
+pass with zero failures/skips in 11:18.92, using four xUnit workers. Locked restore,
+a zero-warning/error Release build, 1074 unchanged source/build/cache inputs and
+complete display PTY at 24x80 and 27x132 pass. PTY now verifies disable, invalid
+enable, SQL0971 rejection, repair and re-enable. Generated inventory, local links
+and phase whitespace pass. Logs remain under /tmp/iseriespc-sqladmin-.
+
+The initial 13 cases passed. An expanded run passed 238/240; its two allocation
+fixtures used a sequential cursor without an enclosing command/read allocation.
+They now use retained update opens, with separate retained-query cases added.
+No production allocation assertion was weakened. The final focused/full repeats
+and terminal workflow pass.
+
+The first full run passed 7633/7636. Two initialization-recovery cases exposed
+file-state checking opening a connection behind recovery's schema writer. Recovery
+now rechecks file/journal/receiver authority and file state on its existing writer
+transaction, with two additional job-owned cases. A query-shutdown controller also
+missed its allocation; improved diagnostics and unconditional worker joins showed
+budget exhaustion in the 804/805 expanded repeat. Metadata permission checking had
+been coupled to data-state I/O, causing file/lock inspection to wait behind that
+query. A deterministic pending-file metadata probe reproduced SQL0971 even in file
+existence lookup. Data boundaries now opt into state checks separately, while
+metadata and library-list name resolution remain available for repair. The new
+probe, management-only unqualified CLI, lowercase special selectors and shutdown
+checks pass. Existing ten-second bounds and query evaluation budgets remain.
+Initial full/focused logs and the source manifest are retained under the prefix.
+
+This is development regression verification, not complete native constraint
+acceptance. Automatic lifecycle and archive transitions, legacy/restart and larger
+scale/cancellation/competing-writer fixtures, private-unit delegation/publication,
+outgoing parent reads, implicit child allocations through parent close, native
+file/cursor publication authority, pending OPEN and full diagnostic/feedback ABI,
+CPYF CRTFILE, journal/cause/commitment/delete-path contracts and independent native
+goldens remain open. C07/C08/C09 stay partial; checklist stays 36 complete / 70
+open. Main schema stays 35 and coordination stays 2. Catalog now has 325 entries /
+182 defined adapters, with CHGPFCST partial. See docs/sql-foreign-keys-progress.md.
+
+SQL automatic constraint establishment development checkpoint (2026-10-19)
+
+C08 now establishes defined foreign relationships when a compatible parent is
+created, a parent or dependent member is added, or ALTER supplies the required
+parent column, attributes or key. Both zero-member creation orders and actual
+nondefault member names work, including self references. Incompatible parents
+leave the relationship defined. Establishment preserves disabled state; an
+established disabled relation is pending until verification. Enabled relations
+with unmatched existing data also become pending instead of rejecting the parent.
+
+Establishment shares the initiating writer transaction and delegates child changes
+without requiring child data or management authority. Allocation preflight runs
+before schema DDL, so a retained child query reports CPF1002 rather than a SQLite
+schema-lock failure. Related exclusive leases remain through commit/rollback.
+Final checks cover root permission, live caller/job, definitions, owner, member
+registries and slot identities. Rewritten schemas compile their INSERT/UPDATE/
+DELETE paths, and enforced relationships recheck rows after hooks. Explicit
+CHGPFCST enable likewise rejects rows introduced after its initial verification;
+CHECK(*NO) retains its documented skip-verification behavior.
+
+Twenty new cases cover automatic establishment, incompatible-to-compatible ALTER,
+member order/names, disabled state, management/data delegation, retained queries,
+late authority revocation and atomic rollback of hook changes to related members,
+slot identities, ownership or data. The original five probes failed before the
+implementation. An expanded run passed 445/446 and exposed allocation preflight
+running after schema DDL; moving it before DDL restores the native CPF1002 result.
+The final 834 focused checks and all 7659 solution tests pass with zero failures/
+skips. The full run uses four xUnit workers and completes in 11:36.04.
+
+Locked restore, a zero-warning/error Release build, 1077 unchanged source/build/
+cache inputs and complete display PTY at 24x80 and 27x132 pass. The terminal now
+copies a child into a library without its parent, creates the parent, and confirms
+new orphan writes reject automatically (SQL-AUTO-ESTABLISH). Existing constraint
+administration and CL/RPG cascade flows remain covered. Generated inventory, local
+links and phase whitespace pass. Logs remain under /tmp/iseriespc-sqlauto-.
+
+This is development verification. Automatic member removal, relocation,
+duplicate-parent and restore/archive transitions, mismatching referenced-type
+ALTER behavior, private-unit delegation/publication, outgoing parent reads,
+implicit child allocations through parent close, native pending OPEN/feedback,
+CPYF CRTFILE, legacy/restart/cancellation/scale, journal/commitment/delete-path
+contracts and independent native goldens remain open. C07/C08/C09 stay partial;
+checklist stays 36 complete / 70 open. Main schema stays 35, coordination stays 2
+and catalog stays 325 entries / 182 defined adapters.
+See docs/sql-foreign-keys-progress.md.

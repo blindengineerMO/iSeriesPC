@@ -98,7 +98,7 @@ public sealed partial class MenuController : ISessionController, IDisposable
         _current = StartupSignOff ? new ApplicationMenu { Name = "SIGNOFF", Title = "Initial program completed" } : ResolveStart(_requestedStartMenu);
     }
 
-    private DisplayBuffer OwnBuffer => _help?.Buffer ?? _commandPrompt?.Buffer ?? _designer?.Buffer ?? _programTerminal.Display?.Session.Buffer ?? _display?.Buffer ?? _work?.Buffer ?? _buffer;
+    private DisplayBuffer OwnBuffer => _help?.Buffer ?? _commandPrompt?.Buffer ?? _designer?.Buffer ?? _programTerminal.Display?.Buffer ?? _display?.Buffer ?? _work?.Buffer ?? _buffer;
     public DisplayBuffer Buffer => _terminalGroup.Buffer;
 
     public string CurrentMenu => $"{_terminalGroup.Active._current.Library}/{_terminalGroup.Active._current.Name}";
@@ -306,7 +306,7 @@ public sealed partial class MenuController : ISessionController, IDisposable
             Screens.Status(OwnBuffer, control.Message ?? "Program is waiting for input.", error: true); return new("ProgramDisplay");
         }
         var result = _programTerminal.Start(() => _execution.Execute(line));
-        return result is null ? new("ProgramDisplay") : ApplyCommandResult(result);
+        return result is null ? new(_programTerminal.Display?.State ?? "ProgramDisplay") : ApplyCommandResult(result);
     }
 
     private SessionEvent HandleProgramDisplay(KeyPress key)
@@ -314,12 +314,12 @@ public sealed partial class MenuController : ISessionController, IDisposable
         var display = _programTerminal.Display!;
         try
         {
-            var response = display.InContext(() => { display.CheckAccess(); return display.Session.Handle(key); });
+            var response = display.InContext(() => { display.CheckAccess(); return display.Handle(key); });
             if (response.MessageHelp is { } details) return display.InContext(() => OpenBuiltinHelp(details.Title,
                 new[] { details.Text, details.SecondLevel.Length == 0 ? "No additional message information is available." : details.SecondLevel }));
             if (response.Help is { } help) return display.InContext(() => OpenHelp(help));
             if (response.HelpId is { } id) return display.InContext(() => OpenBuiltinHelp(id, new[] { "Display help context: " + id }));
-            if (!response.Accepted) return new("ProgramDisplay", Message: response.Error);
+            if (!response.Accepted) return new(display.State, Message: response.Error);
             return ResumeProgram(_programTerminal.Resume(response));
         }
         catch (Exception error) when (error is CpfException or ArgumentException or InvalidOperationException)
@@ -330,7 +330,7 @@ public sealed partial class MenuController : ISessionController, IDisposable
     }
     private SessionEvent ResumeProgram(CommandResult? result)
     {
-        if (result is null) return new("ProgramDisplay");
+        if (result is null) return new(_programTerminal.Display?.State ?? "ProgramDisplay");
         if (!_initialProgram) return ApplyCommandResult(result);
         _initialProgram = false;
         if (result.IsError) { Screens.Status(_buffer, "CPF1164: Initial program failed.", error: true); return new("Failed", EndSession: true, Message: result.Message); }

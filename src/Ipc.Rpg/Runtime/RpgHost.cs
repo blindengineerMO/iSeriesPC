@@ -84,6 +84,10 @@ public sealed class RpgHost
 
     public RpgTypedCallHandler? TypedProgramCaller { get; init; }
     public RpgDispatchCallHandler? ProgramDispatcher { get; init; }
+    public Func<Ipc.Rpg.Model.RpgServiceImport, RpgHost, RpgServiceProcedure>? ServiceProcedure { get; init; }
+    public Func<Ipc.Rpg.Model.RpgServiceImport, RpgHost, RpgServiceData>? ServiceData { get; init; }
+    public RpgDataPointerRegistry? DataPointers { get; init; }
+    public RpgProcedurePointerRegistry? ProcedurePointers { get; init; }
 
     public RpgMessageHandler? SendMessage { get; init; }
 

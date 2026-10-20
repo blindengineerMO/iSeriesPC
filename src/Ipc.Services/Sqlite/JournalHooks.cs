@@ -36,6 +36,7 @@ internal static class JournalHooks
     }
     internal static void InstallMember(SqliteConnection connection, SqliteTransaction transaction, string library, string file, string member)
     {
+        RecordSlots.InstallMember(connection, transaction, library, file, member);
         if (!Available(connection, transaction)) return;
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT id,images FROM sys_journal_bindings WHERE library=$library AND name=$file";

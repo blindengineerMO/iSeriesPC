@@ -7,6 +7,7 @@ namespace Ipc.Rpg.Runtime;
 
 public sealed partial class RpgInterpreter
 {
+    private static bool IsMemoryOperation(RpgOpcode opcode) => opcode is RpgOpcode.Alloc or RpgOpcode.Realloc or RpgOpcode.Dealloc;
     private static bool IsFileOperation(RpgOpcode opcode) => opcode is RpgOpcode.Open or RpgOpcode.Close or RpgOpcode.Unlock or
         RpgOpcode.Chain or RpgOpcode.Read or RpgOpcode.ReadP or RpgOpcode.Reade or RpgOpcode.ReadPe or RpgOpcode.ReadC or
         RpgOpcode.SetLl or RpgOpcode.SetGt or RpgOpcode.Write or RpgOpcode.Update or RpgOpcode.Delete or RpgOpcode.ExFmt;
@@ -22,8 +23,11 @@ public sealed partial class RpgInterpreter
         }
         catch (SqliteException error)
         {
-            var status = fallback != 1299 ? fallback : error.SqliteExtendedErrorCode switch { 1555 or 2067 => 1021, 787 => 1022, _ => 1299 };
-            throw FileFailure(status, error.Message, file, error);
+            var referential = DatabaseRecordErrors.IsReferentialConstraintFailure(error);
+            var status = fallback != 1299 ? fallback : referential ? 1022 : error.SqliteExtendedErrorCode switch { 1555 or 2067 => 1021, _ => 1299 };
+            Exception service = referential ? new CpfException("CPF502D", "Referential constraint violation on file member.") :
+                error.SqliteExtendedErrorCode == 275 ? new CpfException("CPF502F", "Check constraint violation on file member.") : error;
+            throw FileFailure(status, service.Message, file, service);
         }
         catch (RpgRuntimeException error) when (!error.FileError && error.StatusCode is null)
         { throw FileFailure(fallback, error.Message, file, error.ServiceError); }
@@ -48,6 +52,12 @@ public sealed partial class RpgInterpreter
         {
             if (statement.Indicator1 != 0) context.Indicators[statement.Indicator1] = true;
             if (statement.ErrorExtender) context.RecordStatus(202, errorExtender: true);
+            return true;
+        }
+        if (IsMemoryOperation(statement.Opcode) && (statement.ErrorExtender || statement.Indicator2 != 0))
+        {
+            if (statement.Indicator2 != 0) context.Indicators[statement.Indicator2] = true;
+            if (statement.ErrorExtender) context.RecordStatus(error.StatusCode ?? 426, errorExtender: true);
             return true;
         }
         if (!error.FileError || !IsFileOperation(statement.Opcode) || !DeclaredFile(statement)) return false;

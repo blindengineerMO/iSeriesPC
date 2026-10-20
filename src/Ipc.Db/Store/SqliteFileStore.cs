@@ -3,6 +3,8 @@ using Ipc.Core.Messages;
 using Ipc.Core.Objects;
 using Ipc.Db.Definitions;
 using Ipc.Db.Records;
+using Ipc.Db.Sql;
+using Ipc.Services.Security;
 using Ipc.Services.Sqlite;
 using Ipc.Services.Work;
 using Microsoft.Data.Sqlite;
@@ -50,20 +52,23 @@ public sealed partial class SqliteFileStore
         return json is null ? null : FileDefinition.FromJson(json);
     }
 
-    public void CreatePhysicalFile(string library, string name, FileDefinition definition, string source, string? description = null, string member = "*FILE", int? maximumMembers = null)
+    public void CreatePhysicalFile(string library, string name, FileDefinition definition, string source, string? description = null, string member = "*FILE", int? maximumMembers = null, CancellationToken cancellationToken = default)
     {
-        if (definition.Attribute != FileAttribute.Physical || definition.Logical is not null)
+        if (definition.Attribute != FileAttribute.Physical || definition.Logical is not null || definition.SqlView is not null)
             throw new CpfException("IPC0138", "Physical file creation requires a physical definition.");
         if (maximumMembers is { } maximum) definition.MaximumMembers = maximum;
+        definition.MemberSize?.Validate();
         if (definition.RecordLockWaitSeconds is < 0 or > 32767 || definition.MaximumMembers is < 1 or > 32767 || definition.Unique && !definition.PrimaryFormat.Fields.Any(f => f.Sequence > 0) || !definition.Unique && definition.ExcludeNullKeys)
             throw LogicalError("Invalid physical member limit or key uniqueness definition.");
-        CreateFileCore(library, name, PhysicalAttribute, definition, source, description, member);
+        CreateFileCore(library, name, PhysicalAttribute, definition, source, description, member, cancellationToken);
     }
 
-    public void CreateSourceFile(string library, string name, string? description = null, int sourceWidth = 100)
+    public void CreateSourceFile(string library, string name, string? description = null, int sourceWidth = 100, FileMemberSize? memberSize = null)
     {
         if (sourceWidth is < 44 or > 5000) throw new ArgumentOutOfRangeException(nameof(sourceWidth));
+        memberSize?.Validate();
         var definition = SourceFormat(name, sourceWidth);
+        definition.MemberSize = memberSize;
         CreateFileCore(library, name, SourceAttribute, definition, null, description);
     }
 
@@ -112,10 +117,13 @@ public sealed partial class SqliteFileStore
     public void AddMember(string library, string name, string member)
     {
         library = ResolveLibrary(library);
-        Authorize(library, name, AuthorityBit.ObjectManagement | AuthorityBit.ObjectOperate);
+        AuthorizeFileManagement(library.ToUpperInvariant(), name.ToUpperInvariant());
+        new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject("QSYS", library.ToUpperInvariant(), Ipc.Core.Objects.ObjectType.Library,
+            AuthorityBit.ObjectOperate | AuthorityBit.Add, checkLibrary: false);
         var libraryName = library.ToUpperInvariant();
         var fileName = name.ToUpperInvariant();
         var memberName = member.ToUpperInvariant();
+        using var establishment = new ConstraintAllocations();
         using var connection = _factory.Open();
         using var transaction = connection.BeginTransaction(deferred: false);
         // Resolve the definition after taking the writer transaction. Concurrent
@@ -125,6 +133,8 @@ public sealed partial class SqliteFileStore
 
         if (definition.Logical is not null) { transaction.Rollback(); AddLogicalMember(libraryName, fileName, memberName); return; }
         CheckNewPhysicalMember(connection, transaction, libraryName, fileName, memberName, definition);
+        ValidateSqlIndexMemberAddition(connection, transaction, libraryName, fileName);
+        RequireEstablishmentAvailable(connection, transaction, new(libraryName, fileName), definition, _factory.ShutdownToken);
         using (var insert = connection.CreateCommand())
         {
             insert.Transaction = transaction;
@@ -142,34 +152,57 @@ public sealed partial class SqliteFileStore
         using (var create = connection.CreateCommand())
         {
             create.Transaction = transaction;
-            create.CommandText = CreateMemberTableSql(definition.PrimaryFormat, MemberTable(libraryName, fileName, memberName)).Replace("IF NOT EXISTS ", "", StringComparison.Ordinal);
+            create.CommandText = CreateMemberTableSql(definition.PrimaryFormat, MemberTable(libraryName, fileName, memberName), definition.SqlTable).Replace("IF NOT EXISTS ", "", StringComparison.Ordinal);
             create.ExecuteNonQuery();
         }
 
         CreatePhysicalAccessPath(connection, transaction, libraryName, fileName, memberName, definition);
+        CreateSqlConstraints(connection, transaction, MemberTable(libraryName, fileName, memberName), definition);
         JournalHooks.InstallMember(connection, transaction, libraryName, fileName, memberName);
+        AddSqlIndexMember(connection, transaction, libraryName, fileName, memberName, definition);
         using var touch = connection.CreateCommand(); touch.Transaction = transaction;
         touch.CommandText = "UPDATE sys_objects SET changed=$now WHERE lib=$lib AND name=$name AND type='*FILE'";
         touch.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O")); touch.Parameters.AddWithValue("$lib", libraryName); touch.Parameters.AddWithValue("$name", fileName);
-        touch.ExecuteNonQuery(); transaction.Commit();
+        touch.ExecuteNonQuery();
+        EstablishDefinedForeignKeys(connection, transaction, new(libraryName, fileName), establishment, _factory.ShutdownToken);
+        new Ipc.Services.Security.ServiceAuthorization(_factory).RequireBoundObject(connection, transaction, libraryName, fileName,
+            AuthorityBit.ObjectOperate, alternatives: AuthorityBit.ObjectManagement | AuthorityBit.ObjectAlter);
+        new Ipc.Services.Security.ServiceAuthorization(_factory).RequireBoundObject(connection, transaction, "QSYS", libraryName,
+            AuthorityBit.ObjectOperate | AuthorityBit.Add, objectType: ObjectType.Library, checkLibrary: false);
+        transaction.Commit();
     }
 
     public void RemoveMember(string library, string name, string member) =>
         new ObjectCatalogOperations(_factory).RemoveFileMember(new QualifiedName(library.ToUpperInvariant(), name.ToUpperInvariant()), member.ToUpperInvariant());
 
-    public void ClearMember(string library, string name, string member)
+    public void ClearMember(string library, string name, string member, CancellationToken cancellationToken = default)
+        => ClearMemberCore(library, name, member, cancellationToken);
+
+    private void ClearMemberCore(string library, string name, string member, CancellationToken cancellationToken,
+        Action? beforeWrite = null, Action<SqliteConnection, SqliteTransaction>? beforePublish = null)
     {
-        using var recordLocks = new Ipc.Services.Work.JobLockStore(_factory).EnterRecordWrite(default);
-        library = ResolveLibrary(library);
-        RequireUnenlisted(library, name, "CLRPFM");
-        Authorize(library, name, AuthorityBit.Delete);
-        new Ipc.Services.Work.JobLockStore(_factory).RequireObjectMutation(library.ToUpperInvariant(), name.ToUpperInvariant(), FileType);
-        EnsureMember(library, name, member);
-        if (GetDefinition(library, name)?.Logical is not null) throw LogicalError("CLRPFM requires a physical file.");
-        using var connection = _factory.Open();
-        using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM " + Quote(MemberTable(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant()));
-        cmd.ExecuteNonQuery();
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _factory.ShutdownToken);
+        cancellationToken = lifetime.Token;
+        using var recordLocks = new JobLockStore(_factory).EnterRecordWrite(cancellationToken);
+        library = ResolveLibrary(library).ToUpperInvariant(); name = name.ToUpperInvariant(); member = member.ToUpperInvariant();
+        cancellationToken.ThrowIfCancellationRequested(); RequireUnenlisted(library, name, "CLRPFM");
+        AuthorizeFileManagement(library, name, AuthorityBit.ObjectOperate | AuthorityBit.Delete);
+        new JobLockStore(_factory).RequireObjectMutation(library, name, FileType);
+        using var connection = _factory.Open(); using var transaction = SqliteCancellation.BeginWrite(connection, cancellationToken);
+        if (Ipc.Services.Events.OperationIdentity.Current?.Job is { } job) new JobDataAreaStore(_factory).RequireOwner(job);
+        AuthorizeFileManagement(library, name, AuthorityBit.ObjectOperate | AuthorityBit.Delete); RequireUnenlisted(library, name, "CLRPFM");
+        beforeWrite?.Invoke();
+        var definition = ReadDefinition(connection, transaction, library, name) ?? throw new CpfException("CPF9801", "Physical file not found.");
+        if (definition.Logical is not null) throw LogicalError("CLRPFM requires a physical file.");
+        var id = RecordSlots.Identity(connection, transaction, library, name, member) ?? throw new CpfException("CPF2817", "Member not found.");
+        RequireReferentialClear(connection,transaction,new(library,name),member);
+        using var cmd = connection.CreateCommand(); cmd.Transaction = transaction;
+        cmd.CommandText = "DELETE FROM " + Quote(MemberTable(library, name, member));
+        SqliteCancellation.Run(connection, cancellationToken, cmd.ExecuteNonQuery);
+        MemberCapacity.Reset(connection, transaction, id);
+        RecordSlots.Reset(connection, transaction, id);
+        beforePublish?.Invoke(connection, transaction);
+        cancellationToken.ThrowIfCancellationRequested(); transaction.Commit();
     }
 
     public void DeleteFile(string library, string name)
@@ -178,16 +211,19 @@ public sealed partial class SqliteFileStore
     }
 
     public void Insert(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values, CancellationToken cancellationToken = default)
-        => InsertCore(library, name, member, format, values, cancellationToken);
+        => WithCapacityRecovery(token => { InsertCore(library, name, member, format, values, token); return true; }, cancellationToken,
+            request => ValidateCapacityTarget(library,name,member,request));
     private void InsertCore(string library, string name, string member, string format, IReadOnlyDictionary<string, object?> values,
-        CancellationToken cancellationToken, Action? validateAfterWait = null)
+        CancellationToken cancellationToken, Action? validateAfterWait = null, long? relativeNumber = null,
+        Action<SqliteConnection, SqliteTransaction>? beforePublish = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Add);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
-        if (definition.Logical is not null) { MutateLogical(definition, member, format, values, "INSERT", cancellationToken, validateAfterWait); return; }
+        if (definition.SqlView is not null) throw LogicalError("SQL view record output requires the remaining view update implementation.");
+        if (definition.Logical is not null) { MutateLogical(definition, member, format, values, "INSERT", cancellationToken, validateAfterWait, relativeNumber); return; }
         var recordFormat = definition.Formats.First(f => string.Equals(f.Name, format, StringComparison.OrdinalIgnoreCase));
         var columns = new List<string>();
         var placeholders = new List<string>();
@@ -204,10 +240,20 @@ public sealed partial class SqliteFileStore
 
         using var data = OpenRecordData(library, name, write: true, cancellationToken, members: [member]);
         validateAfterWait?.Invoke();
+        if (relativeNumber is not null && data.IsWorkspace) throw LogicalError("Relative record output is not supported in a commitment workspace.");
         var connection = data.Connection; var transaction = data.Transaction!;
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         EnsureExactDecimalStorage(connection, transaction, MemberTable(library, name, member), recordFormat);
+        if (!data.IsWorkspace)
+        {
+            var identity = RowIdentitySql(recordFormat);
+            var number = relativeNumber ?? RecordSlots.Next(connection, transaction, library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), identity, definition.ReuseDeletedRecords);
+            if (relativeNumber is not null) RequireRelativeOutputSlot(connection, transaction, library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), identity, number, cancellationToken);
+            else RequireMemberCapacity(connection, transaction, library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), definition, number);
+            new JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), number, write: true);
+            columns.Insert(0, Quote(identity)); placeholders.Insert(0, "$rrn"); parameters.Add(("$rrn",number));
+        }
         cmd.CommandText = "INSERT INTO " + Quote(MemberTable(library, name, member)) +
             " (" + string.Join(", ", columns) + ") VALUES (" + string.Join(", ", placeholders) + ")";
         foreach (var (parameterName, value) in parameters)
@@ -218,7 +264,7 @@ public sealed partial class SqliteFileStore
         data.Prepare(cmd); Ipc.Services.Sqlite.SqliteCancellation.Run(connection, cancellationToken, cmd.ExecuteNonQuery);
         cmd.CommandText = "SELECT last_insert_rowid()";
         new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), Convert.ToInt64(cmd.ExecuteScalar()), write: true);
-        cancellationToken.ThrowIfCancellationRequested(); data.Complete();
+        cancellationToken.ThrowIfCancellationRequested(); beforePublish?.Invoke(connection, transaction); data.Complete();
     }
 
     private IReadOnlyList<IReadOnlyDictionary<string, object?>> ReadAllCore(string library, string name, string member)
@@ -227,6 +273,7 @@ public sealed partial class SqliteFileStore
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
+        if (definition.SqlView is not null) return ReadSqlViewRows(library, name);
         if (definition.Logical is not null) return ReadLogical(library, name, member, definition, keyed: false);
         var format = definition.PrimaryFormat;
         var columns = string.Join(", ", format.Fields.Select(f => Quote(f.Name)));
@@ -254,6 +301,7 @@ public sealed partial class SqliteFileStore
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
+        if (definition.SqlView is not null) return ReadSqlViewRows(library, name);
         if (definition.Logical is not null) return ReadLogical(library, name, member, definition, keyed: true);
         var format = definition.PrimaryFormat;
         var keys = format.Fields.Where(f => f.Sequence > 0).OrderBy(f => f.Sequence).ToList();
@@ -392,8 +440,14 @@ public sealed partial class SqliteFileStore
         var mutation = cmd.CommandText;
         cmd.CommandText = "SELECT " + RowIdentitySql(recordFormat) + " FROM " + Quote(MemberTable(library, name, member)) + " WHERE " + string.Join(" AND ", whereColumns);
         data.Prepare(cmd);
+        var selectedRows = new HashSet<long>();
         using (var reader = cmd.ExecuteReader()) while (reader.Read())
-            new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(0), write: true);
+        {
+            var number = reader.GetInt64(0); selectedRows.Add(number);
+            new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), number, write: true);
+        }
+        if (!data.IsWorkspace) data.AddCascadeLocks(LockForeignParentChecks(connection,transaction,new(library.ToUpperInvariant(),name.ToUpperInvariant()),member.ToUpperInvariant(),selectedRows,
+            recordFormat.Fields.Where(field=>field.Sequence==0 && values.ContainsKey(field.Name)).Select(field=>field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase),CancellationToken.None));
         cmd.CommandText = mutation; data.Prepare(cmd); cmd.ExecuteNonQuery(); data.Complete();
     }
 
@@ -445,8 +499,13 @@ public sealed partial class SqliteFileStore
         var mutation = cmd.CommandText;
         cmd.CommandText = "SELECT " + RowIdentitySql(recordFormat) + " FROM " + Quote(MemberTable(library, name, member)) + " WHERE " + string.Join(" AND ", whereColumns);
         data.Prepare(cmd);
+        var deletedRows = new HashSet<long>();
         using (var reader = cmd.ExecuteReader()) while (reader.Read())
-            new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), reader.GetInt64(0), write: true);
+        {
+            var number=reader.GetInt64(0); deletedRows.Add(number);
+            new Ipc.Services.Work.JobLockStore(_factory).RequireRecordAccess(library.ToUpperInvariant(), name.ToUpperInvariant(), member.ToUpperInvariant(), number, write: true);
+        }
+        if (!data.IsWorkspace) data.AddCascadeLocks(LockForeignCascades(connection,transaction,new(library.ToUpperInvariant(),name.ToUpperInvariant()),member.ToUpperInvariant(),deletedRows,CancellationToken.None));
         cmd.CommandText = mutation; data.Prepare(cmd); cmd.ExecuteNonQuery(); data.Complete();
     }
 
@@ -455,7 +514,15 @@ public sealed partial class SqliteFileStore
         library = ResolveLibrary(library);
         Authorize(library, name, AuthorityBit.Read);
         EnsureMember(library, name, member);
-        if (GetDefinition(library, name) is { Logical: not null } logical) return ReadLogical(library, name, member, logical, keyed: false).Count;
+        if (GetDefinition(library, name) is { } definition)
+        {
+            if (definition.SqlView is not null)
+            {
+                using var query = OpenSqlQuery("SELECT COUNT_BIG(*) AS N FROM " + library + "/" + name, ViewReadOptions(library));
+                return query.Read() ? (long)query.Current![0]! : 0;
+            }
+            if (definition.Logical is not null) return ReadLogical(library, name, member, definition, keyed: false).Count;
+        }
         using var data = OpenRecordData(library, name, members: [member]);
         var connection = data.Connection;
         using var cmd = connection.CreateCommand(); cmd.Transaction = data.Transaction;
@@ -466,12 +533,15 @@ public sealed partial class SqliteFileStore
     private void Authorize(string library, string name, AuthorityBit permission)
     {
         library = ResolveLibrary(library);
-        new Ipc.Services.Security.ServiceAuthorization(_factory).RequireObject(library.ToUpperInvariant(), name.ToUpperInvariant(), FileType, permission | AuthorityBit.ObjectOperate);
+        var authorization = new Ipc.Services.Security.ServiceAuthorization(_factory);
+        authorization.RequireObject(library.ToUpperInvariant(), name.ToUpperInvariant(), FileType, permission | AuthorityBit.ObjectOperate);
+        authorization.RequireFileDataState(library.ToUpperInvariant(), name.ToUpperInvariant(), permission);
         AuthorizeLogicalSource(library, name, permission);
     }
 
-    private void CreateFileCore(string library, string name, string attribute, FileDefinition definition, string? source, string? description, string member = "*FILE")
+    private void CreateFileCore(string library, string name, string attribute, FileDefinition definition, string? source, string? description, string member = "*FILE", CancellationToken cancellationToken = default, Ipc.Db.Sql.SqlNaming? sqlNaming = null, Ipc.Db.Sql.SqlExecutionOptions? sqlOptions = null)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var libraryName = ResolveLibrary(library);
         var fileName = name.ToUpperInvariant();
         member = member.ToUpperInvariant(); if (member == "*FILE") member = fileName;
@@ -482,15 +552,59 @@ public sealed partial class SqliteFileStore
             throw new CpfException("CPF5805", $"File {fileName} already exists in library {libraryName}.");
         }
 
+        using var establishment = new ConstraintAllocations();
         using var connection = _factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
-        _objects.Create(new ObjectDescriptor
+        using var transaction = SqliteCancellation.BeginWrite(connection, cancellationToken);
+        if (Ipc.Services.Events.OperationIdentity.Current?.Job is { } job) new JobDataAreaStore(_factory).RequireOwner(job);
+        if (sqlOptions is not null)
+        {
+            BindSqlForeignKeys(connection, transaction, new(libraryName, fileName), definition, sqlOptions);
+            SqlConstraintCatalog.ValidateLimits(connection, transaction, (new(libraryName, fileName), definition));
+            EnsureForeignParents(connection, transaction, new(libraryName, fileName), definition, cancellationToken);
+        }
+        if (member != "*NONE") RequireEstablishmentAvailable(connection, transaction, new(libraryName, fileName), definition, cancellationToken);
+        CreateFileImage(connection, transaction, libraryName, fileName, attribute, definition, source, description, member, sqlNaming);
+        if (EstablishDefinedForeignKeys(connection, transaction, new(libraryName, fileName), establishment, cancellationToken))
+        {
+            var authorization = new Ipc.Services.Security.ServiceAuthorization(_factory);
+            authorization.RequireBoundObject(connection, transaction, "QSYS", libraryName, AuthorityBit.ObjectOperate | AuthorityBit.Add,
+                objectType: ObjectType.Library, checkLibrary: false);
+            var owner = ObjectSigningService.Read(connection, transaction, libraryName, fileName, FileType).Owner;
+            if (sqlNaming == SqlNaming.Sql && Ipc.Services.Events.OperationIdentity.Current is { } caller && owner != caller.Principal)
+                authorization.RequireBoundObject(connection, transaction, "QSYS", owner, AuthorityBit.Add, objectType: ObjectType.UserProfile, checkLibrary: false);
+        }
+        if (definition.SqlTable?.ForeignKeys is { Count: > 0 } && sqlOptions is not null)
+        {
+            if (ReadDefinition(connection, transaction, libraryName, fileName)?.ToJson() != definition.ToJson()) throw new CpfException("SQL0104", "Referential publication changed the intended table definition.");
+            BindSqlForeignKeys(connection, transaction, new(libraryName, fileName), definition, sqlOptions);
+            CheckSqlForeignRows(connection, transaction);
+        }
+        if (definition.SqlTable is not null) SqlConstraintCatalog.ValidateLimits(connection, transaction);
+        cancellationToken.ThrowIfCancellationRequested(); transaction.Commit();
+    }
+
+    private void CreateFileImage(SqliteConnection connection, SqliteTransaction transaction, string libraryName, string fileName,
+        string attribute, FileDefinition definition, string? source, string? description, string member,
+        Ipc.Db.Sql.SqlNaming? sqlNaming = null, AuthorityBit? publicAuthority = null, string? owner = null)
+    {
+        using (var exists = connection.CreateCommand())
+        {
+            exists.Transaction = transaction; exists.CommandText = "SELECT count(*) FROM sys_objects WHERE lib=$lib AND name=$name AND type='*FILE'";
+            exists.Parameters.AddWithValue("$lib", libraryName); exists.Parameters.AddWithValue("$name", fileName);
+            if (Convert.ToInt64(exists.ExecuteScalar()) != 0) throw new CpfException("CPF5805", "File already exists.");
+        }
+        if (definition.SqlTable is not null) SqlConstraintCatalog.ValidateLimits(connection, transaction, (new(libraryName, fileName), definition));
+        ValidateSqlConstraintNames(connection, transaction, libraryName, definition);
+        var descriptor = new ObjectDescriptor
         {
             Key = new QualifiedName(libraryName, fileName),
-            Owner = _owner,
+            Owner = owner ?? _owner,
             ObjectType = FileType, Attribute = attribute, Source = source, Ccsid = definition.Ccsid,
             Description = description, Format = definition.PrimaryFormat.Name,
-        }, connection, transaction);
+            PublicAuthority = publicAuthority ?? Authorities.UseBits,
+        };
+        if (sqlNaming is { } naming) CreateSqlTableDescriptor(connection, transaction, descriptor, naming);
+        else _objects.Create(descriptor, connection, transaction);
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = """
@@ -505,13 +619,13 @@ public sealed partial class SqliteFileStore
         cmd.ExecuteNonQuery();
         if (member != "*NONE")
         {
-            cmd.CommandText = CreateMemberTableSql(definition.PrimaryFormat, MemberTable(libraryName, fileName, member))
+            cmd.CommandText = CreateMemberTableSql(definition.PrimaryFormat, MemberTable(libraryName, fileName, member), definition.SqlTable)
                 .Replace("IF NOT EXISTS ", "", StringComparison.Ordinal);
             cmd.ExecuteNonQuery();
             CreatePhysicalAccessPath(connection, transaction, libraryName, fileName, member, definition);
+            CreateSqlConstraints(connection, transaction, MemberTable(libraryName, fileName, member), definition);
             JournalHooks.InstallMember(connection, transaction, libraryName, fileName, member);
         }
-        transaction.Commit();
     }
 
     private string ResolveLibrary(string library) => new JobTemporaryLibrary(_factory).ResolveLibrary(library.ToUpperInvariant());
@@ -539,13 +653,24 @@ public sealed partial class SqliteFileStore
         new[] { "_rowid_", "rowid", "oid" }.FirstOrDefault(alias => format.Fields.All(f => !f.Name.Equals(alias, StringComparison.OrdinalIgnoreCase)))
         ?? throw new CpfException("IPC0125", "File hides all SQLite row identities; record locking is unavailable.");
 
-    private static string CreateMemberTableSql(RecordFormat format, string tableName)
+    private static string CreateMemberTableSql(RecordFormat format, string tableName, SqlTableDefinition? sqlTable = null, bool legacyCollations = false)
     {
         var columns = new List<string>();
         foreach (var field in format.Fields)
         {
-            columns.Add(Quote(field.Name) + " " + SqliteType(field) + " NULL");
+            columns.Add(Quote(field.Name) + " " + SqliteType(field) + (sqlTable is not null && !legacyCollations ? " COLLATE " + Ipc.Db.Sql.SqlForeignSchema.Collation(field) : "") + (sqlTable is not null && !field.NullCapable ? " NOT NULL" : " NULL") +
+                (sqlTable is null ? "" : SqlColumnDefault(field)));
         }
+
+        if (sqlTable is not null)
+            foreach (var primary in sqlTable.Constraints.Where(constraint => constraint.Primary))
+                columns.Add("CHECK (" + string.Join(" AND ", primary.Columns.Select(name => Quote(name) + " IS NOT NULL")) + ")");
+
+        if (sqlTable?.Checks is { } checks)
+            foreach (var check in checks.Where(check => !check.Disabled)) columns.Add(Ipc.Db.Sql.SqlCheckRuntime.Sql(format, check));
+
+        if (sqlTable?.ForeignKeys is { } foreign)
+            foreach (var key in foreign.Where(Ipc.Db.Sql.SqlForeignSchema.Enforced)) columns.Add(Ipc.Db.Sql.SqlForeignSchema.Clause(format, key));
 
         return "CREATE TABLE IF NOT EXISTS " + Quote(tableName) + " (" + string.Join(", ", columns) + ")";
     }
@@ -560,26 +685,7 @@ public sealed partial class SqliteFileStore
         _ => "TEXT",
     };
 
-    private static object? ToSqlValue(FieldSpec field, object? value)
-    {
-        var normalized = value ?? DefaultFor(field);
-        if (normalized is null) return null;
 
-        return field.Type switch
-        {
-            FieldType.Alpha => normalized as string ?? ToString(normalized),
-            FieldType.Zoned or FieldType.Packed => field.Decimals == 0
-                ? ToDecimal(normalized)
-                : ToDecimal(normalized).ToString("F" + field.Decimals, CultureInfo.InvariantCulture),
-            FieldType.Binary => ToLong(normalized),
-            FieldType.Float => field.Length == 4 ? (double)(float)ToDouble(normalized) : ToDouble(normalized),
-            FieldType.Logic => ToBool(normalized) ? 1L : 0L,
-            FieldType.Date => ToDate(normalized).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-            FieldType.Time => ToTime(normalized).ToString(@"hh\:mm\:ss", CultureInfo.InvariantCulture),
-            FieldType.Timestamp => ToDate(normalized).ToString(field.Length == 26 ? "yyyy-MM-dd HH:mm:ss.ffffff" : "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-            _ => normalized as string ?? ToString(normalized),
-        };
-    }
 
     private static IReadOnlyDictionary<string, object?> ReadRow(System.Data.Common.DbDataReader reader, RecordFormat format)
     {
@@ -647,82 +753,10 @@ public sealed partial class SqliteFileStore
 
     private static string Quote(string identifier) => "\"" + identifier.Replace("\"", "\"\"") + "\"";
 
-    private static object? DefaultFor(FieldSpec field)
-    {
-        if (field.DefaultValue is { } explicitDefault) return explicitDefault.Value;
-        if (field.CurrentDatetimeDefault)
-        {
-            var now = DateTimeOffset.UtcNow;
-            return field.Type switch {
-                FieldType.Date => new DateTimeOffset(now.Date, TimeSpan.Zero),
-                FieldType.Time => TimeSpan.FromTicks(now.TimeOfDay.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond),
-                FieldType.Timestamp => now.AddTicks(-(now.Ticks % 10)),
-                _ => throw LogicalError("Invalid current-datetime default."),
-            };
-        }
-        if (field.NullCapable) return null;
-        return field.Type switch {
-        FieldType.Alpha => string.Empty,
-        FieldType.Logic => false,
-        FieldType.Binary => 0L,
-        FieldType.Float => 0d,
-        FieldType.Date => new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        FieldType.Time => TimeSpan.Zero,
-        FieldType.Timestamp => new DateTimeOffset(1900, 1, 1, 0, 0, 0, TimeSpan.Zero),
-        _ => 0m,
-        };
-    }
 
-    private static string ToString(object value) => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
 
-    private static decimal ToDecimal(object value) => value switch
-    {
-        decimal d => d,
-        long l => l,
-        int i => i,
-        double f => System.Convert.ToDecimal(f),
-        _ => decimal.TryParse(ToString(value), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m,
-    };
+    private static string ToString(object value) => Ipc.Db.Sql.SqlExpressionRuntime.ValueText(value);
 
-    private static long ToLong(object value) => value switch
-    {
-        long l => l,
-        int i => i,
-        decimal d => decimal.ToInt64(d),
-        _ => long.TryParse(ToString(value), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0L,
-    };
-
-    private static double ToDouble(object value) => value switch
-    {
-        double d => d,
-        decimal m => (double)m,
-        long l => l,
-        _ => double.TryParse(ToString(value), NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0d,
-    };
-
-    private static bool ToBool(object value) => value switch
-    {
-        bool b => b,
-        _ => ToString(value) is "1" or "Y" or "T" or "true",
-    };
-
-    private static DateTimeOffset ToDate(object value) => value switch
-    {
-        DateTimeOffset d => d,
-        DateTime d => new DateTimeOffset(DateTime.SpecifyKind(d, DateTimeKind.Unspecified), TimeSpan.Zero),
-        DateOnly d => new DateTimeOffset(d.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero),
-        _ => DateTimeOffset.TryParse(ToString(value), CultureInfo.InvariantCulture,
-            DateTimeStyles.AssumeUniversal, out var parsed) ? parsed : DateTimeOffset.MinValue,
-    };
-
-    private static TimeSpan ToTime(object value) => value switch
-    {
-        TimeSpan t => t,
-        TimeOnly t => t.ToTimeSpan(),
-        DateTime d => d.TimeOfDay,
-        DateTimeOffset d => d.TimeOfDay,
-        _ => TimeSpan.TryParse(ToString(value), CultureInfo.InvariantCulture, out var parsed) ? parsed : TimeSpan.Zero,
-    };
 }
 
 public static class DbFormatting

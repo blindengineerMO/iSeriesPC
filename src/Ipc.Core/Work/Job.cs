@@ -60,6 +60,7 @@ public sealed class Job
     public string? LibraryList { get; set; } = "*LIBL";
 
     public int Ccsid { get; set; } = 37;
+    public string InquiryMessageReply { get; set; } = "*RQD";
 
     public string? SubmitterName { get; set; }
 

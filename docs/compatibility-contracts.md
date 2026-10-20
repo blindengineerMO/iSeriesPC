@@ -85,6 +85,18 @@ The bounded implemented grammar and resolution contract are in
 [source preprocessing](source-preprocessing.md#rpg-directives). Required ILE:
 modules, binding directories, service programs, activation groups, by-reference/value/const
 parameters, return values and writeback, CL/RPG/C#/Node calls through the shared execution context.
+The implemented [static modules](rpg-module-binding.md) and [dynamic service programs](rpg-service-definitions.md)
+cover captured RPG modules, binder export/signature levels, explicit BNDSRVPGM,
+shared activation-owned service storage and checked native interfaces.
+[Directory discovery and service dependencies](rpg-binding-directories.md) add
+ordered providers and transitive graph validation. [Source references and
+updates](rpg-program-updates.md) add BNDDIR controls and atomic UPDPGM/UPDSRVPGM
+replacement/rebinding with retained activation versions. [Deferred procedure
+activation](rpg-deferred-activation.md) adds *IMMED/*DEFER binding modes and first-use
+validation. [Update policies](rpg-update-policies.md) add named group changes and
+service-library relocation, including per-caller *LIBL lookup. [Data binding](rpg-data-binding.md)
+adds typed module/service imports and shared storage. Wider ABI/calling
+conventions and independent native acceptance remain required.
 `MONITOR/ON-ERROR/ENDMON` now routes numeric statuses through the enclosing scope;
 see [file status](rpg-file-status.md) for accepted routing and remaining status families.
 No native MI instruction execution or IBM compiled-program binary loading is promised.
@@ -119,6 +131,18 @@ ABS/ROUND, casts, current date/time/timestamp, date/time extraction and interval
 Exact decimal comparisons, overflow, padding/CCSID, null semantics, and transaction isolation
 must be tested. SQLite-only internal tables and PRAGMA/ATTACH/extensions are not public SQL.
 `*N` is handled only in documented command/program contexts; it is not a universal SQL token.
+
+The bounded [typed SELECT service](sql-queries.md) supplies the current query
+foundation. [STRSQL](sql-interactive.md) supplies interactive entry, and
+[QMQRY objects](query-management.md) supply saved SQL, substitution, prompts and
+interactive results. [Typed query output](sql-query-output.md) adds physical files
+with create/replace/append. [Stored SQL views](sql-views.md) add typed nested
+queries, CL/RPG record input and single-source PF writes with LOCAL/CASCADED
+CHECK OPTION. [ALTER TABLE](sql-alter-tables.md) adds atomic column/key changes
+and dependent format rebinding. [CHECK constraints](sql-check-constraints.md) share
+typed SQL rules across native record and workspace writes. Query forms/print/wider
+outfile workflows, the gateway and native commitment/isolation still require
+implementation and acceptance.
 
 The ODBC/JDBC gateway is read-only but shares read transactions and typed query semantics with
 local SQL. The local SQL service supports writes. Full Db2 optimizer and stored-procedure catalog

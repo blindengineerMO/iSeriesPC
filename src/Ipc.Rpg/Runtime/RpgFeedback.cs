@@ -20,13 +20,21 @@ public sealed partial class RpgRuntimeContext
         if (GlobalContext is not null)
         {
             foreach (var pair in GlobalContext._fileFeedback) _fileFeedback.Add(pair.Key, pair.Value);
-            _programFeedback = GlobalContext._programFeedback; return;
+            _programFeedback = GlobalContext._programFeedback;
         }
         foreach (var name in _program.FileSpecs)
         {
             var binding = _program.FileInformation.SingleOrDefault(f => f.File == name);
             var bytes = binding is null ? Enumerable.Repeat(NativeBlank, 80).ToArray() : _nativeStructures[binding.Structure];
-            _fileFeedback.Add(name, bytes);
+            var local = _program.DiskFiles.SingleOrDefault(f => f.Request.Name == name && f.Request.Procedure is not null);
+            var display = _program.Workstations.SingleOrDefault(f => f.Request.Name == name && f.Request.Procedure is not null);
+            if (local?.Request.Static == true && DiskStateFor(name).Feedback.TryGetValue(name, out var retained))
+            { _fileFeedback[name] = retained; continue; }
+            if (display?.Request.Static == true && WorkstationStateFor(name).Feedback.TryGetValue(name, out var retainedDisplay))
+            { _fileFeedback[name] = retainedDisplay; continue; }
+            _fileFeedback[name] = bytes;
+            if (local?.Request.Static == true) DiskStateFor(name).Feedback.Add(name, bytes);
+            if (display?.Request.Static == true) WorkstationStateFor(name).Feedback.Add(name, bytes);
             FeedbackText(bytes, 0, 8, name); FeedbackText(bytes, 8, 2, "00"); FeedbackNumber(bytes, 10, 5, 0);
         }
         var psds = _program.DataStructures.SingleOrDefault(d => d.ProgramStatus && !d.IsTemplate && !_program.GlobalStructures.Contains(d));
@@ -74,9 +82,9 @@ public sealed partial class RpgRuntimeContext
     private void RefreshFeedbackFlags(string file)
     {
         if (!_fileFeedback.TryGetValue(file, out var bytes)) return;
-        var open = DiskState.Files.ContainsKey(file) || WorkstationState.Files.ContainsKey(file);
+        var open = DiskStateFor(file).Files.ContainsKey(file) || WorkstationStateFor(file).Files.ContainsKey(file);
         FeedbackText(bytes, 8, 1, open ? "1" : "0");
-        FeedbackText(bytes, 9, 1, _fileStatus.GetValueOrDefault(file)?.EndOfFile == true ? "1" : "0");
+        FeedbackText(bytes, 9, 1, StatusFor(file).GetValueOrDefault(file)?.EndOfFile == true ? "1" : "0");
     }
     private void RecordFileFeedback(string file, int status)
     {
@@ -92,13 +100,14 @@ public sealed partial class RpgRuntimeContext
         var workstation = _program.Workstations.SingleOrDefault(f => f.Request.Name == file);
         var operand = statement is null ? file : statement.Factor2 ?? statement.Factor1 ?? file;
         var recordOperand = operand.ToUpperInvariant();
-        var isRecord = disk?.Layout.Record == recordOperand || workstation?.Layout.Records.Any(r => r.Name == recordOperand) == true;
+        var displayRecord = workstation?.Layout.Records.FirstOrDefault(r => r.Name == recordOperand || recordOperand.Contains('.') && r.Name.Split('.').Last() == recordOperand.Split('.').Last());
+        var isRecord = disk?.Layout.Record == recordOperand || displayRecord is not null;
         FeedbackText(bytes, 15, 6, opcode.PadRight(5)[..5] + (statement is null ? "I" : isRecord ? "R" : "F"));
         FeedbackText(bytes, 21, 8, _feedbackRoutine);
         FeedbackText(bytes, 29, 8, (statement?.LineNumber ?? 0).ToString("D8", CultureInfo.InvariantCulture));
         if (statement is not null && statement.Opcode is not (RpgOpcode.Open or RpgOpcode.Close or RpgOpcode.Unlock))
         {
-            var record = disk?.Layout.ExternalRecord ?? workstation?.Layout.Records.FirstOrDefault(r => r.Name == recordOperand)?.External;
+            var record = disk?.Layout.ExternalRecord ?? displayRecord?.External;
             if (record is not null) FeedbackText(bytes, 37, 8, record);
         }
         FeedbackText(bytes, 45, 7, "");

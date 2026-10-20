@@ -54,7 +54,7 @@ public sealed partial class JobRecordTransactions(SqliteConnectionFactory factor
     public void End(JobKey job)
     {
         RequireOwner(job); var unit = Required(job);
-        lock (unit.Gate) { unit.RequireIdle(); unit.RequireClosedCursors(); if (unit.PendingCount() != 0) throw Invalid("Commit or roll back pending changes before ending the record unit."); Remove(job, unit); }
+        lock (unit.Gate) { unit.RequireIdle(); unit.RequireNoQuerySnapshots(); unit.RequireClosedCursors(); if (unit.PendingCount() != 0) throw Invalid("Commit or roll back pending changes before ending the record unit."); Remove(job, unit); }
     }
     internal bool IsEnlisted(QualifiedName file) => OperationIdentity.Current?.Job is { } job && Find(job) is { } unit && unit.Enlisted.Contains(file);
     internal bool HasCurrentDefinition => OperationIdentity.Current?.Job is { } job && Find(job) is not null;
@@ -68,6 +68,7 @@ public sealed partial class JobRecordTransactions(SqliteConnectionFactory factor
     }
     internal void AbortJob(JobKey job)
     {
+        using var readers = factory.CloseJobRuntimeResources(job);
         if (Live.TryGetValue((Database, job), out var unit)) lock (unit.Gate) Remove(job, unit);
         else
         {
@@ -123,7 +124,7 @@ public sealed partial class JobRecordTransactions(SqliteConnectionFactory factor
         lock (_lifecycle) { if (_disposed) return; _disposed = true; owned = _owned.ToArray(); }
         List<Exception>? errors = null;
         foreach (var entry in owned)
-            try { lock (entry.Value.Gate) Remove(entry.Key, entry.Value); }
+            try { using var readers = factory.CloseJobRuntimeResources(entry.Key); lock (entry.Value.Gate) Remove(entry.Key, entry.Value); }
             catch (Exception error) { (errors ??= []).Add(error); }
         if (errors is not null) throw new AggregateException("Could not release all record units.", errors);
     }
@@ -136,7 +137,7 @@ public sealed record RecordUnitInfo(string Definition, string Cycle, long Pendin
 
 /// <summary>One synchronous statement scope inside the job's unit. Dispose without Complete
 /// backs out this scope. Execute, complete and dispose on the opening thread, without awaiting.</summary>
-public sealed class RecordOperation : IDisposable
+public sealed partial class RecordOperation : IDisposable
 {
     private readonly JobRecordTransactions.RecordUnit _unit;
     private bool _complete, _disposed, _failed;

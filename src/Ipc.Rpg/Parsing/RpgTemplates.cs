@@ -20,7 +20,9 @@ public static partial class RpgCompiler
         return TemplateFileSymbol(program, name);
     }
     internal static bool TemplateFileSymbol(RpgProgram program, string name) => program.DiskFiles.Any(f => f.Request.IsTemplate &&
-        (f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || f.Layout.Record.Equals(name, StringComparison.OrdinalIgnoreCase)));
+        (f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) || f.Layout.Record.Equals(name, StringComparison.OrdinalIgnoreCase))) ||
+        program.Workstations.Any(f => f.Request.IsTemplate && (f.Request.Name.Equals(name, StringComparison.OrdinalIgnoreCase) ||
+            f.Layout.Records.Any(r => r.Name.Equals(name, StringComparison.OrdinalIgnoreCase))));
     internal static bool TemplateReference(RpgProgram program, RpgExpr expression, bool allowMetadata = true) => expression switch
     {
         RpgFieldRef field => TemplateName(program, field.Name),
@@ -60,7 +62,7 @@ public static partial class RpgCompiler
 
     private static void ValidateTemplateUses(RpgProgram program, IReadOnlyList<KeyDeclaration> keys)
     {
-        if (!program.Fields.Any(f => f.IsTemplate) && !program.DataStructures.Any(d => d.IsTemplate) && !program.DiskFiles.Any(f => f.Request.IsTemplate)) return;
+        if (!program.Fields.Any(f => f.IsTemplate) && !program.DataStructures.Any(d => d.IsTemplate) && !program.DiskFiles.Any(f => f.Request.IsTemplate) && !program.Workstations.Any(f => f.Request.IsTemplate)) return;
         foreach (var key in keys) foreach (var field in key.Fields) ValidateTemplateText(program, field, key.Line);
         foreach (var statement in program.MainStatements)
         {

@@ -70,9 +70,24 @@ public static partial class RpgCompiler
             return value;
         }
         var length = Number(33, 39); var decimals = Number(41, 42); var type = char.ToUpperInvariant(header[39 + shift]);
-        var scalar = TraditionalScalarType(length, decimals, type, number);
+        var scalar = TraditionalDefinitionType(length, decimals, type, number, ref keywords);
         collector?.Scalar(name, scalar + " " + keywords, number);
         if (bind) DeclareFreeScalar(program, name, scalar + " " + keywords, number);
+    }
+
+    private static string TraditionalDefinitionType(int? length, int? decimals, char type, int line, ref string keywords, bool subfield = false)
+    {
+        if (type == '*' && !HasKeyword(keywords, "PROCPTR"))
+        {
+            if (length is not (null or 16) || decimals is not null) throw new RpgCompileException(line, "Basing pointers require sixteen bytes and no decimals.");
+            return "POINTER";
+        }
+        if (type != '*' || !HasKeyword(keywords, "PROCPTR")) return TraditionalScalarType(length, decimals, type, line, subfield);
+        var options = DeclarationKeywords(keywords, line);
+        if (length is not (null or 16) || decimals is not null || options.Count(k => k.Name == "PROCPTR") != 1 || options.Any(k => k.Name == "PROCPTR" && k.Arguments is not null))
+            throw new RpgCompileException(line, "Procedure pointers require sixteen bytes, one PROCPTR keyword and no decimals.");
+        keywords = string.Join(' ', options.Where(k => k.Name != "PROCPTR").Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")")));
+        return "POINTER(*PROC)";
     }
 
     private static string TraditionalScalarType(int? length, int? decimals, char type, int number, bool subfield = false)

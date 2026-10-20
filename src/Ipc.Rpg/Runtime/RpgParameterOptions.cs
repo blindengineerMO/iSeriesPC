@@ -12,8 +12,8 @@ public sealed partial class RpgRuntimeContext
         if (actual is null && view is not null)
             actual = view.Element is { } element ? new RpgField { Name = element.Name, Kind = element.Kind, Length = element.Length,
                 LikeType = element.LikeType, DeclaredLike = element.DeclaredLike, Decimals = element.Decimals, IsArray = view.IsArray, Dimension = view.Count, ArrayDescending = element.ArrayDescending, OpaqueBytes = element.OpaqueBytes }
-                : new RpgField { Name = view.Structure.Name, Kind = RpgFieldKind.Character, Length = view.Structure.Length, IsDataStructure = true,
-                    ParameterStructure = view.Structure, IsArray = view.IsArray, Dimension = view.Count, OpaqueBytes = true };
+                : new RpgField { Name = view.Structure.Name, Kind = RpgFieldKind.Character, Length = view.Layout.Length, IsDataStructure = true,
+                    ParameterStructure = view.Layout, IsArray = view.IsArray, Dimension = view.Count, OpaqueBytes = true };
         if (actual is null && formal.DeclaredLike) throw NativeFailure(105, "*EXACT LIKE parameters require related declared data or return metadata.");
         if (actual is not null && RpgCompiler.ExactTypeError(actual, formal) is { } error) throw NativeFailure(105, error);
     }

@@ -7,6 +7,25 @@ namespace Ipc.Services.Sqlite;
 
 internal static class LogicalPathCatalog
 {
+    internal static void DetachSqlIndexesFromMember(SqliteConnection connection, SqliteTransaction transaction, QualifiedName file, string member)
+    {
+        using var query = connection.CreateCommand(); query.Transaction = transaction;
+        query.CommandText = "SELECT lib,name,def FROM sys_file_defs WHERE coalesce(json_extract(def,'$.sqlIndex'),0)=1 AND json_extract(def,'$.logical.sourceLibrary')=$lib AND json_extract(def,'$.logical.sourceFile')=$name";
+        query.Parameters.AddWithValue("$lib", file.Library); query.Parameters.AddWithValue("$name", file.Name.Value);
+        var indexes = new List<(string Library, string Name, JsonObject Definition)>();
+        using (var reader = query.ExecuteReader()) while (reader.Read()) indexes.Add((reader.GetString(0), reader.GetString(1), JsonNode.Parse(reader.GetString(2)) as JsonObject ?? throw Invalid()));
+        foreach (var (library, name, definition) in indexes)
+        {
+            var logical = definition["logical"] as JsonObject ?? throw Invalid(); var bindings = logical["members"] as JsonObject ?? throw Invalid();
+            foreach (var binding in bindings.ToArray())
+                bindings[binding.Key] = new JsonArray((binding.Value as JsonArray ?? throw Invalid()).Where(value => value!.GetValue<string>() != member).Select(value => value!.DeepClone()).ToArray());
+            Paths(logical).Remove(member);
+            using var update = connection.CreateCommand(); update.Transaction = transaction;
+            update.CommandText = "UPDATE sys_file_defs SET def=$def WHERE lib=$lib AND name=$name AND type='*FILE'; UPDATE sys_objects SET changed=$now WHERE lib=$lib AND name=$name AND type='*FILE'";
+            update.Parameters.AddWithValue("$def", definition.ToJsonString()); update.Parameters.AddWithValue("$lib", library); update.Parameters.AddWithValue("$name", name);
+            update.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O")); update.ExecuteNonQuery();
+        }
+    }
     internal static void ReleaseFile(SqliteConnection connection, SqliteTransaction transaction, QualifiedName file)
     {
         var definition = Read(connection, transaction, file);

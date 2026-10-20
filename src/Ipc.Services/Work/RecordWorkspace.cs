@@ -38,7 +38,7 @@ public sealed partial class JobRecordTransactions
                 foreach (var item in schema.Where(item => item.Type == "view" || item.Type == "index" && _members.ContainsKey(item.Table)))
                 { cancellationToken.ThrowIfCancellationRequested(); Run(Data, transaction, item.Sql); }
                 var triggers = schema.Where(item => item.Type == "trigger" && _members.ContainsKey(item.Table) &&
-                    !JournalHooks.OwnsTrigger(source, snapshot, item.Name)).Select(item => item.Sql).ToArray();
+                    !JournalHooks.OwnsTrigger(source, snapshot, item.Name) && !RecordSlots.OwnsTrigger(source, snapshot, item.Name)).Select(item => item.Sql).ToArray();
                 return (IReadOnlyList<string>)triggers;
             });
         }

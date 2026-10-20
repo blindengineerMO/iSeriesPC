@@ -114,7 +114,7 @@ public sealed class RpgFixedDeclarationTests
     [InlineData('U', "5", "0")]
     [InlineData('G', "5", "")]
     [InlineData('C', "5", "")]
-    [InlineData('*', "", "")]
+    [InlineData('*', "15", "")]
     [InlineData('I', "5", "")]
     [InlineData('I', "5", "1")]
     [InlineData('P', "5", "")]

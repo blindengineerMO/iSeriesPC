@@ -5,23 +5,38 @@ using Ipc.Terminal;
 
 if (args.Length != 2) return 2;
 using var input = new TerminalInputReader();
-using var system = args[1] is "help" or "designer" or "groups" or "work" or "messages" ? Ipc.Services.IpcSystem.Create(Path.Combine(Path.GetDirectoryName(args[0])!, "catalog")) : null;
+using var system = args[1] is "help" or "designer" or "groups" or "work" or "sql" or "messages" ? Ipc.Services.IpcSystem.Create(Path.Combine(Path.GetDirectoryName(args[0])!, "catalog")) : null;
 ISessionController controller;
 if (system is not null)
 {
     system.Start();
     if (args[1] == "messages") controller = new MessageSubfileController(system, args[0]);
-    else if (args[1] is "designer" or "work")
+    else if (args[1] is "designer" or "work" or "sql")
     {
         system.Security.Profiles.SetPassword(system.Security.Profiles.Get("QSECOFR"), "DesignerFixture22");
         new Ipc.Db.Store.SqliteFileStore(system.Connections, system.Objects).CreateSourceFile("QGPL", "SOURCE", sourceWidth: 240);
+        if (args[1] == "sql") InteractiveSqlFixture.Seed(new Ipc.Db.Store.SqliteFileStore(system.Connections, system.Objects));
         if (args[1] == "work")
         {
             var rpgSources = new Ipc.Db.Store.SqliteFileStore(system.Connections, system.Objects);
             JournalCycleFixture.Seed(system, rpgSources);
+            InquiryReplyFixture.Seed(system, rpgSources);
+            MemberCapacityFixture.Seed(rpgSources);
+            SqlTableFixture.Seed(rpgSources);
             RpgFileKeyFixture.Seed(rpgSources);
             RpgRelativeRecordFixture.Seed(system, rpgSources);
             RpgDiskFileFixture.Seed(rpgSources);
+            var nativeFixture = Path.Combine(Path.GetDirectoryName(args[0])!, "native-fixture", "Ipc.NativeFixture.dll");
+            Directory.CreateDirectory(Path.GetDirectoryName(nativeFixture)!);
+            foreach (var extension in new[] { ".dll", ".runtimeconfig.json", ".deps.json" })
+            {
+                var target = Path.ChangeExtension(nativeFixture, extension);
+                File.Copy(Path.ChangeExtension(typeof(Ipc.NativeFixture.Program).Assembly.Location, extension), target);
+                if (OperatingSystem.IsLinux()) File.SetUnixFileMode(target, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            system.ExternalPrograms.Register("QGPL", "NULLWIRE", Environment.ProcessPath!, [nativeFixture, "null-update"],
+                [Path.ChangeExtension(nativeFixture, ".runtimeconfig.json"), Path.ChangeExtension(nativeFixture, ".deps.json")], protocolVersion: 3);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGNWIRE", "**free\nctl-opt alwnull(*usrctl);\ndcl-pr TARGET extpgm('NULLWIRE');\nP int(10) options(*nullind);\nSECOND int(10);\nend-pr;\ndcl-s N int(10) nullind inz(3);\ndcl-s SECOND int(10) inz(4);\neval %nullind(N)=*on;\ncallp TARGET(N:SECOND);\nif N=12 and not %nullind(N) and SECOND=4;\nsndpgmmsg 'RPG PROCESS NULL MAP OK';\nendif;\nseton LR;", null);
             rpgSources.SaveSourceMember("QGPL", "SOURCE", "CLCRYPTO", Ipc.Testing.CryptoProgramSources.ClSource, null);
             rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGCRYPTO", Ipc.Testing.CryptoProgramSources.RpgSource, null);
             rpgSources.SaveSourceMember("QGPL", "SOURCE", "CLDATEAPI", """
@@ -72,6 +87,125 @@ if (system is not null)
                 "eval NAME = 'START';\neval AMOUNT = 1.25;\nexfmt ENTRY;\nif NAME <> 'ALICE' or AMOUNT <> 2.5 or not *in06;\n" +
                 "sndpgmmsg 'RPG INPUT:' + NAME + ':' + %char(AMOUNT) + ':' + %char(*in06);\nseton LR;\nreturn;\nendif;\n" +
                 "eval NAME = 'SENT';\nwrite ENTRY;\neval NAME = 'AFTER';\nread RPGFORM;\nif *in03 and NAME = 'AFTER';\nsndpgmmsg 'RPG DISPLAY ACCEPTED';\nendif;\nseton LR;", null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGWREC", """
+                **free
+                dcl-f RPGFORM workstn extdesc('QGPL/RPGFORM') extfile(*extdesc);
+                dcl-ds BUFFER likerec(ENTRY:*all) inz;
+                eval BUFFER.NAME='BUFFER';
+                eval BUFFER.AMOUNT=1.25;
+                exfmt ENTRY BUFFER;
+                if BUFFER.NAME='ALICE' and BUFFER.AMOUNT=2.5 and *in06 and NAME='' and AMOUNT=0;
+                  sndpgmmsg 'WORKSTN BUFFERS OK';
+                endif;
+                seton LR;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGWCOPY", """
+                **free
+                dcl-f MODEL workstn template extdesc('QGPL/RPGFORM') extfile(*extdesc) prefix(P_);
+                dcl-f COPY likefile(MODEL);
+                dcl-ds BUFFER likerec(ENTRY:*all) inz;
+                dcl-s P_NAME int(10) inz(7);
+                eval BUFFER.P_NAME='COPY';
+                eval BUFFER.P_AMOUNT=1.25;
+                exfmt COPY.ENTRY BUFFER;
+                if BUFFER.P_NAME='ALICE' and BUFFER.P_AMOUNT=2.5 and *in06 and P_NAME=7 and %open(COPY);
+                  sndpgmmsg 'WORKSTN COPIES OK';
+                endif;
+                seton LR;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGWFPRM", """
+                **free
+                dcl-f MODEL workstn template extdesc('QGPL/RPGFORM');
+                dcl-f COPY likefile(MODEL) extfile(*extdesc);
+                callp SHOW(COPY);
+                seton LR;
+                dcl-proc SHOW;
+                dcl-pi *n;
+                F likefile(MODEL);
+                end-pi;
+                dcl-ds BUFFER likerec(F.ENTRY:*all) inz;
+                eval BUFFER.NAME='PARAMETER';
+                eval BUFFER.AMOUNT=1.25;
+                exfmt F.ENTRY BUFFER;
+                if BUFFER.NAME='ALICE' and BUFFER.AMOUNT=2.5 and *in06 and %open(F);
+                  sndpgmmsg 'WORKSTN FILE PARAM OK';
+                endif;
+                end-proc;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGWLOCAL", """
+                **free
+                callp SHOW();
+                callp SHOW();
+                seton LR;
+                dcl-proc SHOW;
+                dcl-f LOCAL workstn static extdesc('QGPL/RPGFORM') extfile(*extdesc);
+                dcl-pi *n end-pi;
+                dcl-s COUNT int(10) static inz(0);
+                dcl-ds BUFFER likerec(ENTRY:*all) inz;
+                eval COUNT=COUNT+1;
+                if COUNT=1;
+                  eval BUFFER.NAME='LOCAL';
+                else;
+                  eval BUFFER.NAME='STATIC';
+                endif;
+                eval BUFFER.AMOUNT=1.25;
+                exfmt ENTRY BUFFER;
+                if COUNT=2 and BUFFER.NAME='ALICE' and BUFFER.AMOUNT=2.5 and *in06 and %open(LOCAL);
+                  sndpgmmsg 'LOCAL WORKSTN OK';
+                endif;
+                end-proc;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGNESTED", """
+                **free
+                dcl-f SCREEN workstn extdesc('QGPL/RPGFORM') extfile(*extdesc);
+                dcl-ds BOX qualified inz;
+                  HEAD char(2);
+                  ROW likerec(ENTRY:*all) dim(2);
+                  TAIL char(2);
+                end-ds;
+                eval BOX.HEAD='AA';
+                eval BOX.TAIL='ZZ';
+                callp PREPARE(BOX.ROW(2));
+                exfmt ENTRY BOX.ROW(2);
+                if BOX.ROW(2).NAME='ALICE' and BOX.ROW(2).AMOUNT=2.5 and *in06 and BOX.HEAD='AA' and BOX.TAIL='ZZ' and BOX.ROW(1).NAME=*blanks;
+                  sndpgmmsg 'NESTED RPG OK';
+                endif;
+                seton LR;
+                dcl-proc PREPARE;
+                dcl-pi *n;
+                  BUFFER likerec(ENTRY:*all) options(*exact);
+                end-pi;
+                eval BUFFER.NAME='NESTED';
+                eval BUFFER.AMOUNT=1.25;
+                end-proc;
+                """, null);
+            rpgSources.SaveSourceMember("QGPL", "SOURCE", "RPGEXTDS", """
+                **free
+                dcl-f SCREEN workstn qualified extdesc('QGPL/RPGFORM') extfile(*extdesc);
+                dcl-ds MODEL extname('QGPL/RPGFORM':'ENTRY':*all) qualified template prefix(X_);
+                  TARGET extfld('NAME');
+                end-ds;
+                dcl-ds BOX qualified inz;
+                  HEAD char(2);
+                  ROW likeds(MODEL) dim(2);
+                  TAIL char(2);
+                end-ds;
+                eval BOX.HEAD='AA';
+                eval BOX.TAIL='ZZ';
+                callp PREPARE(BOX.ROW(2));
+                exfmt SCREEN.ENTRY BOX.ROW(2);
+                if BOX.ROW(2).TARGET='ALICE' and BOX.ROW(2).X_AMOUNT=2.5 and *in06 and BOX.HEAD='AA' and BOX.TAIL='ZZ';
+                  sndpgmmsg 'EXTNAME RPG OK';
+                endif;
+                seton LR;
+                dcl-proc PREPARE;
+                dcl-pi *n;
+                  BUFFER likeds(MODEL) options(*exact);
+                end-pi;
+                eval BUFFER.TARGET='EXTNAME';
+                eval BUFFER.X_AMOUNT=1.25;
+                end-proc;
+                """, null);
             new DisplayFileStore(system.Connections).Create("QGPL", "INDFORM",
                 FixtureController.Dds(keywords: "INDARA CA03(03) CF06(06)") + FixtureController.Dds("ENTRY", record: true) +
                 FixtureController.Dds(row: 1, column: 2, keywords: "'Compiled INDDS display'") +
@@ -613,7 +747,7 @@ else if (args[1] is "lifecycle" or "output-error" or "input-error") controller =
 else controller = new FixtureController(args[0], args[1] == "wide");
 var terminal = new TtySession(controller, args[1] == "input-error" ? new FailingReader() : input, args[1] == "output-error" ? new FailingWriter() : Console.Out);
 try { terminal.Run(); } catch (Exception error) { Console.Error.WriteLine(error.Message); return 3; }
-if (args[1] is "groups" or "work")
+if (args[1] is "groups" or "work" or "sql")
     File.WriteAllText(args[0], JsonSerializer.Serialize(system!.Jobs.List().Select(j => new { Job = j.Key.ToString(), Status = j.Status.ToString(), Completion = j.CompletionCode.ToString() })));
 if (args[1] == "designer")
 {

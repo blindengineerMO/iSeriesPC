@@ -15,7 +15,7 @@ public sealed partial class RpgRuntimeContext
         {
             RpgFieldKind.Character => "*CHAR", RpgFieldKind.Packed => "*DEC", RpgFieldKind.Zoned => "*ZONED",
             RpgFieldKind.Integer => "*INT", RpgFieldKind.Float => "*FLT", RpgFieldKind.Indicator => "*LGL",
-            RpgFieldKind.Date => "*DATE", RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", _ => null
+            RpgFieldKind.Date => "*DATE", RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", RpgFieldKind.ProcedurePointer => "*PROCPTR", RpgFieldKind.DataPointer => "*PTR", _ => null
         };
         var length = field.Kind == RpgFieldKind.Integer ? view.Width : field.Length;
         if (argument.Type is not null && (argument.Type != expected || argument.Length != length || argument.Decimals != field.Decimals) ||

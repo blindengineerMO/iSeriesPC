@@ -97,6 +97,12 @@ public sealed class Migrator
         new SchemaMigration(29, "Job-owned encrypted cryptographic key contexts", new[] { CryptoContextMigration.Sql }),
         new SchemaMigration(30, "Journal receivers, entries and physical-file bindings", new[] { JournalMigration.Sql }),
         new SchemaMigration(31, "Journal commitment cycle identity", new[] { "ALTER TABLE sys_journal_entries ADD COLUMN commit_cycle TEXT; CREATE INDEX ipc_journal_commit_cycle ON sys_journal_entries(commit_cycle,journal_id,sequence);" }),
+        new SchemaMigration(32, "Durable physical record positions and incarnations", new[] { RecordSlotMigration.Sql }, RecordSlotMigration.Apply),
+        new SchemaMigration(33, "Job inquiry reply policies and system reply list", new[] { InquiryReplyMigration.Sql }),
+        new SchemaMigration(34, "Operator-granted physical member capacity", new[] { MemberCapacityMigration.Sql }),
+        new SchemaMigration(35, "Private saved interactive SQL sessions", new[] {
+            "CREATE TABLE sys_sql_sessions(owner TEXT PRIMARY KEY REFERENCES sys_profiles(name) ON UPDATE CASCADE ON DELETE CASCADE,revision TEXT NOT NULL,settings TEXT NOT NULL,statements TEXT NOT NULL,draft TEXT NOT NULL);"
+        }),
     };
 
     public Migrator(SqliteConnectionFactory factory) : this(factory, Migrations) { }

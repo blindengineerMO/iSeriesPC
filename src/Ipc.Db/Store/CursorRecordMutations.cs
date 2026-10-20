@@ -70,6 +70,12 @@ public sealed partial class SqliteFileStore
         data.Prepare(command);
         var before = SqliteCancellation.Run(connection, cancellationToken, command.ExecuteScalar) as string;
         if (!string.Equals(row.Image, before, StringComparison.Ordinal)) throw new CpfException("CPF5026", "The current record changed or is no longer selected; read it again before writing.");
+        if (!data.IsWorkspace && row.Version is not null)
+        {
+            command.CommandText = "SELECT " + RecordSlots.VersionExpression(sourceLibrary, sourceName, member, "$rrn");
+            if (!string.Equals(command.ExecuteScalar() as string, row.Version, StringComparison.Ordinal))
+                throw new CpfException("CPF5026", "The selected record position has been reused or changed; read it again before writing.");
+        }
         var sets = new List<string>();
         if (values is not null)
         {
@@ -81,6 +87,9 @@ public sealed partial class SqliteFileStore
                 sets.Add(Quote(field.Name) + "=" + parameter);
             }
         }
+        if (!data.IsWorkspace)
+            data.AddCascadeLocks(values is null ? LockForeignCascades(connection,transaction,new(sourceLibrary,sourceName),member,new HashSet<long> { row.Number },cancellationToken) :
+                LockForeignParentChecks(connection,transaction,new(sourceLibrary,sourceName),member,new HashSet<long> { row.Number },values.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase),cancellationToken));
         command.CommandText = values is null ? "DELETE FROM " + Quote(table) + " AS p WHERE " + where :
             "UPDATE " + Quote(table) + " AS p SET " + string.Join(',', sets) + " WHERE " + where;
         data.Prepare(command);

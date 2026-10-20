@@ -16,6 +16,20 @@ public sealed partial class RpgDiskFileTests
     private static string OutputFile(string usage = "*OUTPUT", string extra = "") => "**free\ndcl-f DATA keyed usage(" + usage + ") " + extra + ";\n";
     private const string OutputValues = "eval ID=104;\neval KEY=15.25;\neval TEXT='added';\nwrite ROW;\n";
     [Theory]
+    [InlineData(false, 4L)]
+    [InlineData(true, 3L)]
+    public void Declared_WRITE_obeys_the_physical_deleted_record_policy(bool reuse, long expectedNumber)
+    {
+        var changed = new Ipc.Console.Session.CommandService(_system).Execute("CHGPF FILE(QGPL/DATA) REUSEDLT(" + (reuse ? "*YES" : "*NO") + ")");
+        Assert.False(changed.IsError, changed.Message);
+        using (var cursor = _files.OpenSequentialCursor("QGPL", "DATA", "DATA", keyed: false)) Assert.True(cursor.DeleteRecord(3));
+        Compile(OutputFile() + OutputValues + "seton LR;"); using var session = Session();
+        var result = session.Execute("CALL QGPL/APP"); Assert.False(result.IsError, result.Message);
+        using var verify = _files.OpenSequentialCursor("QGPL", "DATA", "DATA", keyed: false);
+        Assert.True(verify.ChainRecord(expectedNumber)); Assert.Equal(104L, verify.Current!["ID"]);
+        Assert.Equal(3, Count); Assert.Empty(Locks());
+    }
+    [Theory]
     [InlineData("*OUTPUT")]
     [InlineData("*INPUT:*OUTPUT")]
     [InlineData("*UPDATE:*OUTPUT")]

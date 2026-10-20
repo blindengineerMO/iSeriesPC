@@ -118,6 +118,12 @@ public sealed class FileDefinition
 
     public int MaximumMembers { get; set; } = 32767;
 
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool ReuseDeletedRecords { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public FileMemberSize? MemberSize { get; set; }
+
     public int RecordLockWaitSeconds { get; set; } = 60;
 
     public List<RecordFormat> Formats { get; set; } = new();
@@ -130,6 +136,15 @@ public sealed class FileDefinition
     public int Ccsid { get; init; } = 37;
 
     public LogicalFileDefinition? Logical { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SqlIndex { get; init; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SqlTableDefinition? SqlTable { get; set; }
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SqlViewDefinition? SqlView { get; set; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -153,6 +168,44 @@ public sealed class FileDefinition
         return definition;
     }
 }
+
+[method: JsonConstructor]
+public sealed record SqlTableDefinition(IReadOnlyList<SqlUniqueConstraint> Constraints,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<SqlCheckConstraint>? Checks = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<SqlForeignConstraint>? ForeignKeys = null)
+{
+    public SqlTableDefinition(IReadOnlyList<SqlUniqueConstraint> constraints) : this(constraints, null) { }
+    public SqlTableDefinition(IReadOnlyList<SqlUniqueConstraint> constraints, IReadOnlyList<SqlCheckConstraint>? checks) : this(constraints, checks, null) { }
+    public void Deconstruct(out IReadOnlyList<SqlUniqueConstraint> constraints) => constraints = Constraints;
+    public void Deconstruct(out IReadOnlyList<SqlUniqueConstraint> constraints, out IReadOnlyList<SqlCheckConstraint>? checks) { constraints = Constraints; checks = Checks; }
+}
+public enum SqlForeignDelete { NoAction, Restrict, Cascade, SetNull, SetDefault }
+public enum SqlForeignUpdate { NoAction, Restrict }
+public sealed record SqlForeignConstraint(string? Name, IReadOnlyList<string> Columns, Ipc.Db.Sql.SqlObjectName Parent,
+    IReadOnlyList<string>? ParentColumns = null, SqlForeignDelete DeleteRule = SqlForeignDelete.NoAction,
+    SqlForeignUpdate UpdateRule = SqlForeignUpdate.NoAction, string? ParentMember = null)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Defined { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Disabled { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CheckPending { get; init; }
+}
+public sealed record SqlUniqueConstraint(string? Name, bool Primary, IReadOnlyList<string> Columns);
+public sealed record SqlCheckConstraint(string? Name, string Condition, int Ccsid = 37,
+    Ipc.Db.Sql.SqlConversionOptions? Conversion = null, string? Column = null, string? Qualifier = null)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Disabled { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CheckPending { get; init; }
+}
+public sealed record SqlViewSource(string Library, string Name, IReadOnlyList<string> Columns);
+public enum SqlViewCheckOption { None, Local, Cascaded }
+public sealed record SqlViewDefinition(string Query, Ipc.Db.Sql.SqlExecutionOptions Options,
+    IReadOnlyList<SqlViewSource> Sources, IReadOnlyList<Ipc.Db.Sql.SqlQueryColumn> Columns,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] SqlViewCheckOption CheckOption = SqlViewCheckOption.None);
 
 public enum FileAttribute
 {

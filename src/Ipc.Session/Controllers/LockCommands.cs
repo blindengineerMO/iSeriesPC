@@ -23,7 +23,7 @@ public sealed partial class CommandService
         {
             var resource = ResolveLockResource(CommandParser.Unquote(call.GetOption("OBJ")), CommandParser.Unquote(call.GetOption("OBJTYPE")));
             var rows = store.Inspect(resource).Select(x => $"{x.Job} {(x.Waiting ? "WAIT" : "HELD")} {LockModeName(x.Mode)} {x.Lifetime} " +
-                (x.Resource.IsRecord ? $"MBR({x.Resource.Member}) RRN({x.Resource.RowNumber})" : "OBJECT")).ToArray();
+                (x.Resource.IsRecord ? x.Lifetime == "StatementRows" ? $"MBR({x.Resource.Member}) selected records" : $"MBR({x.Resource.Member}) RRN({x.Resource.RowNumber})" : "OBJECT")).ToArray();
             return new CommandResult { Listing = rows, Message = $"{rows.Length} lock holder/waiter(s)." };
         }
         var tuples = call.Split("OBJ");

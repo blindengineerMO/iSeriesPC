@@ -68,8 +68,7 @@ The implementation follows IBM's
 [TEMPLATE definition rules](https://www.ibm.com/docs/en/i/7.4.0?topic=template-rules-keyword-definition-specifications)
 and the [IBM i 7.6 RPG Reference](https://www.ibm.com/docs/en/ssw_ibm_i_76/pdf/sc092508.pdf),
 TEMPLATE on printed page 536 and `%DECPOS` on page 690. Independent native-system
-golden acceptance remains open. Nested/EXTNAME/WORKSTN record layouts, WORKSTN file templates and file parameters,
-complete compile-time-data template behavior, broader types and ILE linking
+golden acceptance remains open. Wider external record layouts, complete compile-time-data template behavior, broader types and ILE linking
 remain open. C09 remains partial; checklist 36 complete / 70 open.
 
 Verification (2026-10-18): all 5122 solution tests pass with zero
@@ -85,3 +84,18 @@ layouts, result operands and parameter/return types.
 [DISK file templates and LIKEFILE definitions](rpg-file-definitions.md) now
 provide qualified module-level file copies without opening their templates.
 File parameters and WORKSTN variants remain open.
+
+[WORKSTN record buffers](rpg-workstation-records.md) and
+[WORKSTN file definitions](rpg-workstation-definitions.md) now provide display
+LIKEREC layouts, templates, qualified formats and LIKEFILE copies.
+
+[WORKSTN file parameters](rpg-workstation-parameters.md) extend borrowed file
+interfaces to caller-owned display state and feedback.
+
+[Nested native structures](rpg-nested-structures.md) now support inline and
+LIKEDS/LIKEREC children, shared storage views, forward types and nested record
+buffers. See that contract for supported operations and bounds.
+
+[Externally described structures](rpg-external-structures.md) add EXT/EXTNAME,
+EXTFLD/PREFIX, external defaults, compatible file-variable sharing and checked
+saved descriptions without opening runtime files.

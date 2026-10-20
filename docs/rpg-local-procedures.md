@@ -124,7 +124,13 @@ error Release build, final terminal acceptance, generated inventory, document
 links and whitespace checks pass. RPGPROC runs at 24x80; general display fixtures
 also cover 27x132. Full-suite wall time is 7m30s, not a performance target.
 
-Modules/service programs/cross-unit binding, procedure pointers/foreign calling
+[Modules](rpg-module-binding.md), [services](rpg-service-definitions.md) and
+[native procedure pointers](rpg-procedure-pointers.md) extend local calls.
+Broader ILE binding, wider pointer ABIs/foreign calling
 conventions, additional return layouts and parameter types, further storage and CCSID modes,
 local files, complete cycle/exception/activation semantics and independent native
 golden/scale acceptance remain open. C09 is not closed.
+
+[Static module binding](rpg-module-binding.md) now resolves exported native
+procedures across captured source-bound modules while preserving separate globals
+and existing borrowed argument contracts.

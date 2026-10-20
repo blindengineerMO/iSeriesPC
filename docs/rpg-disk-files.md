@@ -175,9 +175,10 @@ existing input lease. Mixed input/output can read later additions through the
 same bounded input path. SHARE separates input-only, output-only and combined
 modes.
 
-This is the existing sequential-addition allocator: RECNO-directed output,
-initialized/deleted-slot semantics, INZPFM, REUSEDLT and durable RRN generations
-remain open and are not implied by WRITE support. Enlisted output is rejected
+Sequential addition now uses [durable member extents and REUSEDLT](record-slots.md),
+including incarnation checks for ordinary current-record writes. RECNO-directed
+output remains open. [INZPFM/SIZE](member-initialization.md) now provide default/
+deleted initialization and ordinary capacity enforcement. Enlisted output is rejected
 at open and again after late enlistment, pending native commitment flags.
 
 ## Evidence and unfinished native behavior
@@ -198,7 +199,9 @@ and calls a delete-capable program with N input, UNLOCK, prefixed UPDATE and
 keyed DELETE. RPGOUTPUT adds and retrieves a renamed/prefixed record through an
 explicitly opened input/output file, then verifies close status.
 
-RECNO/slot allocation and reuse policy, commitment open flags and isolation,
+RECNO writeback/slot-directed output, native initialization ABI/acceptance and operator extension,
+global pending RRN reservation,
+commitment open flags and isolation,
 Complete native file statuses, H/M/R extenders and general error handling, full native
 fixed calculation layouts, DS/null/multi-format handling, wider ODP negotiation,
 arbitrary SQL/trigger/FK and trusted jobless writer lock coordination, and
@@ -216,3 +219,13 @@ result operands for declared DISK input, update and output.
 [DISK file templates and LIKEFILE definitions](rpg-file-definitions.md) now
 provide qualified module-level file copies without opening their templates.
 File parameters and WORKSTN variants remain open.
+
+Nullable DISK fields, native null indicators and nullable key searches now use
+[ALWNULL modes](rpg-null-values.md). Formal/aggregate null maps remain open.
+
+Named variables and external indicator structures now use
+[named null maps](rpg-null-maps.md). Parameter maps remain open.
+
+[RECNO feedback and relative WRITE](rpg-recno.md) now associate native numeric
+fields with physical positions and fill allocated deleted slots. Native status,
+commitment, multi-member and independent golden acceptance remain open.

@@ -367,3 +367,11 @@ Rollback/pending cycles, interleaved native transactions, save/restore partial
 transaction state, native entry imports/layouts and object-level recovery remain
 unsupported. Complete native commitment control and journal acceptance remain
 open together in C08/C11.
+
+## Initialization record recovery
+
+[Initialization recovery](initialization-recovery.md) now applies/removes local
+F/IZ entries using captured IPCINIT2 schema/default images. It preserves slot
+extents and uses the existing member selection, savepoints, trigger suspension,
+foreign-key validation and end-marker accounting. IPCINIT1 without schema remains
+unsupported. Native IZ binary ABI and independent acceptance remain open.

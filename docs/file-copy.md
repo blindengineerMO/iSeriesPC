@@ -35,6 +35,12 @@ job lock limits also apply; reaching any bound fails the entire copy. Temporary
 state is removed before commit or by rollback. Job commitment integration and
 large-copy lock escalation remain part of the open database work.
 
+Copy addition uses the target physical member's [durable extent and REUSEDLT
+policy](record-slots.md). Replacement resets the extent in the same transaction;
+a failed copy restores both records and allocation metadata. [SIZE capacity](member-initialization.md)
+also applies to target additions; a late capacity failure restores the original
+target records and extent.
+
 Tests cover add/replace/self-copy, late trigger failure and side-effect rollback,
 LF filtering/order, null preservation, mapping/drop validation, malformed values,
 authority, record locks, cancellation, member defaults and command validation.
@@ -42,3 +48,5 @@ Real terminal acceptance copies LF records into a PF member and displays them.
 Remaining CPYF work includes logical targets, multiple formats/members, CRTFILE,
 UPDADD, record/key ranges, include predicates, NOCHK/CVTSRC and the other native
 copy/conversion options. CPYF retains a partial compatibility status.
+
+CPYF now preserves its staged snapshot across [member-capacity inquiry/retry](operator-capacity.md), validates member identities and releases TEMP staging before disk connections return to their pool.

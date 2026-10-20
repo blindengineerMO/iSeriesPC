@@ -15,6 +15,7 @@ public sealed partial class RpgInterpreter
     }
     private sealed class ErrorRoutineBranch(ExecutionFrame target, int index) : Exception
     { internal ExecutionFrame Target { get; } = target; internal int Index { get; } = index; }
+    private sealed class ErrorRoutineReturn(ExecutionFrame target) : Exception { internal ExecutionFrame Target { get; } = target; }
     private readonly Stack<ExecutionFrame> _executionFrames = new();
     private readonly Stack<RpgSubroutine> _errorSubroutineCalls = new();
     private string? _procedure;
@@ -26,12 +27,26 @@ public sealed partial class RpgInterpreter
 
     private bool InvokeErrorSubroutine(RpgRuntimeException error, RpgRuntimeContext context)
     {
+        if (error.FileError && context.InvokeFileParameterError(error)) return true;
         if (error.SuppressErrorSubroutines || !error.ErrorHandlerInvocations.Add(_procedureInvocation)) return false;
         var name = error.FileError ? context.Program.FileErrorHandlers.SingleOrDefault(f => f.File == error.StatusFile)?.Routine : "*PSSR";
         var routine = name is null ? null : context.Program.FindSubroutine(name, _procedure);
         if (routine is null) return false;
         ExecuteSubroutine(routine, context, automatic: true);
         return _programEnded || _returned || context.Indicators[0];
+    }
+    private bool InvokeFileOwnerError(RpgRuntimeContext owner, object invocation, RpgRuntimeException error)
+    {
+        var savedContext = _context; var savedProcedure = _procedure; var savedInvocation = _procedureInvocation; var savedReturned = _returned;
+        try
+        {
+            _context = owner; _procedure = null; _procedureInvocation = invocation; _returned = false;
+            var handled = InvokeErrorSubroutine(error, owner);
+            if (handled && (_returned || _programEnded || owner.Indicators[0]) && _executionFrames.LastOrDefault(f => ReferenceEquals(f.Invocation, invocation)) is { } target)
+                throw new ErrorRoutineReturn(target);
+            return handled;
+        }
+        finally { _context = savedContext; _procedure = savedProcedure; _procedureInvocation = savedInvocation; _returned = savedReturned; }
     }
     private void ExecuteSubroutine(RpgSubroutine routine, RpgRuntimeContext context, bool automatic = false)
     {

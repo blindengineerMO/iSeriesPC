@@ -202,9 +202,10 @@ explicit host arrival mode and job commitment positions. See
   private generated storage; unnamed formals retain P1/P2 where available. `CALLP`
   resolves the callee name against prototypes before falling back to a bare external call, so
   `callp calc(1:2);` with an `EXTPROC('INNER')` prototype calls the host program `INNER`.
-- **Procedure pointers**: `PROCPTR` on a standalone field stores a program name; `CALLP name(args)`
+- **Legacy shorthand procedure pointers**: `PROCPTR` on a standalone field stores a program name; `CALLP name(args)`
   against such a field reads it and calls the named program (so `eval FN = 'REALPGM'; callp FN(5);`
-  invokes `REALPGM`).
+  invokes `REALPGM`). Native `POINTER(*PROC)`/traditional `*` with `PROCPTR`
+  instead use the [opaque procedure-address contract](rpg-procedure-pointers.md).
 - **PLIST writeback**: fixed `CALL 'pgm' PL` (and free `CALLP 'pgm'(PL)`) forwards the `PLIST`'s
   `PARM` fields to the host; when the host returns `RpgExternalCallResult.UpdatedParameters`, each
   entry is written back into the corresponding `PARM` field (by-reference semantics).
@@ -524,7 +525,7 @@ Borrowed API receivers support structures and typed subfields with range-aware
 alias protection. See [the native structure contract](rpg-native-structures.md).
 [Native fixed DS definitions](rpg-fixed-structures.md) now use the same byte
 engine. The historical project D-spec text overlays remain a separate extension.
-Nested/external structures, complete native procedure/cycle forms, full
+External structures, complete native procedure/cycle forms, full
 entry/prototype ABI and extended feedback remain open. Multiple-occurrence structures and indicator banks are described
 in [the occurrence contract](rpg-occurrences.md).
 
@@ -850,7 +851,7 @@ Feedback extents propagate through forward chains, and local template names do
 not change imported global layouts. Existing source diagnostics, depth/storage
 limits and interface restrictions apply. See
 [forward structures](rpg-forward-structures.md) for initialization modes,
-evidence and remaining nested/external/type/ILE work. C09 remains partial.
+evidence and remaining external/type/ILE work. C09 remains partial.
 
 
 ## 46. Data templates without runtime storage
@@ -863,8 +864,8 @@ scalar slots are omitted, including large arrays and procedure-local layouts.
 supported type rules. Runtime data operands and storage-dependent bindings
 reject during compilation, with status-105 guards for direct runtime access.
 Component/count limits still apply; template layouts do not consume runtime
-allocation budgets. WORKSTN file templates/file parameters, complete CTDATA template behavior,
-nested/EXTNAME/WORKSTN record layouts and independent native acceptance remain open.
+allocation budgets. Complete CTDATA template behavior,
+Wider external layouts and independent native acceptance remain open.
 See [data templates](rpg-templates.md). C09 remains partial.
 
 
@@ -878,8 +879,9 @@ or indexed structure-array elements. Input stages conversions before publishing
 bytes, preserves imported scalar fields and leaves receivers unchanged on a
 miss or EOF. Output validates one image before file mutation. Existing locks,
 status handling, native storage/lifetime limits and source locations apply.
-Metadata lookup is lazy, cached and source-bound. File parameters and WORKSTN file copies,
-WORKSTN and EXTNAME/nested/multi-format layouts, null extracts, broader CCSIDs
+Metadata lookup is lazy, cached and source-bound. WORKSTN result buffers are
+described in section 51 and file copies in section 52. Multi-format
+layouts, null extracts, broader CCSIDs
 and independent native acceptance remain open. See
 [record structures](rpg-record-structures.md). C09 remains partial.
 
@@ -894,6 +896,392 @@ cursors and share record ancestry for LIKEREC and exact interfaces. BLOCK(*NO)
 resolves input-parent blocking explicitly. Version-4 saved bindings validate
 families and every recomputed request/layout; ordinary versions remain compatible.
 Free and native fixed F declarations, continuations and standard C result
-operands are covered. File parameters, local files, WORKSTN variants, blocked I/O
+operands are covered. WORKSTN local files/variants, blocked I/O
 and broader native/ILE acceptance remain open. See
 [DISK file definitions](rpg-file-definitions.md). C09 remains partial.
+
+
+## 49. DISK LIKEFILE parameters
+
+Native PR/PI interfaces accept LIKEFILE of an earlier DISK definition with
+known blocking. Local procedures and saved RPG programs borrow caller-owned
+files, sharing cursor, locks, open state and named-file status. Qualified
+parameter records supply LIKEREC layouts and forward return metadata.
+NOPASS/OMIT, parameter-number inquiries and scoped forwarding are supported;
+data storage/options and non-RPG targets reject. Caller INFDS and INFSR remain
+active, including owner-frame RETURN/GOTO after unhandled errors. Version-5
+main-PI bindings preserve parameter flags and verify restored layouts; earlier
+binding versions remain supported. WORKSTN local instances,
+blocked I/O, broader external/member settings and independent
+native/ILE acceptance remain open. See [DISK file parameters](rpg-file-parameters.md).
+C09 remains partial.
+
+
+## 50. Procedure-local DISK files and STATIC storage
+
+Native subprocedures accept local free and fixed DISK definitions. Automatic
+files and locks close on every exit; STATIC files retain their cursor, locks,
+open state and feedback across calls, recursion and LR until explicit close or
+activation cleanup. Cycle globals reset on LR while procedure STATIC files and
+data remain in the activation. Local I/O requires result structures and never
+imports scalar fields. LIKEFILE copies, file parameters, local shadows, LIKEREC,
+forward return metadata and EXACT ancestry retain scope and lifetime checks.
+INFDS must match its file's scope and STATIC setting. Local INFSR handles normal
+I/O and implicit-open errors with RETURN/GOTO to the owning procedure. Native
+DS STATIC, including arrays, uses module storage rather than charging each
+recursive frame. Version-6 saved bindings retain scope/storage flags and verify
+all local definitions; the metadata writer enforces its byte bound while
+serializing. Older versions remain supported. WORKSTN variants, blocked I/O,
+broader external/member options and ILE linking/native acceptance remain open.
+See [procedure-local DISK files](rpg-local-files.md). C09 remains partial.
+
+
+## 51. WORKSTN LIKEREC and result data structures
+
+Global WORKSTN formats supply native LIKEREC layouts with input/output/all
+extracts and zoned display numerics. EXFMT requires ALL; READ/CHAIN/READC accept
+INPUT or ALL; WRITE/UPDATE accept OUTPUT or ALL. Subfile input includes stored
+hidden/output fields. Result structures bypass imported scalar fields, capture
+array-element receivers once and retain native ancestry through LIKEDS, exact
+parameters and returns. Input conversions, RRN and indicators validate before
+host acknowledgement; failed conversions, CA responses, misses and EOF preserve
+receiver bytes. Readonly input rejects before transfer. Saved layouts, renamed
+formats, prefixed fields, job CCSIDs and opaque message keys retain existing
+binding checks. File-name input requires one format. Section 52 adds templates
+and copies. Zero-field extracts and multi-format/null
+layouts remain open, along with broader CCSIDs and independent native acceptance.
+See [WORKSTN record structures](rpg-workstation-records.md). C09 remains partial.
+
+
+## 52. WORKSTN TEMPLATE, LIKEFILE and QUALIFIED definitions
+
+Global WORKSTN templates retain record descriptions without importing fields or
+opening displays. LIKEFILE inherits an earlier parent's device, usage, description,
+prefixes, renames and constant runtime target, and implies qualified record names.
+Runtime copies require result structures and retain independent display handles,
+pending writes, subfile positions and status. USROPN, INDDS, INFDS and INFSR do not
+inherit. Subfile templates omit the RRN from SFILE; copies must bind each subfile
+to their own RRN. SFILE/RENAME arguments remain unqualified. Related copies keep
+EXACT record ancestry through parameters, returns and forward metadata. Version-3
+bindings verify parent graphs, inherited layouts and every reconstructed copy;
+versions 1/2 remain supported. Metadata writing enforces its byte bound, and file
+counts follow inherited devices. Zero-field
+extracts, multi-format/null layouts and broader native/ILE acceptance remain
+open. See [WORKSTN file definitions](rpg-workstation-definitions.md). C09 remains partial.
+
+
+## 53. WORKSTN LIKEFILE parameters
+
+Native PR/PI LIKEFILE parameters borrow caller display files across local and
+saved RPG calls. Qualified parameter records supply LIKEREC buffers and forward
+return layouts. Actual handles, pending writes, subfiles, RRN variables, indicator
+areas and named status stay shared; OPEN/CLOSE use the owner's settings. Caller
+INFDS and INFSR remain active, with RETURN/GOTO to owner frames after unhandled
+errors and normal E/MONITOR precedence. NOPASS/OMIT, forwarding, lifetime checks
+and retained-entry rebinding apply without exposing data storage or native bytes.
+Non-RPG targets reject before side effects. Parameter names can shadow global
+files of either device, and local data shadows preserve global file operands.
+Version-4 main-PI bindings verify flags, families and reconstructed layouts;
+versions 1–3 remain compatible. Multi-format/
+null layouts, zero-field extracts and broader native/ILE acceptance remain open.
+See [WORKSTN file parameters](rpg-workstation-parameters.md). C09 remains partial.
+
+
+## 54. Procedure-local WORKSTN files
+
+Native free and fixed procedures can own automatic or STATIC WORKSTN files.
+Automatic handles close on procedure exit; STATIC handles share pending writes
+across calls and recursion, survive LR, and close with activation/job cleanup.
+Local files import no scalar fields and require data structures for data I/O.
+Local file/format names shadow global files of either device. LIKEREC, templates,
+copies, forward return metadata and borrowed LIKEFILE parameters retain checked
+layouts and actual-owner INDDS/INFDS/INFSR/RRN behavior. INFDS must match the
+file's scope and duration. Version-5 saved WORKSTN bindings verify scoped
+definitions, storage flags, families and runtime targets; versions 1–4 remain
+supported. Source and separate description removal are supported.
+See [procedure-local WORKSTN files](rpg-local-workstations.md) for the contract.
+C09 remains partial; zero-field extracts, multi-format/null layouts,
+blocked I/O, broader external/member/CCSID options, ILE linking and independent
+native golden/scale acceptance remain open.
+
+
+## 55. Nested native data structures
+
+Qualified structures support inline DCL-DS, LIKEDS and LIKEREC children, nested
+arrays, shared byte storage and POS/OVERLAY strides. Initialization, CLEAR,
+layout inquiries, nested key sorting/lookup, reference/CONST/VALUE parameters,
+EXACT ancestry, detached returns, RTNPARM and forward types retain their existing
+contracts recursively. DISK/WORKSTN result buffers can select nested record
+children. %KDS accepts nested layouts and indexed native structure elements,
+capturing the index once. Source removal and protocol-2 process writeback are
+supported. Limits are 64 nesting levels, 1024 recursive subfield definitions and
+the existing byte/storage bounds. See [nested structures](rpg-nested-structures.md).
+C09 stays partial; multi-format/null external layouts, zero-field record extracts,
+broader external options, blocked I/O, ILE linking and independent native golden/
+scale acceptance remain open.
+
+
+## 56. EXT/EXTNAME data structures
+
+Free and fixed EXT/EXTNAME definitions obtain native fields without opening a
+file. First/explicit format selection, INPUT/OUTPUT/ALL/KEY extracts, EXTFLD,
+PREFIX, DIM, additional subfields and external defaults retain native layouts.
+Qualified/unqualified, template, local STATIC, nested and aggregate interface
+uses are supported. Compatible unqualified file variables share complete fields
+while divided arrays retain their expression types. Explicit EXTNAME result
+operands require a compatible explicit extract. Version-1 external description
+snapshots survive source/description removal, validate every binding, enforce
+256 requests/1 MiB and participate in activation fingerprints. Existing file
+binding versions remain unchanged. See [external structures](rpg-external-structures.md).
+Named/aggregate null maps, varying/opaque layouts, wider external/CCSID settings, multi-format file I/O,
+blocked I/O, ILE linking and independent native golden/scale acceptance keep C09
+partial.
+
+## 57. Native null values
+
+Global CTL-OPT/H ALWNULL modes now accept nullable database descriptions. *NO
+rejects null input with file status 1299 before publication; *INPUTONLY supplies
+live DDS/system defaults and rejects nullable output and keys. *USRCTL supplies
+separate native scalar/subfield indicators, argument-free NULLIND and indexed
+%NULLIND queries/assignments. LIKEDS, nested arrays, occurrences, globals and
+procedure automatic/STATIC lifetimes retain their storage rules. Ordinary data
+operations leave flags unchanged; normal parameters do not implicitly borrow maps.
+Implicit/result-buffer record input and output and scalar/list/KDS/KFLD keys
+apply indicators while validating data. Saved nullable DISK and EXTNAME metadata
+use versions 7 and 2, retaining nonnullable compatibility. See
+[null values](rpg-null-values.md). Named associations, null-map extracts/ABI,
+aggregate indicators, varying/opaque layouts, multi-format I/O, blocked I/O,
+ILE linking and independent native golden/scale acceptance remain open. C09
+stays partial; checklist 36 complete / 70 open remains unchanged.
+
+## 58. Named null indicators and external maps
+
+NULLIND(name) associates variables and subfields with matching IND storage.
+LIKEREC/EXTNAME accept NULL with INPUT/OUTPUT/ALL/KEY extraction, preserve external
+field identities through renames/prefixes, and reject maps as I/O receivers.
+Named maps participate in input, output and keys; nested arrays, occurrences and
+STATIC lifetimes retain their selected storage. LIKEDS inherits internal
+subfield relationships without inheriting an outer map name. Scope, shape,
+nonnullable targets, ownership and CONST checks protect associations. Saved
+physical descriptions reconstruct roles without live description lookup; binding
+versions stay unchanged. See [named null maps](rpg-null-maps.md). Formal-parameter
+associations, OPTIONS(*NULLIND), aggregate indicators and the remaining C09
+external/ABI/native acceptance work stay open; checklist 36 complete / 70 open.
+
+## 59. Native null-map parameters
+
+OPTIONS(*NULLIND) shares live automatic/named flags through exact variable
+references, nested/array forwarding, CONST and omission rules. Scalar formals
+become null-capable. Named NULLIND parameters bind another nonnullable IND or
+external *NULL map in the same signature; PR/PI association positions must agree.
+Runtime maps are bounded and scoped, validate entry capabilities, detach with
+native data and rebind across retained calls. Data/map writes participate in
+record I/O with readonly preflight. Strided subfields preserve actual spans and
+selected scalar bounds. Registered process protocols 1/2 reject unsupported map
+sidebands before process execution. See [null-map parameters](rpg-null-parameters.md).
+Process sidebands, aggregate indicators and the remaining C09 ABI/external/native
+acceptance work stay open; checklist remains 36 complete / 70 open.
+
+
+## 60. Process null-map sidebands
+
+Registered process protocol 3 carries data-aligned nullable/value/readonly maps
+alongside the existing scalar/buffer representation. All returned data and maps
+validate before session publication, including CONST, nonnullable, omission,
+shape, duplicate/unknown property and capability checks. Known data/map aliases
+reject before startup; native synchronous aliases retain their shared behavior.
+Existing executable pinning, authority, process cleanup, timeout, cancellation
+and stream/request limits remain in force. Protocols 1/2 reject mapped calls.
+See [process null maps](rpg-process-null-maps.md). Alias-capable process protocols,
+foreign-language native ABI and broader C09 acceptance remain open. Checklist
+36 complete / 70 open remains unchanged.
+
+## 61. Corresponding-field assignment
+
+EVAL-CORR supports native structure variables in free source and fixed extended
+factor 2, with free H half adjustment. Matching local names and EVAL-compatible
+types select scalar/array leaves in source declaration order; nested layouts
+recurse, current occurrences remain selected and unequal array tails remain
+unchanged. Related identical layouts capture the whole source image before
+writing. Other file extracts/prefixes use field correspondence. Null flags copy,
+clear or are ignored according to each selected leaf's capabilities; named and
+borrowed maps remain live, with readonly preflight. Saved nullable record output,
+source locations, numeric monitor statuses and aliases have acceptance coverage.
+See [corresponding assignments](rpg-corresponding-assignment.md). Native fixed
+extenders, M/R precision/procedure expressions, aggregate indicators and broader
+C09/native acceptance remain open; checklist stays 36 complete / 70 open.
+
+## 62. Right-adjusted native assignment
+
+EVALR supports fixed-length native character fields, structures, arrays, SUBARR
+and writable SUBST in free source and fixed extended factor 2. Source blanks and
+raw bytes are preserved, with left padding/truncation in the native CCSID. Source
+snapshots protect aliases; scalar expressions broadcast once and array tails stay
+unchanged. Substring selectors are evaluated once, require integer positions and
+check actual VARSIZE bounds before writeback. Shared native index type checks use
+static metadata to avoid repeating indexed subscript procedures. Complete array
+images validate before publication. Null flags are unchanged, including borrowed
+maps, nullable record output and saved retained-program calls. See
+[right-adjusted assignment](rpg-right-assignment.md). M/R precision, varying,
+graphic/UCS-2, broader CHARCOUNT/CCSID and the remaining C09/native acceptance
+contracts remain open; checklist stays 36 complete / 70 open.
+
+## 63. Source-bound modules and static programs
+
+CRTRPGMOD creates RPGLE module snapshots with saved source maps and file/external
+metadata. NOMAIN supports global declarations and exported subprocedures;
+ALWNULL/NOMAIN controls may be combined or separate without repetition. CRTPGM
+binds an explicit module list and ENTMOD, checks imports/exports and native
+interfaces, and embeds captured module images. Native CALLP/prototyped CALLB and
+functions use the owning module's isolated globals with existing borrowed data,
+null maps and file contracts. Return/LR/reclaim and failure cleanup preserve or
+release module resources at their owning activation boundaries. Source/module/
+compile-time-description deletion, live authority, signing, malformed images,
+UTF-8 quotas, current library and QTEMP isolation have acceptance coverage.
+DSPMOD displays saved imports/exports. See [module binding](rpg-module-binding.md)
+and [interoperability](interop.md). Module-embedded directory references,
+update/rebind, wider ABI and independent native acceptance remain open. C09 stays partial; checklist remains 36 complete / 70 open.
+
+
+## 64. Source-bound service definitions
+
+CRTSRVPGM captures explicit module lists without a main entry, checks internal
+native imports/interfaces, and saves public export levels. EXPORT(*ALL) uses
+module/procedure order; EXPORT(*SRCFILE), the default, reads QSRVSRC or explicit
+member/UTF-8 stream binder source. STRPGMEXP/EXPORT/ENDPGMEXP support one CURRENT
+and append-only PRV levels, case-sensitive quoted exports, EBCDIC literal or hex
+signatures, and deterministic emulator-generated signatures. Unsupported options,
+private/missing/duplicate symbols and invalid interfaces reject before creation.
+DSPSRVPGM verifies signing, restores captured modules, rebuilds export definitions
+and displays signatures/exports without running module code. Saved images retain
+source maps and file/external descriptions after original sources/modules are
+removed. Current-library lookup, QTEMP isolation, authority and image quotas
+retain the static-module contracts. See [service definitions](rpg-service-definitions.md)
+for exact limits and signature encoding. ACTGRP records *CALLER/named policy.
+Dynamic execution is described below; C09 remains partial.
+
+
+## 65. Dynamic service binding and activation
+
+CRTPGM and CRTBNDRPG accept explicit BNDSRVPGM lists. Static module procedures
+resolve first; ordered service references resolve remaining imports. Binding
+checks native return/parameter interfaces and excludes unused services. Version 2
+RPGBOUND programs capture service identities, signatures and ordered exports,
+retaining version 1 static-program support. Before main side effects, services
+are checked for use/signing, matching signature levels, export positions and
+native interfaces. A compatible PRV level can satisfy an older program.
+Service module storage is owned by its activation group, independently of caller
+program storage. *CALLER shares within the caller group; named groups share across
+caller groups. Global/file/STATIC state survives caller LR, failure and reclaim.
+Reentrant calls use the active service; automatic frames and references unwind
+without discarding completed global changes. Caller arguments are captured before
+entering the service group. Active groups cannot be reclaimed. Service reclaim,
+transient caller-group exit and job end close owned resources. Cached bindings
+refresh after service reclaim; activated code/policy remains pinned until then.
+Authority, signing/trust and runtime-file checks remain live. Services keep the
+calling program's effective identity. Trusted jobless calls retain service state
+only within one outer call. See [service programs](rpg-service-definitions.md).
+Module-embedded directory references, update/rebind, deferred activation,
+wider ABI and independent native acceptance remain open. C09 stays partial.
+
+
+## 66. Binding directories and service dependencies
+
+CRTBNDDIR/DLTBNDDIR/ADDBNDDIRE/RMVBNDDIRE/DSPBNDDIR manage ordered strict object
+payloads. Add/remove batches use transactional validation with native data-authority
+requirements, positions, generic removals, current-library defaults and QTEMP
+isolation. CRTPGM, CRTBNDRPG and CRTSRVPGM use BNDDIR for provider discovery, after
+explicit bindings. Only providers satisfying unresolved native imports are
+selected; newly introduced imports can revisit earlier entries. Missing providers
+are diagnostic, duplicate resolved identities are ignored and unused trailing
+providers are not opened. Native imports cannot be hidden by legacy semantic
+procedure names. Captured modules and dynamic service references survive directory
+removal. Services accept explicit or directory-discovered dependencies, saving a
+version 2 RPGSERVICE envelope while retaining version 1 support. Before main
+side effects, graph preflight checks signatures/exports/interfaces and live
+use/signing in each parent service's group. Cycles terminate without initializing
+globals. Child reclaim refreshes weak bindings; parent/child data and cursor
+ownership, borrowed structures and null maps remain independent of caller storage.
+See [binding directories](rpg-binding-directories.md) for limits and remaining
+module-embedded reference, deferred activation, update/rebind, data export and
+native acceptance scope. C09 remains partial; checklist counts are unchanged.
+
+
+## 67. Source reference directories and program updates
+
+BNDDIR control literals are captured with module source, including free multiline
+controls, preprocessed includes and supported traditional H origins. They are
+resolved at binding after explicit directories as imports require, including
+references introduced by selected modules. CRTBNDRPG automatically binds when
+source controls supply directories. Saved images do not reopen directories at
+runtime. UPDPGM and UPDSRVPGM replace captured modules under RPLLIB selection,
+preserve recorded module origin and rebind live service signatures. MODULE(*NONE)
+performs rebinding without module replacement. EXPORT(*CURRENT) preserves saved
+service export levels/signatures; *ALL and binder source can publish a new public
+interface. Complete artifact restoration precedes an owner-authorized compare-and-
+update transaction. Concurrent changes, cancellation and validation failures leave
+the original object intact; success preserves metadata and clears stale signing.
+ALWUPD(*NO) forbids updates. Existing activations retain old code, entry interfaces,
+module data and cursors until reclaim; new activations use the new version.
+See [program updates](rpg-program-updates.md) for the exact partial contract and
+remaining activation/library/deferred/listing/ABI scope. C09 stays partial.
+
+## 68. Deferred service procedure activation
+
+BNDSRVPGM tuples and binding-directory service entries select *IMMED or *DEFER.
+Immediate closures preflight before main; deferred imports locate and validate
+providers when called, including their immediate dependencies before procedure
+effects. Parent activation-group ownership, cyclic graphs, shared globals/files,
+live authority/signing and retained versions continue to apply. Update tuples
+support *SAME and explicit mode changes. Version 3 RPGBOUND/RPGSERVICE images
+capture deferred references; immediate-only images retain the version 1/2 shape.
+See [deferred activation](rpg-deferred-activation.md) for timing, limits, tests and
+the remaining data/pointer/library/ABI/native acceptance scope. C09 stays partial.
+
+## 69. Activation-group and service-library update policies
+
+UPDPGM/UPDSRVPGM can change named activation groups and relocate existing service
+references to a named library or *LIBL when creation allowed ALWLIBUPD(*YES).
+Missing preferred providers preserve existing references; denied or invalid ones
+reject the complete update. Dynamic references resolve per caller image and pin
+the actual connection, sharing service storage by qualified object and group.
+Deferred lookup waits for first use. Version 4 captures runtime lookup metadata;
+explicit references retain prior formats. Source and group policy publish in one
+compare-and-update transaction. Old groups/connections retain captured versions
+until reclaim. See [update policies](rpg-update-policies.md) for the exact partial
+contract, verification and remaining native scope.
+
+## 70. Module and service data imports and exports
+
+Global IMPORT/EXPORT declarations link supported standalone and structured native
+storage across static modules and service programs, including fixed arrays,
+nested layouts, occurrences and null maps. Exporter initialization runs at
+activation; exported data survives LR and abnormal returns. Data references force
+service activation checks even with *DEFER. Public data kinds are recorded in
+version 5 images and validated with signatures, positions and layouts. Provider
+storage, authority, reclaim, retained updates and typed argument aliases remain
+live. See [data binding](rpg-data-binding.md) for syntax, ownership, validation,
+verification and remaining pointer/binder/ABI/native acceptance scope. C09 stays
+partial.
+
+## 71. Native procedure pointers
+
+`POINTER(*PROC)`, traditional `*`/`PROCPTR`, `%PADDR` and pointer-based `EXTPROC`
+use opaque 16-byte addresses. Native scalar/array/structure parameters and returns
+carry callbacks through the existing ABI. Address imports participate in module,
+service and directory binding and force provider activation even with `*DEFER`.
+Callbacks retain origin code/storage and re-enter their original group; reclaim
+invalidates addresses instead of rebinding them. See the
+[procedure pointer contract](rpg-procedure-pointers.md) for alignment, validation,
+lifetime, limits and remaining data-pointer/foreign-ABI scope. C09 stays partial.
+
+## 72. Basing pointers and native heap storage
+
+`POINTER`, traditional `*`, `BASED`, `%ADDR`, pointer byte arithmetic, `%ALLOC`,
+`%REALLOC` and fixed `ALLOC`/`REALLOC` plus fixed/free `DEALLOC` share guarded
+native storage. Fields, array elements, structures, records and native parameters
+retain alias identity. Global/STATIC/heap/automatic lifetimes follow their owners;
+reclaim/free invalidates addresses. Size/element metadata does not dereference
+null based variables. See the [data pointer contract](rpg-data-pointers.md) for
+initialization, alignment, bounds, status codes, quotas, security and remaining
+cross-region/teraspace/null-map/foreign-ABI acceptance scope. C09 stays partial.

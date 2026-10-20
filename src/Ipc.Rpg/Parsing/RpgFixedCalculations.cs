@@ -138,13 +138,19 @@ public static partial class RpgCompiler
                     Require(factor1 is null && factor2 is not null && result is null, "EXSR/GOTO requires only factor 2."); NoIndicators(); statement.Factor1 = factor2; statement.Factor2 = null; break;
                 case RpgOpcode.EndSr:
                     Require(factor1 is null && result is null && condition == "   ", "ENDSR permits only its optional return point in factor 2."); NoIndicators(); break;
+                case RpgOpcode.Alloc: case RpgOpcode.Realloc:
+                    Require(factor1 is null && factor2 is not null && result is not null && slots[0] == "  " && slots[2] == "  ", "ALLOC/REALLOC require a size in factor 2 and result pointer.");
+                    Require(!error || statement.Indicator2 == 0, "E cannot be combined with an error indicator."); break;
+                case RpgOpcode.Dealloc:
+                    Require(factor1 is null && factor2 is null && result is not null && slots[0] == "  " && slots[2] == "  ", "DEALLOC requires only a result pointer and optional ER indicator.");
+                    Require(!error || statement.Indicator2 == 0, "E cannot be combined with an error indicator."); break;
                 case RpgOpcode.Clear:
                     Require(factor1 is null && factor2?.ToUpperInvariant() is null or "*ALL" && result is not null, "CLEAR requires a result and optional *ALL in factor 2."); NoIndicators(); statement.ClearAllOccurrences = factor2?.ToUpperInvariant() == "*ALL"; break;
                 case RpgOpcode.Dsply:
                     Require(factor1 is not null && factor2 is null && result is null, "Native DSPLY currently supports a display expression without queue/reply operands."); NoIndicators(); break;
                 case RpgOpcode.Open: case RpgOpcode.Close: case RpgOpcode.Unlock:
                 case RpgOpcode.Read: case RpgOpcode.ReadP: case RpgOpcode.ReadC: case RpgOpcode.Write: case RpgOpcode.Update: case RpgOpcode.Delete: case RpgOpcode.ExFmt:
-                    Require(factor1 is null && factor2 is not null && (result is null || RecordIo(mapped)), "Native file operation requires factor 2 and a supported result data structure.");
+                    Require(factor1 is null && factor2 is not null && (result is null || RecordIo(mapped) || mapped is RpgOpcode.ExFmt or RpgOpcode.ReadC), "Native file operation requires factor 2 and a supported result data structure.");
                     ValidateNativeFileIndicators(mapped, slots, error, line); break;
                 case RpgOpcode.Chain: case RpgOpcode.SetLl: case RpgOpcode.SetGt: case RpgOpcode.Reade: case RpgOpcode.ReadPe:
                     Require(factor2 is not null && (result is null || RecordIo(mapped)), "Native keyed input requires factor 2 and a supported result data structure."); ValidateNativeFileIndicators(mapped, slots, error, line); break;
@@ -232,6 +238,7 @@ public static partial class RpgCompiler
 
     private static RpgOpcode MapNativeOpcode(string opcode) => opcode switch
     {
+        "ALLOC" => RpgOpcode.Alloc, "REALLOC" => RpgOpcode.Realloc, "DEALLOC" => RpgOpcode.Dealloc,
         "ADD" => RpgOpcode.Add, "SUB" => RpgOpcode.Subtract, "MULT" => RpgOpcode.Multiply, "DIV" => RpgOpcode.Divide,
         "Z-ADD" => RpgOpcode.ZAdd, "Z-SUB" => RpgOpcode.ZSub, "XFOOT" => RpgOpcode.XFoot, "COMP" => RpgOpcode.Comp, "LOOKUP" => RpgOpcode.Lookup,
         "SETON" => RpgOpcode.SetOn, "SETOFF" => RpgOpcode.SetOff, "CLEAR" => RpgOpcode.Clear,
@@ -248,6 +255,8 @@ public static partial class RpgCompiler
     };
     private static RpgOpcode MapNativeExtendedOpcode(string opcode) => opcode switch
     {
+        "EVALR" => RpgOpcode.EvalR,
+        "EVAL-CORR" => RpgOpcode.EvalCorr,
         "EVAL" => RpgOpcode.Eval, "IF" => RpgOpcode.If, "WHEN" => RpgOpcode.When, "DOW" => RpgOpcode.DoW,
         "DOU" => RpgOpcode.DoU, "FOR" => RpgOpcode.For, "CALLP" => RpgOpcode.CallP, "ON-ERROR" => RpgOpcode.OnError,
         "RETURN" => RpgOpcode.Return, "SORTA" => RpgOpcode.SortA, "SORTA(A)" => RpgOpcode.SortA, "SORTA(D)" => RpgOpcode.SortA,

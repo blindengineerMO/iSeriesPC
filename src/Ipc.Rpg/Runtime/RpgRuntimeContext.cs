@@ -14,11 +14,33 @@ public sealed partial class RpgRuntimeContext
     private readonly RpgDiskState _diskState = new();
     internal RpgWorkstationState WorkstationState => GlobalContext?.WorkstationState ?? _workstationState;
     internal RpgDiskState DiskState => GlobalContext?.DiskState ?? _diskState;
-    public void CloseDiskFiles()
-    { try { DiskState.Dispose(); } finally { foreach (var file in _program.DiskFiles.Where(f => !f.Request.IsTemplate)) RefreshFeedbackFlags(file.Request.Name); } }
-    public void CloseWorkstations()
-    { try { WorkstationState.Dispose(); } finally { foreach (var file in _program.Workstations) RefreshFeedbackFlags(file.Request.Name); } }
-    private sealed record FileStatus(bool Found, bool EndOfFile, bool Error, bool Equal = false);
+    public void CloseDiskFiles() => CloseDiskFiles(includeProcedureStatic: true);
+    internal void CloseDiskFiles(bool includeProcedureStatic)
+    {
+        List<Exception>? errors = null;
+        if (includeProcedureStatic) foreach (var module in _boundModuleContexts.Values)
+            try { module.CloseDiskFiles(); } catch (Exception error) { (errors ??= []).Add(error); }
+        try { DiskState.Dispose(); } catch (Exception error) { (errors ??= []).Add(error); }
+        if (includeProcedureStatic)
+            foreach (var state in _procedureFiles.Values)
+                try { state.Dispose(); } catch (Exception error) { (errors ??= []).Add(error); }
+        foreach (var file in _program.DiskFiles.Where(f => !f.Request.IsTemplate)) RefreshFeedbackFlags(file.Request.Name);
+        if (errors is not null) throw new AggregateException("Could not close RPG files.", errors);
+    }
+    public void CloseWorkstations() => CloseWorkstations(includeProcedureStatic: true);
+    internal void CloseWorkstations(bool includeProcedureStatic)
+    {
+        List<Exception>? errors = null;
+        if (includeProcedureStatic) foreach (var module in _boundModuleContexts.Values)
+            try { module.CloseWorkstations(); } catch (Exception error) { (errors ??= []).Add(error); }
+        try { WorkstationState.Dispose(); } catch (Exception error) { (errors ??= []).Add(error); }
+        if (includeProcedureStatic)
+            foreach (var state in _procedureWorkstations.Values)
+                try { state.Dispose(); } catch (Exception error) { (errors ??= []).Add(error); }
+        foreach (var file in _program.Workstations) RefreshFeedbackFlags(file.Request.Name);
+        if (errors is not null) throw new AggregateException("Could not close RPG workstations.", errors);
+    }
+    internal sealed record FileStatus(bool Found, bool EndOfFile, bool Error, bool Equal = false);
     private readonly Dictionary<string, FileStatus> _fileStatus = new(StringComparer.OrdinalIgnoreCase);
     private FileStatus _lastFileStatus = new(false, false, false);
     private readonly Dictionary<string, int> _numericFileStatus = new(StringComparer.OrdinalIgnoreCase);
@@ -27,27 +49,34 @@ public sealed partial class RpgRuntimeContext
     internal void BeginErrorOperation(string? file)
     {
         _error = false; _numericStatus = 0;
-        if (file is not null) { _numericFileStatus[file] = 0; RecordFileFeedback(file, 0); }
+        if (file is not null) { NumericStatusFor(file)[file] = 0; RecordFileFeedback(file, 0); }
     }
     internal void RecordStatus(int status, string? file = null, bool errorExtender = false)
     {
         _numericStatus = status;
-        if (file is not null) { _numericFileStatus[file] = status; RecordFileFeedback(file, status); }
+        if (file is not null && FileReference(file) is { } reference)
+        {
+            if (_feedbackStatement is not null) reference.Owner.SetFeedbackOperation(_feedbackStatement, _feedbackRoutine);
+            reference.Owner.RecordStatus(status, reference.Name, errorExtender);
+        }
+        if (file is not null) { NumericStatusFor(file)[file] = status; RecordFileFeedback(file, status); }
         if (errorExtender && status >= 100) _error = true;
     }
     internal void SetFileStatus(string file, bool? found = null, bool? eof = null, bool error = false, bool clearFileEof = false)
     {
-        var previous = _fileStatus.GetValueOrDefault(file, new(false, false, false));
+        if (FileReference(file) is { } reference) reference.Owner.SetFileStatus(reference.Name, found, eof, error, clearFileEof);
+        var previous = StatusFor(file).GetValueOrDefault(file, new(false, false, false));
         _lastFileStatus = new(found ?? _lastFileStatus.Found, eof ?? _lastFileStatus.EndOfFile, error, _lastFileStatus.Equal);
-        _fileStatus[file] = new(found ?? previous.Found, clearFileEof ? false : eof ?? previous.EndOfFile, error, previous.Equal);
+        StatusFor(file)[file] = new(found ?? previous.Found, clearFileEof ? false : eof ?? previous.EndOfFile, error, previous.Equal);
         RefreshFeedbackFlags(file);
     }
     internal void SetEqualStatus(string file, bool equal)
     {
+        if (FileReference(file) is { } reference) reference.Owner.SetEqualStatus(reference.Name, equal);
         _lastFileStatus = _lastFileStatus with { Equal = equal };
-        _fileStatus[file] = _fileStatus.GetValueOrDefault(file, new(false, false, false)) with { Equal = equal };
+        StatusFor(file)[file] = StatusFor(file).GetValueOrDefault(file, new(false, false, false)) with { Equal = equal };
     }
-    internal void RebindHost(RpgHost host) => _host = host;
+    internal void RebindHost(RpgHost host) { _host = host; foreach (var module in _boundModuleContexts.Values) module.RebindHost(host); }
     private readonly Dictionary<string, object?> _slots = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Ipc.Core.Work.ProgramArgument> _references = new(StringComparer.OrdinalIgnoreCase);
     internal Ipc.Core.Work.ProgramArgument? Reference(string name) => IsGlobalName(name) ? GlobalContext!.Reference(name) : _references.GetValueOrDefault(name);
@@ -62,6 +91,12 @@ public sealed partial class RpgRuntimeContext
     internal void BindReference(string name, Ipc.Core.Work.ProgramArgument argument)
     {
         var field = _program.FindField(name) ?? throw new RpgRuntimeException($"Unknown entry field '{name}'.");
+        if (field.NullMapParameter)
+        {
+            if (field.NativeArray || field.ParameterStructure is not null) BindNativeAggregate(field, argument); else BindNativeScalar(field, argument);
+            BindNullParameter(field, argument); return;
+        }
+        if (field.IsFileParameter) { BindFileParameter(field, argument); return; }
         if (field.VariableSizeParameter) { BindVariableParameter(field, argument); return; }
         if (field.NativeArray || field.ParameterStructure is not null) { BindNativeAggregate(field, argument); return; }
         if (field.NativeScalar) { BindNativeScalar(field, argument); return; }
@@ -82,6 +117,7 @@ public sealed partial class RpgRuntimeContext
     }
     internal void ReleaseReferences()
     {
+        var nullMaps = _borrowedNullMaps.Select(pair => (pair.Key, pair.Value.Root, Map: pair.Value.Map.Snapshot())).ToArray();
         try
         {
             foreach (var reference in _references)
@@ -98,7 +134,16 @@ public sealed partial class RpgRuntimeContext
                     ? buffer.ToText() : value;
             }
         }
-        finally { _references.Clear(); _nativeScalarBindings.Clear(); _nativeEntryOwners.Clear(); }
+        finally
+        {
+            ReleaseAutomaticAddresses();
+            _fileReferences.Clear(); _references.Clear(); _nativeScalarBindings.Clear(); _nativeEntryOwners.Clear(); _borrowedNullMaps.Clear();
+            foreach (var saved in nullMaps)
+            {
+                var name = saved.Root.Element?.Name ?? saved.Root.Structure.Name;
+                if (TryNativeReference(new RpgFieldRef(name), out var root)) _borrowedNullMaps.Add(saved.Key, (root, saved.Map));
+            }
+        }
     }
     private readonly Dictionary<string, object?[]> _arrays = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _dsStorage = new(StringComparer.OrdinalIgnoreCase);
@@ -108,16 +153,19 @@ public sealed partial class RpgRuntimeContext
     public bool IsCancelled { get; internal set; }
 
     public RpgRuntimeContext(RpgProgram program, RpgHost host) : this(program, host, null) { }
-    internal RpgRuntimeContext(RpgProgram program, RpgHost host, RpgRuntimeContext? globals)
+    internal RpgRuntimeContext(RpgProgram program, RpgHost host, RpgRuntimeContext? globals, ExportStorage? exports = null)
     {
+        _exportStorage = exports ?? globals?._exportStorage ?? new();
+        _exportStorage.ProcedureRoot ??= this;
         GlobalContext = globals;
         _program = program;
-        _externalCharacters = program.Workstations.SelectMany(w => w.Layout.Records).SelectMany(r => r.Fields)
+        _externalCharacters = program.Workstations.Where(w => !w.Request.IsTemplate && !w.Request.Qualified && w.Request.Procedure is null).SelectMany(w => w.Layout.Records).SelectMany(r => r.Fields)
             .Where(f => f.Kind == RpgFieldKind.Character && !f.Opaque).Select(f => f.Name)
-            .Concat(program.DiskFiles.Where(f => !f.Request.IsTemplate && !f.Request.Qualified).SelectMany(f => f.Layout.Fields).Where(f => f.Kind == RpgFieldKind.Character).Select(f => f.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .Concat(program.DiskFiles.Where(f => !f.Request.IsTemplate && !f.Request.Qualified && f.Request.Procedure is null).SelectMany(f => f.Layout.Fields).Where(f => f.Kind == RpgFieldKind.Character).Select(f => f.Name)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         _host = host;
         NativeCcsid = host.Ccsid();
-        Initialize();
+        try { Initialize(); }
+        catch { _exportStorage.DataPointers?.ReleaseRegistration(this); throw; }
     }
 
     public RpgProgram Program => _program;
@@ -130,7 +178,7 @@ public sealed partial class RpgRuntimeContext
     {
         foreach (var field in _program.Fields)
         {
-            if (field.IsTemplate || _program.GlobalFields.Contains(field)) continue;
+            if (field.IsTemplate || field.IsFileParameter || _program.GlobalFields.Contains(field)) continue;
             if (field.NativeArray || field.NativeScalar || field.IsTable || field.ParameterStructure is not null) continue;
             if (field.IsArray)
             {
@@ -228,6 +276,7 @@ public sealed partial class RpgRuntimeContext
 
     public object? ReadValue(string name)
     {
+        if (_program.FindField(name)?.IsFileParameter == true) throw NativeFailure(105, "A file reference has no data value.");
         if (IsGlobalName(name)) return GlobalContext!.ReadValue(name);
         if (TryNativeReference(new RpgFieldRef(name), out var native)) return ReadNative(native);
         var element = _program.FindDsElement(name);
@@ -256,6 +305,7 @@ public sealed partial class RpgRuntimeContext
 
     private void WriteValue(string name, object? value, bool literalCharacter)
     {
+        if (_program.FindField(name)?.IsFileParameter == true) throw NativeFailure(105, "A file reference has no data storage.");
         if (IsGlobalName(name)) { GlobalContext!.WriteValue(name, value, literalCharacter); return; }
         if (TryNativeReference(new RpgFieldRef(name), out var native)) { WriteNative(native, value); return; }
         var element = _program.FindDsElement(name);
@@ -287,12 +337,12 @@ public sealed partial class RpgRuntimeContext
     internal object? NormalizeFileValue(string name, object? value)
     {
         if (IsGlobalName(name)) return GlobalContext!.NormalizeFileValue(name, value);
+        if (TryNativeReference(new RpgFieldRef(name), out var nullTarget)) PrepareNullIndicatorWrite(nullTarget);
+        if (TryExternalFileView(name, out var external)) return NormalizeExternalFileValue(external, value);
         var field = _program.FindField(name) ?? throw new RpgRuntimeException("Missing external field: " + name);
         if (field.NativeScalar && TryNativeReference(new RpgFieldRef(name), out var native))
         {
-            var input = field.Kind == RpgFieldKind.Character && !field.OpaqueBytes ? Coerce(field, value) : value;
-            var image = NormalizeNative(native, input);
-            return ReadNative(native with { Bytes = image, Offset = 0, Binding = null });
+            return NormalizeExternalFileValue(native, value);
         }
         var converted = Coerce(field, value);
         if (_references.TryGetValue(name, out var reference)) _ = reference.Normalize(converted);
@@ -396,6 +446,8 @@ public sealed partial class RpgRuntimeContext
 
     public static object ClearValueFor(RpgFieldKind kind) => kind switch
     {
+        RpgFieldKind.ProcedurePointer => RpgProcedureAddress.Null,
+        RpgFieldKind.DataPointer => RpgDataAddress.Null,
         RpgFieldKind.Zoned or RpgFieldKind.Packed or RpgFieldKind.Decimal or RpgFieldKind.Binary or RpgFieldKind.Integer => 0m,
         RpgFieldKind.Float => 0d,
         RpgFieldKind.Date or RpgFieldKind.Timestamp => RpgValues.ToDate(null),
@@ -653,15 +705,22 @@ public sealed partial class RpgRuntimeContext
 
     public object? EvalBuiltin(string name, IReadOnlyList<RpgExpr> arguments)
     {
+        if (name.Equals("ADDR", StringComparison.OrdinalIgnoreCase)) return AddressOf(arguments);
+        if (name.Equals("ALLOC", StringComparison.OrdinalIgnoreCase)) return AllocateStorage(arguments, false);
+        if (name.Equals("REALLOC", StringComparison.OrdinalIgnoreCase)) return AllocateStorage(arguments, true);
+        if (name.Equals("PADDR", StringComparison.OrdinalIgnoreCase)) return EvaluateProcedureAddress(arguments);
         FileStatus Status()
         {
             if (arguments.Count == 0) return _lastFileStatus;
             if (arguments.Count != 1 || arguments[0] is not RpgFieldRef file) throw new RpgRuntimeException("File status requires a file name.");
             if (!_fileStatus.ContainsKey(file.Name) && !_program.Workstations.Any(w => w.Request.Name.Equals(file.Name, StringComparison.OrdinalIgnoreCase)) && !_program.DiskFiles.Any(f => f.Request.Name.Equals(file.Name, StringComparison.OrdinalIgnoreCase)))
                 throw new RpgRuntimeException("Unknown status file: " + file.Name);
-            return _fileStatus.GetValueOrDefault(file.Name, new(false, false, false));
+            return FileParameterStatus(file.Name);
         }
         var upper = name.ToUpperInvariant();
+        if (upper is not ("OPEN" or "EOF" or "FOUND" or "EQUAL" or "STATUS" or "OMITTED" or "PARMNUM") &&
+            arguments.Any(a => a is RpgFieldRef file && _program.FindField(file.Name)?.IsFileParameter == true))
+            throw NativeFailure(105, "A file reference has no data storage.");
         if (upper is "OPEN" or "EOF" or "FOUND" or "EQUAL" or "STATUS" && arguments.FirstOrDefault() is RpgFieldRef templateFile && RpgCompiler.TemplateFileSymbol(_program, templateFile.Name))
             throw NativeFailure(105, "A TEMPLATE file has no runtime status.");
         if (arguments.Any(a => RpgCompiler.TemplateReference(_program, a)))
@@ -671,6 +730,7 @@ public sealed partial class RpgRuntimeContext
         }
         switch (upper)
         {
+            case "NULLIND": RequireArgCount(name, arguments, 1); return ReadNullIndicator(NullReference(arguments[0]));
             case "SUBARR": return ReadNative(NativeSlice(arguments));
             case "XFOOT": return SumArray(arguments);
             case "LOOKUP": case "LOOKUPLT": case "LOOKUPLE": case "LOOKUPGT": case "LOOKUPGE": case "LOOKUPNE":
@@ -682,7 +742,7 @@ public sealed partial class RpgRuntimeContext
                 return EvalSubstring(arguments);
             case "LEN":
                 RequireArgCount(name, arguments, 1);
-                if (TryNativeReference(arguments[0], out var nativeLength)) return nativeLength.Element?.Kind is RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Integer ? nativeLength.Element.Length : nativeLength.UnitWidth;
+                if (TryNativeReference(arguments[0], out var nativeLength, resolveBased: false)) return nativeLength.Element?.Kind is RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Integer ? nativeLength.Element.Length : nativeLength.UnitWidth;
                 if (arguments[0] is RpgFieldRef numericLength && Program.FindField(numericLength.Name) is { Kind: RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Decimal or RpgFieldKind.Integer or RpgFieldKind.Binary } nf) return nf.Length;
                 return arguments[0] is RpgFieldRef fr0 && Program.FindField(fr0.Name) is { Kind: RpgFieldKind.Character, IsArray: false } cf
                     ? (object)cf.Length
@@ -690,13 +750,14 @@ public sealed partial class RpgRuntimeContext
             case "SIZE":
                 RequireArgCount(name, arguments, 1, 2);
                 var all = arguments.Count == 2;
+                if (!all && (arguments[0] is RpgLiteral { Value: RpgNullAddress } || RpgCompiler.ExactActualType(_program, arguments[0]) is { Kind: RpgFieldKind.DataPointer or RpgFieldKind.ProcedurePointer })) return 16;
                 if (all && (arguments[1] is not RpgFieldRef sizeAll || !sizeAll.Name.Equals("*ALL", StringComparison.OrdinalIgnoreCase))) throw new RpgRuntimeException("The second %SIZE argument must be *ALL.");
                 if (all && arguments[0] is RpgFieldRef tableSize && Program.FindField(tableSize.Name) is { IsTable: true })
                     return TableStorage(tableSize.Name).Width;
-                if (TryNativeReference(arguments[0], out var nativeSize))
+                if (TryNativeReference(arguments[0], out var nativeSize, resolveBased: false))
                 {
-                    if (all && nativeSize.Element is null && nativeSize.Structure.IsMultipleOccurrence)
-                        return nativeSize.Structure.Length * nativeSize.Structure.Occurrences;
+                    if (all && nativeSize.Element is null && nativeSize.Layout.IsMultipleOccurrence)
+                        return nativeSize.Layout.Length * nativeSize.Layout.Occurrences;
                     if (all && !nativeSize.IsArray) throw new RpgRuntimeException("%SIZE(*ALL) requires an array.");
                     return nativeSize.UnitWidth * (all ? nativeSize.Count : 1);
                 }
@@ -709,7 +770,7 @@ public sealed partial class RpgRuntimeContext
                 if (arguments[0] is RpgFieldRef tableCount && Program.FindField(tableCount.Name) is { IsTable: true } tableCountField) return tableCountField.Dimension;
                 if (arguments[0] is RpgFieldRef occurrenceName && Program.FindDs(occurrenceName.Name) is { IsMultipleOccurrence: true } occurrenceDs)
                     return occurrenceDs.Occurrences;
-                if (TryNativeReference(arguments[0], out var nativeElements) && nativeElements.IsArray) return nativeElements.Count;
+                if (TryNativeReference(arguments[0], out var nativeElements, resolveBased: false) && nativeElements.IsArray) return nativeElements.Count;
                 if (arguments[0] is RpgFieldRef array && Program.FindField(array.Name) is { IsArray: true } arrayField) return arrayField.Dimension;
                 throw new RpgRuntimeException("%ELEM requires an array.");
             case "TRIM":
@@ -734,18 +795,21 @@ public sealed partial class RpgRuntimeContext
                 RequireArgCount(name, arguments, 1);
                 return arguments[0].Eval(this) is double d ? Math.Abs(d) : Math.Abs(RpgValues.ToDecimal(arguments[0].Eval(this)));
             case "DATE":
-                RequireArgCount(name, arguments, 1);
+                RequireArgCount(name, arguments, 0, 1);
+                if (arguments.Count == 0) { var now = CurrentTime; return new DateTimeOffset(now.Date, now.Offset); }
                 return RpgValues.ToDate(arguments[0].Eval(this));
             case "TIME":
-                RequireArgCount(name, arguments, 1);
+                RequireArgCount(name, arguments, 0, 1);
+                if (arguments.Count == 0) return TimeSpan.FromTicks(CurrentTime.TimeOfDay.Ticks / TimeSpan.TicksPerSecond * TimeSpan.TicksPerSecond);
                 return RpgValues.ToTime(arguments[0].Eval(this));
             case "TIMESTAMP":
-                RequireArgCount(name, arguments, 1);
+                RequireArgCount(name, arguments, 0, 1);
+                if (arguments.Count == 0) { var now = CurrentTime; return new DateTimeOffset(now.Ticks - now.Ticks % 10, now.Offset); }
                 return RpgValues.ToDate(arguments[0].Eval(this));
             case "OPEN":
                 if (arguments.Count != 1 || arguments[0] is not RpgFieldRef openFile) throw new RpgRuntimeException("%OPEN requires one declared file name.");
-                if (_program.DiskFiles.Any(f => f.Request.Name.Equals(openFile.Name, StringComparison.OrdinalIgnoreCase))) return DiskState.Files.ContainsKey(openFile.Name.ToUpperInvariant());
-                if (_program.Workstations.Any(f => f.Request.Name.Equals(openFile.Name, StringComparison.OrdinalIgnoreCase))) return WorkstationState.Files.ContainsKey(openFile.Name.ToUpperInvariant());
+                if (_program.DiskFiles.Any(f => f.Request.Name.Equals(openFile.Name, StringComparison.OrdinalIgnoreCase))) return FileParameterOpen(openFile.Name);
+                if (_program.Workstations.Any(f => f.Request.Name.Equals(openFile.Name, StringComparison.OrdinalIgnoreCase))) return FileParameterOpen(openFile.Name);
                 throw new RpgRuntimeException("Unknown open-status file: " + openFile.Name);
             case "FOUND":
                 return Status().Found;
@@ -761,7 +825,7 @@ public sealed partial class RpgRuntimeContext
             case "STATUS":
                 if (arguments.Count == 0) return _numericStatus;
                 _ = Status();
-                return _numericFileStatus.GetValueOrDefault(((RpgFieldRef)arguments[0]).Name);
+                return FileParameterNumericStatus(((RpgFieldRef)arguments[0]).Name);
             case "OCCUR":
                 return NativeOccurrence(OccurrenceStructure(arguments));
             case "PARMS":

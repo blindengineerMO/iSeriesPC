@@ -11,16 +11,25 @@ public interface IProgramTerminal
 }
 
 /// <summary>A suspended program's display. Access checks run with its captured call authority.</summary>
-public sealed class ProgramDisplay(DisplayFileSession session, QualifiedName file, Action validate) : IDisposable
+public sealed class ProgramDisplay : IDisposable
 {
+    private readonly DisplayFileSession? _session;
+    private readonly Ipc.Terminal.DisplayBuffer? _buffer;
+    private readonly Func<Ipc.Terminal.KeyPress, PanelResponse>? _handle;
+    private readonly Action _validate;
     private ExecutionContext? _context = ExecutionContext.Capture();
     private bool _ended;
-    public DisplayFileSession Session { get; } = session;
-    public QualifiedName File { get; } = file;
-    public void CheckAccess()
-    {
-        InContext(() => { validate(); return 0; });
-    }
+    public ProgramDisplay(DisplayFileSession session, QualifiedName file, Action validate)
+    { _session = session; File = file; _validate = validate; }
+    public ProgramDisplay(Ipc.Terminal.DisplayBuffer buffer, Func<Ipc.Terminal.KeyPress, PanelResponse> handle,
+        QualifiedName resource, Action validate, string state)
+    { _buffer = buffer; _handle = handle; File = resource; _validate = validate; State = state; }
+    public DisplayFileSession Session => _session ?? throw new InvalidOperationException("This display is not a DDS file.");
+    public Ipc.Terminal.DisplayBuffer Buffer => _buffer ?? Session.Buffer;
+    public string State { get; } = "ProgramDisplay";
+    public PanelResponse Handle(Ipc.Terminal.KeyPress key) => _handle?.Invoke(key) ?? Session.Handle(key);
+    public QualifiedName File { get; }
+    public void CheckAccess() { InContext(() => { _validate(); return 0; }); }
     internal T InContext<T>(Func<T> action)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _ended), this);

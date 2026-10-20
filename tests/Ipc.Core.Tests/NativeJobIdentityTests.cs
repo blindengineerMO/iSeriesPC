@@ -49,7 +49,7 @@ public sealed class NativeJobIdentityTests : IDisposable
         Assert.Throws<SqliteException>(() => new Migrator(_factory, Migrator.Migrations.Take(27).Append(failing).ToArray()).MigrateToLatest());
         Assert.Equal(27, new Migrator(_factory).CurrentVersion()); Assert.Equal(before, Snapshot());
         Assert.Equal(0L, Scalar("SELECT count(*) FROM sqlite_master WHERE name IN ('sys_job_api_ids','sys_job_api_epoch','ipc_native_job_identifier')"));
-        new Migrator(_factory).MigrateToLatest(); Assert.Equal(before, Snapshot()); Assert.Equal(2L, Scalar("SELECT count(*) FROM sys_job_api_ids"));
+        new Migrator(_factory, Migrator.Migrations.Take(28).ToArray()).MigrateToLatest(); Assert.Equal(before, Snapshot()); Assert.Equal(2L, Scalar("SELECT count(*) FROM sys_job_api_ids"));
     }
     [Fact]
     public void Exclusive_host_epoch_rotation_is_atomic_invalidates_old_ids_and_cannot_be_requested_by_a_job()

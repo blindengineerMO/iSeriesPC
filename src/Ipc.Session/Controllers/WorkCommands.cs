@@ -55,10 +55,12 @@ public sealed partial class CommandService
                 var mode = list switch { "*CURRENT" => "CURRENT", "*SYSVAL" => "SYSVAL", "*SAME" => old?.LibraryMode ?? "CURRENT", _ => "EXPLICIT" };
                 var libraries = list == "*SAME" ? old?.Libraries : list is "*NONE" or "*CURRENT" or "*SYSVAL" ? Array.Empty<string>() :
                     call.Split("INLLIBL").Select(v => CommandParser.Unquote(v).ToUpperInvariant()).ToArray();
+                var inquiryReply=Value("INQMSGRPY",old?.InquiryMessageReply??"*RQD");
+                if(inquiryReply=="*SAME"&&old is not null)inquiryReply=old.InquiryMessageReply;
                 _system.WorkDefinitions.PutJobDescription(new(library, name, qlib + "/" + qname,
                     ParseWorkInteger(call, "JOBPTY", old?.Priority ?? 9), user == "*CURRENT" ? null : user,
                     CommandParser.Unquote(call.GetOption("RTGDTA") ?? old?.RoutingData ?? "QCMDB"),
-                    current == "*CURRENT" ? null : current, mode, libraries), replace: old is not null);
+                    current == "*CURRENT" ? null : current, mode, libraries, inquiryReply), replace: old is not null);
             }
             else if (operation is "WRKCLS" or "WRKJOBD")
             {

@@ -19,11 +19,14 @@ public static partial class RpgCompiler
         var name = Header(7, 21).Trim().ToUpperInvariant();
         if (name.Length == 0) name = "*N";
         var status = Header(23, 23).ToUpperInvariant();
-        if (Header(22, 22) != " " || status is not (" " or "S") || Header(26, 32).Any(c => c != ' ') || Header(40, 43).Any(c => c != ' '))
+        if (Header(22, 22) is not (" " or "E") || status is not (" " or "S") || Header(26, 32).Any(c => c != ' ') || Header(40, 43).Any(c => c != ' '))
             throw new RpgCompileException(first + 1, "Native DS requires program-described storage, blank From/type/decimal/reserved columns and optional S program status.");
         var length = TraditionalPosition(Header(33, 39), first + 1);
         var keywords = ReadTraditionalKeywords(lines, ref cursor, shift, cancellationToken);
-        converted[first] = "DCL-DS " + name + " " + (status == "S" ? "PSDS " : "") +
+        var headerOptions = DeclarationKeywords(keywords, first + 1);
+        keywords = string.Join(' ', headerOptions.Select(k => k.Name == "EXTNAME" ? "EXTNAME(" + string.Join(':', DeclarationArguments(k.Arguments ?? "", first + 1).Select(a => a.StartsWith('\'') || a.StartsWith('*') ? a : "'" + a.ToUpperInvariant() + "'")) + ")" : k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")")));
+        var external = Header(22, 22) == "E" || headerOptions.Any(k => k.Name == "EXTNAME");
+        converted[first] = "DCL-DS " + name + " " + (Header(22, 22) == "E" ? "EXT " : "") + (status == "S" ? "PSDS " : "") +
             (length is null ? "" : "LEN(" + length.Value.ToString(CultureInfo.InvariantCulture) + ") ") + keywords + ";";
         for (var n = first + 1; n < cursor; n++) converted[n] = "";
         var like = DeclarationKeywords(keywords, first + 1).Any(k => k.Name is "LIKEDS" or "LIKEREC");
@@ -35,7 +38,7 @@ public static partial class RpgCompiler
             var subline = cursor; var record = lines[cursor].PadRight(80 + shift);
             string Column(int from, int to) => Col(record, from + shift, to + shift);
             if (like) throw new RpgCompileException(subline + 1, "A LIKEDS structure cannot declare additional native subfields.");
-            if (Column(22, 23).Any(c => c != ' ') || Column(43, 43) != " ")
+            if (Column(22, 22) is not (" " or "E") || Column(23, 23) != " " || Column(22, 22) == "E" && !external || Column(43, 43) != " ")
                 throw new RpgCompileException(subline + 1, "Native subfields require blank external, DS-type and reserved columns.");
             var local = Column(7, 21).Trim().ToUpperInvariant();
             if (local.Length == 0) local = "*N";
@@ -43,7 +46,15 @@ public static partial class RpgCompiler
             var fromText = Column(26, 32); var toText = Column(33, 39);
             var special = Column(26, 39).TrimEnd().ToUpperInvariant();
             string declaration;
-            if (special.StartsWith('*'))
+            var subOptions = DeclarationKeywords(optionsText, subline + 1);
+            if (Column(22, 22) == "E" || subOptions.Any(k => k.Name == "EXTFLD"))
+            {
+                if (!external || Column(26, 42).Any(c => c != ' ')) throw new RpgCompileException(subline + 1, "External subfields require an external structure and blank type/position/length columns.");
+                var rename = subOptions.SingleOrDefault(k => k.Name == "EXTFLD");
+                var target = rename?.Arguments;
+                declaration = "EXTFLD" + (target is null ? "" : "(" + (target.StartsWith('\'') ? target : "'" + target.ToUpperInvariant() + "'") + ")") + " " + string.Join(' ', subOptions.Where(k => k.Name != "EXTFLD").Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")")));
+            }
+            else if (special.StartsWith('*'))
             {
                 if (Column(40, 42).Any(c => c != ' ') || optionsText.Length != 0)
                     throw new RpgCompileException(subline + 1, "Reserved feedback entries define their own type and length and cannot specify additional keywords.");
@@ -53,6 +64,9 @@ public static partial class RpgCompiler
             {
                 var options = DeclarationKeywords(optionsText, subline + 1);
                 var likeScalar = options.Any(k => k.Name == "LIKE");
+                var likeStructure = options.Any(k => k.Name is "LIKEDS" or "LIKEREC");
+                if (likeStructure && (fromText.Any(c => c != ' ') || toText.Any(c => c != ' ') || Column(40, 42).Any(c => c != ' ')))
+                    throw new RpgCompileException(subline + 1, "Native LIKEDS/LIKEREC subfields require blank type, position and length columns.");
                 if (likeScalar && fromText.Any(c => c != ' '))
                     throw new RpgCompileException(subline + 1, "LIKE subfields require blank From columns; use OVERLAY for a shared position.");
                 var from = TraditionalPosition(fromText, subline + 1);
@@ -96,8 +110,8 @@ public static partial class RpgCompiler
                     retained.Add(option);
                 }
                 var retainedText = string.Join(' ', retained.Select(k => k.Name + (k.Arguments is null ? "" : "(" + k.Arguments + ")")));
-                declaration = likeScalar ? FixedLikeDeclaration(retainedText, toText, Column(40, 40), Column(41, 42), subline + 1) + positioned :
-                    TraditionalScalarType(size, decimals, type, subline + 1, subfield: true) + positioned + " " + retainedText;
+                declaration = likeStructure ? retainedText : likeScalar ? FixedLikeDeclaration(retainedText, toText, Column(40, 40), Column(41, 42), subline + 1) + positioned :
+                    TraditionalDefinitionType(size, decimals, type, subline + 1, ref retainedText, subfield: true) + positioned + " " + retainedText;
             }
             converted[subline] = "DCL-SUBF " + local + " " + declaration + ";";
             for (var n = subline + 1; n < cursor; n++) converted[n] = "";

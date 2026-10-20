@@ -13,7 +13,7 @@ public sealed partial class SqliteFileStore
 {
     public void CreateLogicalFile(string library, string name, FileDefinition definition, string source, IReadOnlyList<string>? physicalMembers = null, string member = "*FILE", int maximumMembers = 256)
     {
-        if (definition.RecordLockWaitSeconds is < 0 or > 32767 || definition.Attribute != FileAttribute.Logical || definition.Logical is not { } logical || definition.Formats.Count != 1 || definition.Name != name)
+        if (definition.SqlView is not null || definition.RecordLockWaitSeconds is < 0 or > 32767 || definition.Attribute != FileAttribute.Logical || definition.Logical is not { } logical || definition.Formats.Count != 1 || definition.Name != name)
             throw LogicalError("Invalid logical file definition.");
         library = ResolveLibrary(library);
         logical = logical with { SourceLibrary = ResolveLibrary(logical.SourceLibrary) };
@@ -163,6 +163,7 @@ public sealed partial class SqliteFileStore
         if (!ObjectName.IsValid(sourceLibrary) || !ObjectName.IsValid(sourceFile)) throw LogicalError("Invalid logical source identity.");
         var data = permission & (AuthorityBit.Read | AuthorityBit.Add | AuthorityBit.Update | AuthorityBit.Delete);
         new ServiceAuthorization(_factory).RequireObject(sourceLibrary, sourceFile, FileType, data | AuthorityBit.ObjectOperate);
+        SqlConstraintState.RequireAccess(connection, null, sourceLibrary, sourceFile, data);
     }
     private static CpfException LogicalError(string text) => new("IPC0138", text);
     private static string LogicalLiteral(object? value) => value switch {
@@ -175,49 +176,5 @@ public sealed partial class SqliteFileStore
         FieldType.Alpha => $"ipc_text_key_v1({operand},{field.Ccsid},{field.Length})",
         FieldType.Packed or FieldType.Zoned => $"ipc_decimal_key_v1({operand})", _ => operand };
 
-    private static object? RecordSqlValue(FieldSpec field, object? value)
-    {
-        if (value is null) return field.NullCapable ? null : ToSqlValue(field, DefaultFor(field));
-        if (field.Type == FieldType.Alpha)
-        {
-            try { _ = DatabaseSortKeys.Text(Convert.ToString(value, CultureInfo.InvariantCulture), field.Ccsid, field.Length); }
-            catch (ArgumentException) { throw LogicalError("Invalid character value for field " + field.Name + "."); }
-        }
-        if (field.Type == FieldType.Time && value is TimeSpan or TimeOnly or DateTimeOffset or DateTime)
-        {
-            var time = ToTime(value);
-            if (time < TimeSpan.Zero || time >= TimeSpan.FromDays(1) || time.Ticks % TimeSpan.TicksPerSecond != 0) throw LogicalError("Time value exceeds field precision.");
-            return ToSqlValue(field, value);
-        }
-        if (field.Type is FieldType.Date or FieldType.Timestamp && value is DateTimeOffset or DateTime or DateOnly)
-        {
-            if (field.Type == FieldType.Timestamp && ToDate(value).Ticks % (field.Length == 26 ? 10 : TimeSpan.TicksPerSecond) != 0) throw LogicalError("Timestamp exceeds field precision.");
-            return ToSqlValue(field, value);
-        }
-        if (field.Type == FieldType.Binary && value is decimal integral && decimal.Truncate(integral) == integral && integral is >= long.MinValue and <= long.MaxValue) value = decimal.ToInt64(integral);
-        var text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? "";
-        if (field.Type is FieldType.Packed or FieldType.Zoned)
-        {
-            try { _ = DatabaseSortKeys.Decimal(text); }
-            catch (ArgumentException) { throw LogicalError("Invalid decimal precision for field " + field.Name + "."); }
-            var numeric = decimal.Parse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture);
-            if (field.Decimals is < 0 or > 28 || field.Length < field.Decimals || field.Length > 29 || decimal.Round(numeric, field.Decimals) != numeric ||
-                Math.Abs(decimal.Truncate(numeric)).ToString("0", CultureInfo.InvariantCulture).TrimStart('0').Length > field.Length - field.Decimals)
-                throw LogicalError("Decimal value exceeds field precision or scale: " + field.Name + ".");
-        }
-        var valid = field.Type switch
-        {
-            FieldType.Alpha => text.Length <= field.Length,
-            FieldType.Packed or FieldType.Zoned => decimal.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out _),
-            FieldType.Binary => long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var binary) && field.Length switch { 2 => binary is >= short.MinValue and <= short.MaxValue, 4 => binary is >= int.MinValue and <= int.MaxValue, 8 => true, _ => false },
-            FieldType.Float => double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var floating) && double.IsFinite(floating) && (field.Length == 8 || field.Length == 4 && float.IsFinite((float)floating)),
-            FieldType.Logic => text is "0" or "1" or "True" or "False" or "true" or "false",
-            FieldType.Date => DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _),
-            FieldType.Time => TimeOnly.TryParseExact(text, "HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _),
-            FieldType.Timestamp => DateTime.TryParseExact(text, field.Length == 26 ? "yyyy-MM-dd HH:mm:ss.ffffff" : "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _),
-            _ => false,
-        };
-        if (!valid) throw LogicalError("Invalid value for field " + field.Name + ".");
-        return ToSqlValue(field, field.Type == FieldType.Logic ? text is "1" or "True" or "true" : value);
-    }
+
 }

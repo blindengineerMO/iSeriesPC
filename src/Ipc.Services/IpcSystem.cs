@@ -211,6 +211,7 @@ public sealed class IpcSystem : IDisposable
         _security.Profiles.SeedDefaults();
         new JobTemporaryLibrary(_connectionFactory).InitializeExistingJobs();
         _jobs.SeedQueues();
+        new Ipc.Services.Messages.MessageDescriptionStore(_connectionFactory).SeedSystemDescriptions();
         WorkDefinitions.SeedClasses();
         _subsystems.SeedDefaults();
         _menus.SeedDefaults();
@@ -257,11 +258,12 @@ public sealed class IpcSystem : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             name = name.ToUpperInvariant();
             if (!_systemValueRegistry.TryGet(name, out _)) throw new CpfException("IPC0003", "Unknown system value.");
-            var writable = new[] { SystemValueNames.SystemName, SystemValueNames.Ccsid, SystemValueNames.SecurityLevel, SystemValueNames.AllowUserDomain,
+            var writable = new[] { SystemValueNames.DecimalFormat, SystemValueNames.SystemName, SystemValueNames.Ccsid, SystemValueNames.SecurityLevel, SystemValueNames.AllowUserDomain,
                 SystemValueNames.PasswordMinimumLength, SystemValueNames.PasswordSystemLevel, SystemValueNames.PasswordExpirationInterval,
                 SystemValueNames.MaximumSignOnAttempts, SystemValueNames.PasswordRequiredDigit,
                 SystemValueNames.PasswordRepeatedCharacters, SystemValueNames.SystemLibraryList, SystemValueNames.UserLibraryList };
             if (!writable.Contains(name)) throw new CpfException("IPC0002", "Changing this system value is not implemented.");
+            if (name == SystemValueNames.DecimalFormat && value is not (" " or "I" or "J")) throw new CpfException("IPC0003", "QDECFMT requires blank, I or J.");
             if (name == SystemValueNames.SystemName && !ObjectName.IsValid(value))
                 throw new CpfException("IPC0003", "System name must be a valid object name.");
             if (name is SystemValueNames.PasswordRequiredDigit or SystemValueNames.PasswordRepeatedCharacters && value is not ("*YES" or "*NO"))

@@ -11,10 +11,10 @@ public sealed partial class RpgRuntimeContext
         if ((indexed?.Target ?? expression) is not RpgMemberRef { Target: RpgAllElementsRef all } member) return false;
         records = ArrayView(all.Target);
         var image = records with { Bytes = NativeBuffer(records).ToArray(), Offset = 0, Binding = null, ArrayStride = records.UnitWidth };
-        if (records.Element is not null || !records.Structure.Qualified)
+        if (records.Element is not null || !records.Layout.Qualified)
             throw NativeFailure(105, "A (*) key requires an array data structure.");
-        var element = records.Structure.Find(member.Name) ?? throw NativeFailure(105, "Unknown keyed array subfield: " + member.Name + ".");
-        if (element.IsArray != (indexed is not null)) throw NativeFailure(105, "A keyed array requires a scalar or indexed scalar subfield.");
+        var element = records.Layout.Find(member.Name) ?? throw NativeFailure(105, "Unknown keyed array subfield: " + member.Name + ".");
+        if (element.NestedStructure is not null || element.IsArray != (indexed is not null)) throw NativeFailure(105, "A keyed array requires a scalar or indexed scalar subfield.");
         key = NativeMember(NativeIndex(image, 1), member.Name);
         if (indexed is not null) key = NativeIndex(key, NativeSubscript(indexed.Index));
         key = key with { IsArray = true, Count = records.Count, Width = key.UnitWidth * records.Count, ArrayStride = records.UnitWidth, Binding = null };
@@ -51,7 +51,7 @@ public sealed partial class RpgRuntimeContext
         var keys = new NativeView[fields.Count];
         for (var index = 0; index < fields.Count; index++)
         {
-            if (records.Structure.Find(fields[index]) is not { IsArray: false }) throw NativeFailure(105, "%FIELDS requires scalar subfields of its array data structure.");
+            if (records.Layout.Find(fields[index]) is not { IsArray: false, NestedStructure: null }) throw NativeFailure(105, "%FIELDS requires scalar subfields of its array data structure.");
             var key = NativeMember(NativeIndex(image, 1), fields[index]);
             keys[index] = key with { IsArray = true, Count = records.Count, Width = key.UnitWidth * records.Count, ArrayStride = records.UnitWidth, Binding = null };
         }

@@ -63,7 +63,7 @@ public enum CursorEdit : byte
     End = 15,
 }
 
-public readonly record struct KeyPress(AidKey Aid, CursorEdit? Edit = null, char Character = '\0');
+public readonly record struct KeyPress(AidKey Aid, CursorEdit? Edit = null, char Character = '\0', char PasteCharacter = '\0');
 
 public static class KeyCodes
 {

@@ -6,7 +6,7 @@ namespace Ipc.Services.Sqlite;
 /// <summary>Copies a set of member tables inside the owning catalog transaction.</summary>
 internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransaction transaction)
 {
-    public void Copy(IReadOnlyList<(string Source, string Target)> tables)
+    public void Copy(IReadOnlyList<(string Source, string Target)> tables, Func<string, string>? rewriteTableSql = null, bool copySchemaObjects = true)
     {
         if (tables.Count == 0) return;
         var schemas = new List<(string Type, string Name, string Table, string Sql)>();
@@ -33,9 +33,9 @@ internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransac
         }
 
         Run("PRAGMA defer_foreign_keys=ON");
-        foreach (var schema in schemas.Where(s => s.Type == "table")) Run(schema.Sql);
+        foreach (var schema in schemas.Where(s => s.Type == "table")) Run(rewriteTableSql?.Invoke(schema.Sql) ?? schema.Sql);
         // Explicit indexes can provide FK parent uniqueness, so create them before loading.
-        foreach (var schema in schemas.Where(s => s.Type == "index" && !IsLogicalConstraint(s.Name)))
+        foreach (var schema in schemas.Where(s => copySchemaObjects && s.Type == "index" && !IsLogicalConstraint(s.Name)))
             Run(RenameSchemaObject(schema.Sql, "INDEX", $"{schema.Table}.index.{schema.Name}"));
         foreach (var table in tables)
         {
@@ -57,7 +57,7 @@ internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransac
             CopySequence(table.Source, table.Target);
         }
         // Loading a duplicate must not emit application trigger side effects.
-        foreach (var schema in schemas.Where(s => s.Type == "trigger" && !JournalHooks.OwnsTrigger(connection, transaction, s.Name)))
+        foreach (var schema in schemas.Where(s => copySchemaObjects && s.Type == "trigger" && !JournalHooks.OwnsTrigger(connection, transaction, s.Name) && !RecordSlots.OwnsTrigger(connection, transaction, s.Name) && !SqlForeignCatalog.OwnsNullHook(connection,transaction,s.Name)))
             Run(RenameSchemaObject(schema.Sql, "TRIGGER", $"{schema.Table}.trigger.{schema.Name}"));
     }
 
@@ -114,7 +114,7 @@ internal sealed class MemberTableCopy(SqliteConnection connection, SqliteTransac
         return sql[..token.Start] + Quote(name) + sql[offset..];
     }
 
-    private static (int Start, string Text) NextToken(string sql, ref int offset)
+    internal static (int Start, string Text) NextToken(string sql, ref int offset)
     {
         while (offset < sql.Length)
         {

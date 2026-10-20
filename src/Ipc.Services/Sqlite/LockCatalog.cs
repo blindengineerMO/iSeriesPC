@@ -39,7 +39,14 @@ internal sealed class LockCatalog : IDisposable
             );
             """;
         command.ExecuteNonQuery(); command.CommandText = "SELECT version FROM ipc_lock_version";
-        if (Convert.ToInt32(command.ExecuteScalar()) != 1) throw new InvalidDataException("Unsupported lock catalog version.");
+        var version = Convert.ToInt32(command.ExecuteScalar());
+        if (version is not (1 or 2)) throw new InvalidDataException("Unsupported lock catalog version.");
+        command.CommandText = """
+            CREATE TABLE IF NOT EXISTS holder_records(token TEXT NOT NULL,rrn INTEGER NOT NULL,PRIMARY KEY(token,rrn));
+            CREATE TRIGGER IF NOT EXISTS release_holder_records AFTER DELETE ON holders BEGIN DELETE FROM holder_records WHERE token=OLD.token; END;
+            UPDATE ipc_lock_version SET version=2;
+            """;
+        command.ExecuteNonQuery();
         transaction.Commit();
         if (factory.DatabasePath is { } database && OperatingSystem.IsLinux())
             File.SetUnixFileMode(database + ".locks", UnixFileMode.UserRead | UnixFileMode.UserWrite);

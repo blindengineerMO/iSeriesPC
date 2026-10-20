@@ -112,6 +112,7 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
             var key = Insert(connection, transaction, queue, data, kind, messageId, severity, replyQueue, defaultReply, null, defaultReplyCode: defaultReplyCode, predefined: predefined);
             keys.Add(senderCopy ? Insert(connection, transaction, replyQueue!, data, "COPY", messageId, severity, null,
                 new ProgramBuffer(Array.Empty<byte>(), data.Ccsid), key, predefined: predefined) : key);
+            if(kind=="INQ")AutomaticReply(connection,transaction,queue,key);
         }
         prepare?.Invoke(keys); cancellationToken.ThrowIfCancellationRequested();
         transaction.Commit(); return keys;
@@ -227,17 +228,17 @@ public sealed partial class MessageQueueStore(SqliteConnectionFactory factory)
         using var reader = command.ExecuteReader(); var result = new List<QueuedMessage>();
         while (reader.Read()) result.Add(Visible(Read(reader).Message, connection)); return result;
     }
-    private uint ReplyCore(SqliteConnection connection, SqliteTransaction transaction, MessageQueueAddress queue, Stored found, ProgramBuffer data, string replyTypeCode)
+    private uint ReplyCore(SqliteConnection connection, SqliteTransaction transaction, MessageQueueAddress queue, Stored found, ProgramBuffer data, string replyTypeCode, bool checkReply = true)
     {
         if (found.Message.Kind != "INQ" || found.Message.Replied) throw new CpfException("CPF2422", "Message is not an unanswered inquiry.");
         var destination = found.ReplyQueue ?? throw new CpfException("CPF2469", "Reply queue no longer exists.");
         AuthorizeReply(connection, transaction, destination, found.Message.SenderJob);
         // Defaults (including automatic removal replies) are already validated as
         // description metadata. Only explicit replies run VALUES/RANGE/REL/SPCVAL.
-        if (replyTypeCode == "21" && found.Message.Predefined?.Description is { ReplyRules: { Type: not "*NONE" } rules } description)
+        if (checkReply && replyTypeCode is "21" or "25" && found.Message.Predefined?.Description is { ReplyRules: { Type: not "*NONE" } rules } description)
         {
             data = rules.Check(data, description.Ccsid, description.DefaultReply);
-            replyTypeCode = "22";
+            if(replyTypeCode=="21")replyTypeCode = "22";
         }
         using var copy = Command(connection, transaction, destination,
             "SELECT key FROM sys_message_entries WHERE queue_lib IS $lib AND queue_name IS $name AND program_queue IS $program AND kind='COPY' AND correlation_key=$original LIMIT 1");

@@ -17,8 +17,15 @@ public static partial class RpgCompiler
         program.Fields.AddRange(globals.Fields); program.GlobalFields.UnionWith(globals.Fields);
         program.DataStructures.AddRange(globals.DataStructures); program.GlobalStructures.UnionWith(globals.DataStructures);
         program.Prototypes.AddRange(globals.Prototypes);
+        program.NullControl = globals.NullControl;
+        program.ExternalDescriptionLookup = globals.ExternalDescriptionLookup;
         program.DeclarationDiskFiles.AddRange(globals.DeclarationDiskFiles);
         program.RecordLayoutsLookup = globals.RecordLayoutsLookup;
+        program.DeclarationWorkstations.AddRange(globals.DeclarationWorkstations);
+        program.WorkstationLayoutsLookup = globals.WorkstationLayoutsLookup;
+        foreach (var file in globals.FileDefinitionKeywords) program.FileDefinitionKeywords[file.Key] = file.Value;
+        foreach (var file in globals.FileDeclarationLines) program.FileDeclarationLines[file.Key] = file.Value;
+        program.UnblockedFiles.UnionWith(globals.UnblockedFiles);
         program.Workstations.AddRange(globals.Workstations); program.DiskFiles.AddRange(globals.DiskFiles);
         program.IndicatorBindings.AddRange(globals.IndicatorBindings);
     }
@@ -91,7 +98,7 @@ public static partial class RpgCompiler
 
     private static bool SameProcedureType(RpgField? left, RpgField? right) => left is null ? right is null : right is not null &&
         SameAggregateElement(left, right) && left.IsArray == right.IsArray && left.Dimension == right.Dimension && left.ArrayDescending == right.ArrayDescending &&
-        left.VariableSizeParameter == right.VariableSizeParameter && left.ReturnByParameter == right.ReturnByParameter && left.ValueParameter == right.ValueParameter && left.ReadOnlyParameter == right.ReadOnlyParameter && left.OmitParameter == right.OmitParameter && left.NoPassParameter == right.NoPassParameter;
+        left.NullIndicatorParameterIndex == right.NullIndicatorParameterIndex && left.NullMapParameter == right.NullMapParameter && (!left.NullMapParameter || SameNullCapabilities(left, right)) && left.VariableSizeParameter == right.VariableSizeParameter && left.ReturnByParameter == right.ReturnByParameter && left.ValueParameter == right.ValueParameter && left.ReadOnlyParameter == right.ReadOnlyParameter && left.OmitParameter == right.OmitParameter && left.NoPassParameter == right.NoPassParameter;
 
     private static void LinkNativeProcedures(RpgProgram program)
     {
@@ -103,7 +110,7 @@ public static partial class RpgCompiler
                 if (program.Prototypes.Count >= 256) throw new RpgCompileException(body.NativeEntryLine, "Native procedure/prototype metadata exceeds 256 entries.");
                 if (HasLocalDeclaration(program, procedure.Name)) throw new RpgCompileException(body.NativeEntryLine, "Procedure name collides with module storage.");
                 var prototype = new RpgPrototype { Name = procedure.Name, ExternalName = procedure.Name, NativeSignature = true, NativeProcedure = true, NativeReturnField = body.NativeReturnField, DeclarationLine = body.NativeEntryLine };
-                foreach (var name in body.NativeParameterLists["/*ENTRY"]) { prototype.Parameters.Add(name); prototype.NativeParameters.Add(body.FindField(name)!); }
+                foreach (var name in body.NativeParameterLists["/*ENTRY"]) { prototype.NativeParameterNames.Add(name); prototype.Parameters.Add(name); prototype.NativeParameters.Add(body.FindField(name)!); }
                 program.Prototypes.Add(prototype);
             }
             else if (program.FindPrototype(procedure.Name) is not { NativeProcedure: true }) throw new RpgCompileException(body.NativeEntryLine, "Native procedure name collides with a program/legacy prototype.");
@@ -114,16 +121,24 @@ public static partial class RpgCompiler
         {
             var body = procedure.NativeBody!;
             foreach (var prototype in program.Prototypes) if (!body.Prototypes.Contains(prototype)) body.Prototypes.Add(prototype);
-            foreach (var prototype in body.Prototypes.Where(p => p.NativeProcedure)) ValidateProcedureLink(program, prototype);
+            foreach (var prototype in body.Prototypes.Where(p => p.NativeProcedure)) ValidateProcedureLink(program, prototype, body);
             ValidateNativeProgramCalls(body, body.MainStatements.Concat(body.Subroutines.SelectMany(s => s.Statements)));
             ValidateProcedureExpressions(body);
+            ValidateFileParameterUses(body, []);
         }
     }
 
-    private static void ValidateProcedureLink(RpgProgram program, RpgPrototype prototype)
+    private static void ValidateProcedureLink(RpgProgram program, RpgPrototype prototype, RpgProgram? scope = null)
     {
+        if (prototype.PointerTarget is { } pointer)
+        {
+            if (ExactActualType(scope ?? program, RpgExpressionParser.Parse(pointer)) is not { Kind: RpgFieldKind.ProcedurePointer, IsArray: false, IsDataStructure: false })
+                throw new RpgCompileException(prototype.DeclarationLine, "EXTPROC requires a declared procedure pointer.");
+            return;
+        }
         var body = program.Subprocedures.FirstOrDefault(p => p.Name == (prototype.ExternalName ?? prototype.Name))?.NativeBody;
-        if (body is null) throw new RpgCompileException(prototype.DeclarationLine, "Case-sensitive procedure target is not defined in this compilation unit; module/service-program binding remains unsupported.");
+        if (body is null && program.IsModule) return;
+        if (body is null) throw new RpgCompileException(prototype.DeclarationLine, "Case-sensitive procedure target is not defined in this compilation unit; compile modules with CRTRPGMOD and bind them with CRTPGM.");
         var parameters = body.NativeParameterLists["/*ENTRY"];
         if (!SameProcedureType(prototype.NativeReturnField, body.NativeReturnField) || parameters.Count != prototype.NativeParameters.Count ||
             parameters.Select(body.FindField).Zip(prototype.NativeParameters).Any(pair => !SameProcedureType(pair.First, pair.Second)))
@@ -146,7 +161,7 @@ public static partial class RpgCompiler
                     for (; close < text.Length; close++)
                     { if (text[close] == '\'') { Skip(text, ref close); continue; } if (text[close] == '(') depth++; if (text[close] == ')' && --depth == 0) break; }
                     if (close == text.Length) throw new RpgCompileException(statement.LineNumber, "Unclosed procedure expression.");
-                    if (prototype.NativeReturnField is null && !(statement.Opcode == RpgOpcode.CallP && start == 0 && close == text.Length - 1))
+                    if (prototype.NativeReturnField is null && !((statement.Opcode is RpgOpcode.CallP or RpgOpcode.CallB) && start == 0 && close == text.Length - 1))
                         throw new RpgCompileException(statement.LineNumber, "A void procedure cannot be used as an expression.");
                     ValidateNativeProgramCalls(program, [new RpgStatement { Opcode = RpgOpcode.CallP, Factor1 = text[start..(close + 1)], LineNumber = statement.LineNumber }]);
                     index = end; // Inspect nested procedure arguments as well.
@@ -169,13 +184,18 @@ public static partial class RpgCompiler
     {
         if (program.GlobalProgram is not { } globals) return;
         foreach (var handler in globals.FileErrorHandlers)
-        {
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { handler.File };
-            foreach (var binding in globals.DiskFiles.Where(f => f.Request.Name == handler.File)) names.Add(binding.Layout.Record);
-            foreach (var binding in globals.Workstations.Where(f => f.Request.Name == handler.File)) foreach (var record in binding.Layout.Records) names.Add(record.Name);
-            foreach (var statement in program.MainStatements.Where(s => s.Opcode is RpgOpcode.Open or RpgOpcode.Close or RpgOpcode.Unlock or RpgOpcode.Chain or RpgOpcode.Read or RpgOpcode.ReadP or RpgOpcode.Reade or RpgOpcode.ReadPe or RpgOpcode.ReadC or RpgOpcode.SetLl or RpgOpcode.SetGt or RpgOpcode.Write or RpgOpcode.Update or RpgOpcode.Delete or RpgOpcode.ExFmt))
-                if (new[] { statement.Factor1, statement.Factor2, statement.Result }.Any(value => value is not null && names.Contains(value)))
-                    throw new RpgCompileException(statement.LineNumber, "A native subprocedure cannot use a file with an INFSR.");
-        }
+            foreach (var statement in program.MainStatements.Where(s => ErrorFileOperation(s.Opcode)))
+            {
+                var operand = (statement.Factor2 ?? statement.Factor1 ?? "").ToUpperInvariant();
+                var disk = program.FindDisk(operand);
+                if (disk is not null)
+                {
+                    if (disk.Request.Procedure is null && !disk.Request.IsParameter && disk.Request.Name == handler.File)
+                        throw new RpgCompileException(statement.LineNumber, "A native subprocedure cannot use a global file with an INFSR.");
+                    continue;
+                }
+                if (program.FindWorkstation(operand) is { Request.Procedure: null, Request.IsParameter: false } display && display.Request.Name == handler.File)
+                    throw new RpgCompileException(statement.LineNumber, "A native subprocedure cannot use a global file with an INFSR.");
+            }
     }
 }

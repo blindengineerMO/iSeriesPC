@@ -435,6 +435,7 @@ public sealed class RpgExpressionParser
         }
 
         var name = ReadIdentifier();
+        if (name.StartsWith('%')) SkipWhitespace();
 
         if (name.Length > 0 && Peek() == '(')
         {
@@ -557,6 +558,7 @@ public sealed class RpgExpressionParser
             case "*BLANK":
             case "*BLANKS":
                 return new RpgLiteral(string.Empty);
+            case "*NULL": return new RpgLiteral(RpgNullAddress.Value);
             case "*ZERO":
             case "*ZEROS":
                 return new RpgLiteral(0m);

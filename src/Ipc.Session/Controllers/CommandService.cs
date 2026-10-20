@@ -5,6 +5,7 @@ using Ipc.Cl.Commands;
 using Ipc.Cl.Interpreter;
 using Ipc.Cl.Parsing;
 using Ipc.Core.Messages;
+using Ipc.Core.Compilation;
 using Ipc.Core.Objects;
 using Ipc.Core.Work;
 using Ipc.Db.Dds;
@@ -51,10 +52,23 @@ public sealed partial class CommandService
         _catalog.Register("DSPJOB", ExecuteDisplayJob);
         _catalog.Register("CRTCLPGM", ExecuteCreateClProgram);
         _catalog.Register("CRTBNDRPG", ExecuteCreateRpgProgram);
+        _catalog.Register("CRTRPGMOD", ExecuteCreateRpgModule);
+        _catalog.Register("CRTPGM", ExecuteCreateBoundRpgProgram);
+        _catalog.Register("DSPMOD", ExecuteDisplayRpgModule);
+        _catalog.Register("CRTSRVPGM", ExecuteCreateRpgService);
+        _catalog.Register("DSPSRVPGM", ExecuteDisplayRpgService);
+        _catalog.Register("CRTBNDDIR", ExecuteBindingDirectory);
+        _catalog.Register("DLTBNDDIR", ExecuteBindingDirectory);
+        _catalog.Register("ADDBNDDIRE", ExecuteBindingDirectory);
+        _catalog.Register("RMVBNDDIRE", ExecuteBindingDirectory);
+        _catalog.Register("DSPBNDDIR", ExecuteBindingDirectory);
+        _catalog.Register("UPDPGM", ExecuteUpdateRpgObject);
+        _catalog.Register("UPDSRVPGM", ExecuteUpdateRpgObject);
         _catalog.Register("CALL", ExecuteCall);
         _catalog.Register("CRTSRCPF", ExecuteCreateSourceFile);
         _catalog.Register("CRTPF", ExecuteCreatePhysicalFile);
         _catalog.Register("CHGPF", ExecuteChangePhysicalFile);
+        _catalog.Register("CHGPFCST", ExecuteChangePhysicalConstraint);
         _catalog.Register("CHGLF", ExecuteChangeLogicalFile);
         _catalog.Register("CRTLF", ExecuteCreateLogicalFile);
         _catalog.Register("ADDPFM", ExecuteAddMember);
@@ -62,6 +76,14 @@ public sealed partial class CommandService
         _catalog.Register("ADDSRCPFM", ExecuteAddSourceRecord);
         _catalog.Register("RMVM", ExecuteRemoveMember);
         _catalog.Register("CLRPFM", ExecuteClearMember);
+        _catalog.Register("INZPFM", ExecuteInitializePhysicalMember);
+        _catalog.Register("RUNSQL", ExecuteRunSql);
+        _catalog.Register("RUNSQLSTM", ExecuteRunSqlStatements);
+        _catalog.Register("STRSQL", ExecuteStartSql);
+        _catalog.Register("CRTQMQRY", ExecuteQueryManagement);
+        _catalog.Register("RTVQMQRY", ExecuteQueryManagement);
+        _catalog.Register("STRQMQRY", ExecuteQueryManagement);
+        _catalog.Register("DLTQMQRY", ExecuteQueryManagement);
         _catalog.Register("DSPPFM", ExecuteDisplayMember);
         _catalog.Register("CPYF", ExecuteCopyFile);
         _catalog.Register("DLTF", ExecuteDeleteFile);
@@ -161,31 +183,55 @@ public sealed partial class CommandService
 
     private void RunRpg(RpgProgram program, IReadOnlyList<object?> parameters)
     {
+        _rpgServiceDepth++;
+        try { RunRpgActivation(program, parameters); }
+        finally { EndRpgServiceCall(); }
+    }
+    private void RunRpgActivation(RpgProgram program, IReadOnlyList<object?> parameters)
+    {
         var host = BuildRpgHost();
         var groups = _job is null ? null : _system.JobRuntime.Groups(_job.Key);
+        try { PreflightRpgServices(program, host); }
+        catch (Exception error) when (error is InvalidDataException or RpgCompileException) { throw new CpfException("IPC0006", error.Message); }
         var interpreter = new RpgInterpreter(host);
-        if (groups is null) { interpreter.Run(program, parameters); return; }
         var descriptor = _loadedDescriptors.GetValue(program, _ => throw new CpfException("IPC0110", "Missing RPG source snapshot."));
-        var key = program.Library + "/" + program.Name;
+        if (groups is null)
+        {
+            var temporary = new RpgRuntimeContext(program, host); ConfigureRpgProcedureActivation(temporary, descriptor);
+            try { interpreter.Run(program, parameters, temporary); }
+            finally { temporary.ReleaseProcedureAddresses(); }
+            return;
+        }
+        var key = descriptor.Library + "/" + descriptor.Name;
         var fingerprint = Convert.ToHexString(global::System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(
-            descriptor.Source! + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgWorkstationBindings.AttributeName) + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgDiskBindings.AttributeName))));
-        var state = groups.Resource(key, () => new RpgActivationState(fingerprint, new RpgRuntimeContext(program, host)));
+            descriptor.Source! + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgWorkstationBindings.AttributeName) + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgDiskBindings.AttributeName) + "\0" + descriptor.ExtendedAttributes?.GetValueOrDefault(RpgExternalBindings.AttributeName))));
+        var state = groups.Resource(key, () => new RpgActivationState(fingerprint, new RpgRuntimeContext(program, host), descriptor));
         if (state.Fingerprint != fingerprint)
         {
             groups.RemoveResource(key);
-            state = groups.Resource(key, () => new RpgActivationState(fingerprint, new RpgRuntimeContext(program, host)));
+            state = groups.Resource(key, () => new RpgActivationState(fingerprint, new RpgRuntimeContext(program, host), descriptor));
         }
         if (state.Active) throw new CpfException("IPC0124", "Recursive RPG calls require a new activation group.");
+        ConfigureRpgProcedureActivation(state.Context, state.Descriptor);
         state.Active = true;
         var failed = true;
         try { interpreter.Run(program, parameters, state.Context); failed = false; }
-        finally { state.Active = false; if (failed || state.Context.Indicators[0] || state.Context.IsCancelled) groups.RemoveResource(key); }
-        // LR ends this program's retained storage.
+        finally
+        {
+            state.Active = false;
+            if ((failed || state.Context.IsCancelled) && (program.HasExportedData || state.Context.HasProcedureAddresses || state.Context.HasDataAddresses)) state.Context = state.Context.RestartCycle();
+            else if (failed || state.Context.IsCancelled) groups.RemoveResource(key);
+            else if (state.Context.Indicators[0]) state.Context = state.Context.RestartCycle();
+        }
+        // LR resets cycle storage; procedure STATIC resources belong to the activation.
     }
-    private sealed record RpgActivationState(string Fingerprint, RpgRuntimeContext Context) : IDisposable
+    private sealed class RpgActivationState(string fingerprint, RpgRuntimeContext context, ObjectDescriptor descriptor) : IDisposable
     {
+        public string Fingerprint { get; } = fingerprint;
+        public ObjectDescriptor Descriptor { get; } = descriptor;
+        public RpgRuntimeContext Context { get; set; } = context;
         public bool Active { get; set; }
-        public void Dispose() { try { Context.CloseWorkstations(); } finally { Context.CloseDiskFiles(); } }
+        public void Dispose() { Context.ReleaseProcedureAddresses(); try { Context.CloseWorkstations(); } finally { Context.CloseDiskFiles(); } }
     }
 
     private CommandResult ExecuteSystemValues(CommandCall call)
@@ -431,10 +477,31 @@ public sealed partial class CommandService
             return CommandResult.Error($"Program {library}/{name} already exists.");
         }
 
+        PreprocessedSource expandedSource;
+        IReadOnlyList<string> sourceDirectories;
+        try
+        {
+            expandedSource = new RpgSourcePreprocessor(resolver.ResolveRpg).Expand(source, _cancellationToken);
+            sourceDirectories = RpgCompiler.SourceBindingDirectories(expandedSource, _cancellationToken);
+        }
+        catch (Exception error) when (error is SourcePreprocessException or RpgCompileException) { return CommandResult.Error("IPC0006: " + error.Message); }
+        if (call.GetOption("BNDSRVPGM", "BNDDIR") is not null || sourceDirectories.Count > 0)
+        {
+            try
+            {
+                var module = RpgCompiler.CompileModule(library, name, expandedSource, _cancellationToken, DescribeRpgWorkstation, DescribeRpgDisk, DescribeRpgExternal);
+                var binding = BindRpgModules([module], module, call);
+                var image = new RpgBoundProgram(RpgServiceReference.ImageVersion(module.ServiceReferences), module.Library + "/" + module.Name, binding.Modules.Select(RpgModuleImage.Capture).ToArray()) { Services = module.ServiceReferences };
+                _system.Objects.Create(new ObjectDescriptor { Key = new(library, name), ObjectType = ProgramType, Owner = _job?.UserProfile ?? "QSECOFR",
+                    Attribute = RpgBoundProgram.Attribute, Source = image.Serialize(), ExtendedAttributes = ActivationAttributes(call), Description = "Bound RPG source " + source.Identity });
+                return CommandResult.Ok(binding.Message($"Program {library}/{name} created."));
+            }
+            catch (Exception error) when (error is InvalidDataException or RpgCompileException) { return CommandResult.Error("IPC0006: " + error.Message); }
+        }
         RpgProgram program;
         try
         {
-            program = RpgCompiler.Compile(library, name, source, resolver.ResolveRpg, _cancellationToken, DescribeRpgWorkstation, DescribeRpgDisk);
+            program = RpgCompiler.Compile(library, name, expandedSource, _cancellationToken, DescribeRpgWorkstation, DescribeRpgDisk, DescribeRpgExternal);
         }
         catch (RpgCompileException ex)
         {
@@ -445,6 +512,7 @@ public sealed partial class CommandService
         attributes[Ipc.Core.Compilation.CompiledSourceMap.AttributeName] = Ipc.Core.Compilation.CompiledSourceMap.Serialize(program.Source!);
         attributes[RpgWorkstationBindings.AttributeName] = RpgWorkstationBindings.Serialize(program);
         attributes[RpgDiskBindings.AttributeName] = RpgDiskBindings.Serialize(program);
+        attributes[RpgExternalBindings.AttributeName] = RpgExternalBindings.Serialize(program);
         _system.Objects.Create(new ObjectDescriptor
         {
             Key = new QualifiedName(library, name),
@@ -506,7 +574,7 @@ public sealed partial class CommandService
         try
         {
             var width = call.GetOption("SRCDTALEN") is { } sourceWidth && int.TryParse(sourceWidth, out var parsedWidth) ? parsedWidth : call.GetOption("SRCDTALEN") is null ? 100 : throw new CpfException("IPC0003", "SRCDTALEN requires an integer.");
-            _files.CreateSourceFile(library, name, text.Length > 0 ? text : $"Source physical file {name}.", width);
+            _files.CreateSourceFile(library, name, text.Length > 0 ? text : $"Source physical file {name}.", width, ParseMemberSize(call.GetOption("SIZE"))?.Apply(null));
         }
         catch (CpfException ex)
         {
@@ -533,6 +601,8 @@ public sealed partial class CommandService
         var maximum = maximumText == "*NOMAX" ? 32767 : int.TryParse(maximumText, NumberStyles.None, CultureInfo.InvariantCulture, out var count) ? count : 0;
         if (maximum is < 1 or > 32767) return CommandResult.Error("IPC0003: MAXMBRS requires 1–32767 or *NOMAX.");
         var recordWait = ParseRecordWait(call.GetOption("WAITRCD"))!.Value;
+        var reuseDeleted = ParseReuseDeleted(call.GetOption("REUSEDLT"))!.Value;
+        var memberSize = ParseMemberSize(call.GetOption("SIZE"));
         if (sourceMember.Length == 0 || sourceMember == "*FILE") sourceMember = name;
 
         if (sourceFile.Length == 0)
@@ -570,6 +640,8 @@ public sealed partial class CommandService
         try
         {
             definition.RecordLockWaitSeconds = recordWait;
+            definition.ReuseDeletedRecords = reuseDeleted;
+            definition.MemberSize = memberSize?.Apply(null);
             _files.CreatePhysicalFile(library, name, definition, sourceText,
                 text.Length > 0 ? text : $"Physical file {name}.", member, maximum);
         }
@@ -659,25 +731,6 @@ public sealed partial class CommandService
             : records.Max(r => r.TryGetValue("SRCSEQ", out var value) && value is long seq ? seq : 0L) + 10L;
     }
 
-    private CommandResult ExecuteRemoveMember(CommandCall call)
-    {
-        var file = RequiredFile(call);
-        if (file.Length == 0)
-        {
-            return CommandResult.Error("RMVFM requires FILE(library/file).");
-        }
-
-        var (library, name) = ResolveFileReference(file);
-        var member = RequiredMember(call, library, name);
-        if (!_files.MemberExists(library, name, member))
-        {
-            return CommandResult.Error($"Member {member} not found in file {name}.");
-        }
-
-        _files.RemoveMember(library, name, member);
-        return CommandResult.Ok($"Member {member} removed from file {name}.");
-    }
-
     private CommandResult ExecuteClearMember(CommandCall call)
     {
         var file = RequiredFile(call);
@@ -694,7 +747,7 @@ public sealed partial class CommandService
             return CommandResult.Error($"File {library}/{name} not found.");
         }
 
-        _files.ClearMember(library, name, member);
+        _files.ClearMember(library, name, member, _cancellationToken);
         return CommandResult.Ok($"Member {member} in file {name} cleared.");
     }
 
@@ -783,8 +836,13 @@ public sealed partial class CommandService
         if (formats.Length == 0 || formats.Length > 2 || formats.Distinct().Count() != formats.Length ||
             formats.Any(v => v is not ("*NONE" or "*MAP" or "*DROP")) || formats.Contains("*NONE") && formats.Length != 1)
             return CommandResult.Error("IPC0139: Supported FMTOPT values are *NONE or *MAP/*DROP.");
-        var count = _files.CopyRecords(new(fromLibrary, fromName), fromMember, new(toLibrary, toName), toMember,
-            replace: option == "*REPLACE", map: formats.Contains("*MAP"), drop: formats.Contains("*DROP"), cancellationToken: _cancellationToken);
+        int count;
+        try { count = _files.CopyRecords(new(fromLibrary, fromName), fromMember, new(toLibrary, toName), toMember,
+            replace: option == "*REPLACE", map: formats.Contains("*MAP"), drop: formats.Contains("*DROP"), cancellationToken: _cancellationToken); }
+        catch (Microsoft.Data.Sqlite.SqliteException error) when (error.SqliteExtendedErrorCode == 275)
+        { throw new CpfException("CPF502F", "Check constraint violation on file member."); }
+        catch (Microsoft.Data.Sqlite.SqliteException error) when (Ipc.Db.Store.DatabaseRecordErrors.IsReferentialConstraintFailure(error))
+        { throw new CpfException("CPF502D", "Referential constraint violation on file member."); }
         return CommandResult.Ok($"{count} records copied from {fromName} to {toName}.");
     }
 
@@ -882,6 +940,10 @@ public sealed partial class CommandService
         RetainWorkstations = _job is not null && _system.JobRuntime.Groups(_job.Key) is not null,
         LibraryResolver = (_, fileName) => FindFileLibrary(fileName),
         ProgramDispatcher = CallExternalProgram,
+        ServiceProcedure = ResolveRpgService,
+        ServiceData = ResolveRpgServiceData,
+        ProcedurePointers = RpgPointerRegistry(),
+        DataPointers = RpgDataRegistry(),
         SendMessage = message => _messages.AppendLine(message),
         Display = text => _messages.AppendLine(text),
         ReceiveMessage = () => null,
@@ -907,11 +969,13 @@ public sealed partial class CommandService
         try
         {
             var loaded = LoadProgramObject(library, name);
+            if (loaded.Rpg is null && RpgRuntimeContext.ContainsFileArguments(parameters)) throw new CpfException("CPF3C3A", "File parameters can be passed only between RPG programs and procedures.");
             if (loaded.Api is not null)
             {
                 IReadOnlyList<object?> apiArguments;
                 try { apiArguments = borrowArguments?.Invoke() ?? parameters; }
                 catch (CpfException error) { return new RpgExternalCallResult { Success = false, Message = error.Message }; }
+                if (apiArguments.OfType<Ipc.Core.Work.ProgramArgument>().Any(a => a.NullMap is not null)) throw new CpfException("CPF3C3A", "This system API does not declare a null-map parameter contract.");
                 var result = ExecuteBuiltinProgram(loaded.Api, apiArguments);
                 return new RpgExternalCallResult { Success = !result.IsError, Message = result.Message,
                     UpdatedParameters = borrowArguments is null ? parameters : Array.Empty<object?>() };
@@ -924,14 +988,26 @@ public sealed partial class CommandService
                         for (var j = i + 1; j < references.Count; j++)
                             if (Ipc.Core.Work.ProgramArgument.Overlaps(references[i], references[j]))
                                 return new RpgExternalCallResult { Success = false, Message = "External process calls require an alias-capable protocol for overlapping RPG arguments." };
+                RejectExternalNullAliases(references);
                 using var scope = EnterProgram(loaded.External);
-                var result = _system.ExternalPrograms.Execute(loaded.External, parameters, _cancellationToken);
+                var maps = references?.Select(value => (value as Ipc.Core.Work.ProgramArgument)?.NullMap).ToArray();
+                var result = _system.ExternalPrograms.Execute(loaded.External, parameters, _cancellationToken, maps);
                 if (result.Message.Length > 0) _messages.AppendLine(result.Message);
                 if (references is not null)
                 {
                     var prepared = result.Parameters.Select((value, index) => value is not null && references[index] is Ipc.Core.Work.ProgramArgument cell ? cell.NormalizeReturnedValue(value) : value).ToArray();
+                    var flagChanges = new List<(Ipc.Core.Work.ProgramArgumentNullMap Map, int Index, bool Value)>();
+                    if (result.NullMaps.Count != 0)
+                        for (var index = 0; index < maps!.Length; index++)
+                            if (maps[index] is { } map && result.NullMaps[index] is { } returned)
+                            {
+                                map.ValidateReturnedValues(returned);
+                                for (var item = 0; item < returned.Length; item++)
+                                    if (returned[item] != map.Read(item)) flagChanges.Add((map, item, returned[item]));
+                            }
                     for (var index = 0; index < prepared.Length; index++)
                         if (prepared[index] is not null && references[index] is Ipc.Core.Work.ProgramArgument { IsReadOnly: false } cell) cell.Value = prepared[index];
+                    foreach (var change in flagChanges) change.Map.Write(change.Index, change.Value);
                     return new RpgExternalCallResult { Success = result.Success, Message = result.Message, UpdatedParameters = Array.Empty<object?>() };
                 }
                 return new RpgExternalCallResult { Success = result.Success, Message = result.Message, UpdatedParameters = result.Parameters };
@@ -996,6 +1072,20 @@ public sealed partial class CommandService
                     _loadedDescriptors.Add(descriptor, descriptor);
                     return (null, null, descriptor, null);
                 }
+                if (descriptor.Attribute == RpgBoundProgram.Attribute)
+                {
+                    var retained = _job is null ? null : _system.JobRuntime.Groups(_job.Key)?.ExistingResource<RpgActivationState>(descriptor, descriptor.Library + "/" + descriptor.Name);
+                    if (retained is { Context.IsCancelled: false })
+                    {
+                        _system.ObjectSigning.RequireExecutable(retained.Descriptor);
+                        _loadedDescriptors.GetValue(retained.Context.Program, _ => retained.Descriptor);
+                        return (null, retained.Context.Program, null, null);
+                    }
+                    RpgProgram bound;
+                    try { bound = RpgBoundProgram.Deserialize(source).Restore(_cancellationToken); }
+                    catch (Exception error) when (error is InvalidDataException or RpgCompileException) { throw new CpfException("IPC0006", error.Message); }
+                    _loadedDescriptors.Add(bound, descriptor); return (null, bound, null, null);
+                }
                 if (string.Equals(descriptor.Attribute, RpgAttribute, StringComparison.OrdinalIgnoreCase))
                 {
                     RpgProgram rpg;
@@ -1009,11 +1099,15 @@ public sealed partial class CommandService
                         var diskBindings = descriptor.ExtendedAttributes?.TryGetValue(RpgDiskBindings.AttributeName, out var savedDisk) == true
                             ? RpgDiskBindings.Restore(source, savedDisk) : null;
                         Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = diskBindings is null ? null : diskBindings.Resolve;
+                        var externalBindings = descriptor.ExtendedAttributes?.TryGetValue(RpgExternalBindings.AttributeName, out var savedExternal) == true
+                            ? RpgExternalBindings.Restore(source, savedExternal) : null;
+                        Func<RpgExternalRequest, RpgExternalLayout>? externalResolver = externalBindings is null ? null : externalBindings.Resolve;
                         rpg = expanded is not null
-                            ? RpgCompiler.Compile(lib, name, expanded, _cancellationToken, resolver, diskResolver)
-                            : RpgCompiler.Compile(lib, name, source, _cancellationToken, resolver, diskResolver);
+                            ? RpgCompiler.Compile(lib, name, expanded, _cancellationToken, resolver, diskResolver, externalResolver)
+                            : RpgCompiler.Compile(lib, name, source, _cancellationToken, resolver, diskResolver, externalResolver);
                         diskBindings?.Verify(rpg);
-                        if (bindings is not null && bindings.Files.Count != rpg.Workstations.Count) throw new InvalidDataException("Unused compiled RPG workstation bindings.");
+                        bindings?.Verify(rpg);
+                        externalBindings?.Verify(rpg);
                     }
                     catch (Exception error) when (error is InvalidDataException or RpgCompileException)
                     { throw new CpfException("IPC0006", error.Message); }
@@ -1042,7 +1136,7 @@ public sealed partial class CommandService
         var (library, name) = SplitQualified(file, creating ? "*CURLIB" : "*LIBL");
         if (library == "*CURLIB") return (SearchLibraries(library).First(), name);
         if (library == "*LIBL")
-            return (SearchLibraries(library).FirstOrDefault(l => _files.FileExists(l, name))
+            return (SearchLibraries(library).FirstOrDefault(l => new Ipc.Services.Sqlite.SqliteObjectStore(_system.Connections).GetForAuthorization(l, name, ObjectType.File) is not null)
                 ?? SearchLibraries("*CURLIB").First(), name);
         return (library, name);
     }

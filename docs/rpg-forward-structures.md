@@ -42,8 +42,7 @@ including local constants that shadow globals.
 Root DIM and OCCURS remain explicit on the copy. Subfield dimensions, formats,
 positions, overlays, raw/text mode and unnamed filler storage are copied. A copy
 is automatically qualified. PI structures can supply layouts without exposing
-runtime argument values as initialization. [Data templates](rpg-templates.md) now suppress runtime storage. Nested LIKEDS
-subfields remain open.
+runtime argument values as initialization. [Data templates](rpg-templates.md) now suppress runtime storage. [Nested structures](rpg-nested-structures.md) add inline and referenced subfields.
 
 ## Interfaces, ancestry and feedback
 
@@ -79,7 +78,7 @@ cyclic includes at CCSID 37/1208. Process tests cover valid/malformed response
 atomicity and rejection before launch. RPGFWDDS provides terminal compile/call
 acceptance.
 
-Nested/EXTNAME/WORKSTN record structures, WORKSTN file templates and file parameters, broader
+Wider external record structures, broader
 forward value expressions, varying/graphic/UCS-2/pointer types, nondefault
 date/time forms, foreign ABI and module/service-program binding remain open.
 See [forward type references](rpg-forward-declarations.md),
@@ -107,3 +106,18 @@ layouts, result operands and parameter/return types.
 [DISK file templates and LIKEFILE definitions](rpg-file-definitions.md) now
 provide qualified module-level file copies without opening their templates.
 File parameters and WORKSTN variants remain open.
+
+[WORKSTN record buffers](rpg-workstation-records.md) and
+[WORKSTN file definitions](rpg-workstation-definitions.md) now provide display
+LIKEREC layouts, templates, qualified formats and LIKEFILE copies.
+
+[WORKSTN file parameters](rpg-workstation-parameters.md) extend borrowed file
+interfaces to caller-owned display state and feedback.
+
+[Nested native structures](rpg-nested-structures.md) now support inline and
+LIKEDS/LIKEREC children, shared storage views, forward types and nested record
+buffers. See that contract for supported operations and bounds.
+
+[Externally described structures](rpg-external-structures.md) add EXT/EXTNAME,
+EXTFLD/PREFIX, external defaults, compatible file-variable sharing and checked
+saved descriptions without opening runtime files.

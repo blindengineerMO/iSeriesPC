@@ -8,7 +8,7 @@ namespace Ipc.Rpg.Parsing;
 public static partial class RpgCompiler
 {
     private static RpgDataStructure? NativeStructureTemplate(RpgProgram program, string name, bool initialization, int line)
-        => program.ForwardStructureLookup?.Invoke(name.Trim(), initialization, line) ?? program.FindDs(name.Trim());
+        => program.ForwardStructureLookup?.Invoke(name.Trim(), initialization, line) ?? program.FindDs(name.Trim()) ?? ExactActualType(program, RpgExpressionParser.Parse(name.Trim()))?.ParameterStructure;
 
     private static object DeclarationIdentity(RpgProgram program, int line, string name)
         => program.DeclarationIdentityLookup?.Invoke(line, name) ?? new object();
@@ -17,7 +17,7 @@ public static partial class RpgCompiler
     {
         if (type.Name != "LIKE") return null;
         var arguments = DeclarationArguments(type.Arguments ?? "", line);
-        if (arguments.Length is < 1 or > 2 || !Regex.IsMatch(arguments[0], @"\A[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?\z", RegexOptions.CultureInvariant))
+        if (arguments.Length is < 1 or > 2 || !Regex.IsMatch(arguments[0], @"\A[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\z", RegexOptions.CultureInvariant))
             throw new RpgCompileException(line, "LIKE requires a declared field, subfield, structure or returning prototype, with optional signed length adjustment.");
         var target = arguments[0].ToUpperInvariant();
         RpgField? field = symbols.ForwardTypeLookup?.Invoke(target, current);
@@ -26,7 +26,7 @@ public static partial class RpgCompiler
             field = current.Find(parts[^1]) is { } member ? ElementType(member) : null;
         field ??= ExactActualType(symbols, RpgExpressionParser.Parse(target));
         if (field is null && symbols.FindPrototype(target) is { } prototype) field = prototype.NativeReturnField;
-        if (field is null || field.Source == RpgFieldSource.Constant)
+        if (field is null || field.Source == RpgFieldSource.Constant || field.IsFileParameter)
             throw new RpgCompileException(line, "LIKE requires an available declared type; missing, constant and void-prototype references cannot define storage.");
         if (field.Varying || field.Kind == RpgFieldKind.Indicator && field.Length != 1 ||
             field.Kind == RpgFieldKind.Date && field.Length != 10 || field.Kind == RpgFieldKind.Time && field.Length != 8 ||
@@ -48,6 +48,8 @@ public static partial class RpgCompiler
 
     private static DeclarationKeyword LikeScalarKeyword(RpgField field, int line)
     {
+        if (field.Kind == RpgFieldKind.DataPointer) return new("POINTER", null);
+        if (field.Kind == RpgFieldKind.ProcedurePointer) return new("POINTER", "*PROC");
         var name = field.Kind switch { RpgFieldKind.Character => "CHAR", RpgFieldKind.Packed => "PACKED", RpgFieldKind.Zoned => "ZONED",
             RpgFieldKind.Integer => "INT", RpgFieldKind.Float => "FLOAT", RpgFieldKind.Indicator => "IND", RpgFieldKind.Date => "DATE",
             RpgFieldKind.Time => "TIME", RpgFieldKind.Timestamp => "TIMESTAMP", _ => throw new RpgCompileException(line, "LIKE source uses an unsupported native type.") };

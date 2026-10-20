@@ -39,9 +39,9 @@ public static partial class RpgCompiler
         }
         // Reuse native element views without exporting a synthetic structure name to RPG.
         var storage = new RpgDataStructure { Name = (program.IsNativeProcedure ? "\u0001PROC_" + program.NativeProcedureName : "") + (field.IsTable ? "\u0001TABLE" : field.IsArray ? "\u0001ARRAY" : "\u0001SCALAR") + program.DataStructures.Count, Anonymous = true,
-            NativeStorage = true, DeclarationLine = line, Length = (int)size, InitializeSubfields = true };
+            NativeStorage = true, BasedOn = field.BasedOn, DeclarationLine = line, Length = (int)size, InitializeSubfields = true };
         storage.Elements.Add(new() { Name = field.Name, LocalName = field.Name, Kind = field.Kind, Length = field.Length,
-            ReadOnlyParameter = field.ReadOnlyParameter, LikeType = field.LikeType, DeclaredLike = field.DeclaredLike,
+            NullCapable = field.NullCapable, NullIndicatorName = field.NullIndicatorName, ReadOnlyParameter = field.ReadOnlyParameter, LikeType = field.LikeType, DeclaredLike = field.DeclaredLike,
             Decimals = field.Decimals, StorageLength = width, Stride = width, IsArray = field.IsArray || field.IsTable, Dimension = field.Dimension,
             OpaqueBytes = field.OpaqueBytes, HasInitialValue = field.InitializationExpression is not null,
             InitialValue = field.InitializationExpression, DeclarationLine = line, ArrayDescending = field.ArrayDescending });

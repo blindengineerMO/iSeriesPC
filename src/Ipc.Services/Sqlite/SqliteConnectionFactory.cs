@@ -2,12 +2,13 @@ using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Sqlite;
 
-public sealed class SqliteConnectionFactory : IDisposable
+public sealed partial class SqliteConnectionFactory : IDisposable
 {
     private readonly string _dataSource;
     private readonly string _dataDirectory;
     private readonly object _gate = new();
     private SqliteConnection? _keepAlive;
+    private int _opening;
     private bool _disposed;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly HashSet<IDisposable> _runtimeResources = new(ReferenceEqualityComparer.Instance);
@@ -61,8 +62,13 @@ public sealed class SqliteConnectionFactory : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return OpenCore();
+            _opening++;
         }
+        // SQLite setup can wait for another connection's schema lock. Keeping
+        // the lifecycle gate here would prevent shutdown from canceling that
+        // connection's active work in the first place.
+        try { if (UsesMemoryDatabase) EnsureKeepAlive(); return OpenCore(); }
+        finally { lock (_gate) { _opening--; Monitor.PulseAll(_gate); } }
     }
 
     private SqliteConnection OpenCore()
@@ -70,13 +76,6 @@ public sealed class SqliteConnectionFactory : IDisposable
         if (!UsesMemoryDatabase)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath!)!);
-        }
-        else
-        {
-            lock (_gate)
-            {
-                EnsureKeepAlive();
-            }
         }
 
         var connection = new SqliteConnection(_dataSource);
@@ -95,28 +94,29 @@ public sealed class SqliteConnectionFactory : IDisposable
 
     private void EnsureKeepAlive()
     {
-        if (_keepAlive is { } existing && existing.State != System.Data.ConnectionState.Closed)
+        lock (_gate)
         {
-            return;
+            if (_keepAlive is { } existing && existing.State != System.Data.ConnectionState.Closed) return;
         }
 
-        var keepAlive = new SqliteConnection(_dataSource);
+        SqliteConnection? keepAlive = new(_dataSource);
         try
         {
             keepAlive.Open();
             Enable(keepAlive);
-            _keepAlive = keepAlive;
+            lock (_gate)
+            {
+                if (_keepAlive is null || _keepAlive.State == System.Data.ConnectionState.Closed)
+                { _keepAlive = keepAlive; keepAlive = null; }
+            }
         }
-        catch
-        {
-            keepAlive.Dispose();
-            throw;
-        }
+        finally { keepAlive?.Dispose(); }
     }
 
     private static void Enable(SqliteConnection connection)
     {
         DatabaseSortKeys.Register(connection);
+        Ipc.Db.Sql.SqlCheckRuntime.Register(connection);
         connection.CreateFunction("ipc_actor", () => Ipc.Services.Events.OperationIdentity.Current?.Principal);
         connection.CreateFunction("ipc_job", () => Ipc.Services.Events.OperationIdentity.Current?.Job?.ToString());
         connection.CreateFunction("ipc_journal_replay", () => 0);
@@ -161,6 +161,9 @@ public sealed class SqliteConnectionFactory : IDisposable
         {
             lock (_gate)
             {
+                // Cancellation and resource cleanup happen before joining opens;
+                // waiting releases the gate so their finally blocks can finish.
+                while (_opening != 0) Monitor.Wait(_gate);
                 _disposed = true;
                 try { _cryptoKeys?.Dispose(); }
                 finally

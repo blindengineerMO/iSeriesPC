@@ -39,6 +39,10 @@ public static partial class RpgCompiler
         private readonly CancellationToken _cancellation;
         private readonly ForwardDeclarationTypes? _parent;
         private readonly State _state;
+        private readonly Func<RpgDiskRequest, RpgDiskLayout>? _diskResolver;
+        private readonly Func<RpgWorkstationRequest, RpgWorkstationLayout>? _workstationResolver;
+        private IReadOnlyList<RpgDiskBinding>? _fileLayouts;
+        private IReadOnlyList<RpgWorkstationBinding>? _displayLayouts;
         private readonly Dictionary<string, Node> _values = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Node> _returns = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Owner> _structures = new(StringComparer.OrdinalIgnoreCase);
@@ -49,20 +53,22 @@ public static partial class RpgCompiler
         private bool _indexed;
 
         internal ForwardDeclarationTypes(RpgProgram program, List<string> source, bool free, CancellationToken cancellation,
-            ForwardDeclarationTypes? parent = null)
-        { _program = program; _source = new(source); _free = free; _cancellation = cancellation; _parent = parent; _state = parent?._state ?? new(); }
+            ForwardDeclarationTypes? parent = null, Func<RpgDiskRequest, RpgDiskLayout>? diskResolver = null, Func<RpgWorkstationRequest, RpgWorkstationLayout>? workstationResolver = null)
+        { _program = program; _source = new(source); _free = free; _cancellation = cancellation; _parent = parent; _state = parent?._state ?? new(); _diskResolver = diskResolver ?? parent?._diskResolver; _workstationResolver = workstationResolver ?? parent?._workstationResolver; }
         internal void Attach(RpgProgram program)
         {
             _program = program;
             program.ForwardTypeLookup = Target;
+            program.ForwardFileLookup = FileParameterType;
             program.ForwardStructureLookup = Template;
             program.DeclarationIdentityLookup = Identity;
+            program.ExternalDescriptionLookup ??= _parent?._program.ExternalDescriptionLookup;
         }
         internal void Detach()
-        { _program.ForwardTypeLookup = null; _program.ForwardStructureLookup = null; _program.DeclarationIdentityLookup = null; }
+        { _program.ForwardFileLookup = null; _program.ForwardTypeLookup = null; _program.ForwardStructureLookup = null; _program.DeclarationIdentityLookup = null; }
         internal void Child(string name, List<string> lines)
         {
-            var scope = new RpgProgram { Name = _program.Name, Library = _program.Library, NativeProcedureName = name, GlobalProgram = _program };
+            var scope = new RpgProgram { Name = _program.Name, Library = _program.Library, NativeProcedureName = name, GlobalProgram = _program, NullControl = _program.NullControl };
             _children.Add(name, new(scope, lines, _free, _cancellation, this));
         }
         internal ForwardDeclarationTypes Child(string name) => _children[name];
@@ -99,7 +105,7 @@ public static partial class RpgCompiler
             if (_indexed) return;
             _indexed = true;
             var lines = new List<string>(_source);
-            var discovery = new RpgProgram { Name = _program.Name, Library = _program.Library, NativeProcedureName = _program.NativeProcedureName };
+            var discovery = new RpgProgram { Name = _program.Name, Library = _program.Library, NativeProcedureName = _program.NativeProcedureName, NullControl = _program.NullControl };
             for (var index = 0; index < lines.Count; index++)
             {
                 _cancellation.ThrowIfCancellationRequested();
@@ -114,15 +120,9 @@ public static partial class RpgCompiler
                     var first = index; var cursor = index;
                     var header = ReadFreeDeclaration(lines, ref cursor, index + 1, !_free);
                     var options = Regex.Match(header, @"\ADCL-DS\s+\S+\s*(.*)\z", RegexOptions.IgnoreCase).Groups[1].Value;
-                    if (!DeclarationKeywords(options, first + 1).Any(k => k.Name is "LIKEDS" or "LIKEREC"))
+                    if (!DeclarationKeywords(options, first + 1).Any(k => k.Name is "LIKEDS" or "LIKEREC" or "END-DS"))
                     {
-                        while (++cursor < lines.Count)
-                        {
-                            if (string.IsNullOrWhiteSpace(lines[cursor]) || lines[cursor].TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
-                            var declaration = ReadFreeDeclaration(lines, ref cursor, cursor + 1, !_free);
-                            if (declaration.StartsWith("END-DS", StringComparison.OrdinalIgnoreCase)) break;
-                        }
-                        if (cursor >= lines.Count) throw new RpgCompileException(first + 1, "DCL-DS without END-DS.");
+                        cursor = StructureEnd(lines, first, cursor, !_free, _cancellation);
                     }
                     StructureImage(_source, first, cursor, !_free); index = cursor; continue;
                 }
@@ -135,27 +135,39 @@ public static partial class RpgCompiler
             }
         }
 
-        internal void StructureImage(List<string> source, int first, int last, bool columnLimited = false)
+        internal void StructureImage(List<string> source, int first, int last, bool columnLimited = false, string? parentPath = null)
         {
             var lines = new List<string>(source); var cursor = first;
             var header = ReadFreeDeclaration(lines, ref cursor, first + 1, columnLimited);
             var match = Regex.Match(header, @"\ADCL-DS\s+([A-Za-z_][A-Za-z0-9_]*|\*N)(?:\s+(.*))?\z", RegexOptions.IgnoreCase);
             if (!match.Success) throw new RpgCompileException(first + 1, "Invalid structure in type dependency index.");
             var name = match.Groups[1].Value.ToUpperInvariant(); var options = DeclarationKeywords(match.Groups[2].Value, first + 1);
+            var inlineEnd = options.Any(k => k.Name == "END-DS"); options.RemoveAll(k => k.Name == "END-DS");
+            if (parentPath is not null && !options.Any(k => k.Name is "QUALIFIED" or "LIKEDS" or "LIKEREC")) options.Add(new("QUALIFIED", null));
+            var path = parentPath is null ? name : parentPath + "." + name;
             var owner = new Owner(name, Keywords(options.Where(k => k.Name != "INZ")), first + 1);
             owner.InheritInitialization = options.Any(k => k.Name == "INZ" && k.Arguments is not null);
             _owners.Add(owner.Line, owner);
-            if (name != "*N") { _structures.TryAdd(name, owner); _values.TryAdd(name, owner.Root); }
+            if (name != "*N") { _structures.TryAdd(path, owner); if (parentPath is null) _values.TryAdd(name, owner.Root); }
             var image = Enumerable.Repeat("", last - first + 1).ToArray();
-            image[0] = "DCL-DS " + name + " " + owner.Text + ";";
+            image[0] = "DCL-DS " + name + " " + owner.Text + (inlineEnd ? " END-DS" : "") + ";";
             var initializedImage = new string[image.Length]; Array.Fill(initializedImage, "");
-            initializedImage[0] = "DCL-DS " + name + " " + Keywords(options) + ";";
+            initializedImage[0] = "DCL-DS " + name + " " + Keywords(options) + (inlineEnd ? " END-DS" : "") + ";";
             for (cursor++; cursor <= last; cursor++)
             {
                 if (string.IsNullOrWhiteSpace(lines[cursor]) || lines[cursor].TrimStart().StartsWith("//", StringComparison.Ordinal)) continue;
                 var line = cursor + 1; var declaration = ReadFreeDeclaration(lines, ref cursor, line, columnLimited);
                 if (declaration.StartsWith("END-DS", StringComparison.OrdinalIgnoreCase))
                 { image[line - first - 1] = initializedImage[line - first - 1] = "END-DS;"; break; }
+                if (declaration.StartsWith("DCL-DS ", StringComparison.OrdinalIgnoreCase) || declaration.StartsWith("DCL-DS\t", StringComparison.OrdinalIgnoreCase))
+                {
+                    var nestedOptions = Regex.Match(declaration, @"\ADCL-DS\s+\S+\s*(.*)\z", RegexOptions.IgnoreCase).Groups[1].Value;
+                    var end = DeclarationKeywords(nestedOptions, line).Any(k => k.Name is "LIKEDS" or "LIKEREC" or "END-DS") ? cursor : StructureEnd(lines, line - 1, cursor, columnLimited, _cancellation);
+                    StructureImage(source, line - 1, end, columnLimited, path);
+                    var child = _owners[line];
+                    child.Image.CopyTo(image, line - first - 1); child.InitializedImage.CopyTo(initializedImage, line - first - 1);
+                    cursor = end; continue;
+                }
                 var member = Regex.Match(declaration, @"\A(?:DCL-SUBF\s+)?([A-Za-z_][A-Za-z0-9_]*|\*N)\s+(.+)\z", RegexOptions.IgnoreCase);
                 if (!member.Success) throw new RpgCompileException(line, "Invalid structure member in type dependency index.");
                 var local = member.Groups[1].Value.ToUpperInvariant(); var text = member.Groups[2].Value;
@@ -170,6 +182,13 @@ public static partial class RpgCompiler
             owner.Image = image; owner.InitializedImage = initializedImage;
         }
 
+        private RpgField? FileParameterType(string name, int line)
+        {
+            _cancellation.ThrowIfCancellationRequested(); Index();
+            if (_values.TryGetValue(name, out var node) && node.Kind != "constant" && DeclarationKeywords(node.Text, node.Line).FirstOrDefault()?.Name == "LIKEFILE")
+                return Resolve(node);
+            return _parent?.FileParameterType(name, line);
+        }
         private RpgField? Target(string name, RpgDataStructure? current)
         {
             _cancellation.ThrowIfCancellationRequested(); Index();
@@ -177,6 +196,9 @@ public static partial class RpgCompiler
             if (current is not null && _owners.TryGetValue(current.DeclarationLine, out var owner) &&
                 (parts.Length == 1 || parts.Length == 2 && parts[0].Equals(owner.Name, StringComparison.OrdinalIgnoreCase)))
                 if (Member(owner, parts[^1]) is { } member) return member;
+            if (parts.Length >= 2 && _structures.TryGetValue(string.Join('.', parts[..^1]), out var nestedOwner)) return Member(nestedOwner, parts[^1]);
+            if (parts.Length > 2 && Target(string.Join('.', parts[..^1]), current)?.ParameterStructure?.Find(parts[^1]) is { } nestedMember)
+                return ElementType(nestedMember);
             if (parts.Length == 2)
             {
                 if (_structures.TryGetValue(parts[0], out var structure)) return Member(structure, parts[1]);
@@ -195,10 +217,16 @@ public static partial class RpgCompiler
                 if (_returns.TryGetValue(name, out var returns)) return Resolve(returns);
                 if (_children.TryGetValue(name, out var child)) { child.Index(); return child._entry is { } entry ? child.Resolve(entry) : null; }
             }
+            if (parts.Length == 1)
+                foreach (var externalOwner in _structures.Values.Distinct().Where(o => !DeclarationKeywords(o.Text, o.Line).Any(k => k.Name == "QUALIFIED") && DeclarationKeywords(o.Text, o.Line).Any(k => k.Name is "EXT" or "EXTNAME")))
+                    if (Member(externalOwner, name) is { } external) return external;
             return _parent?.Target(name, null);
         }
         private RpgField? Member(Owner owner, string name)
         {
+            var ownerOptions = DeclarationKeywords(owner.Text, owner.Line);
+            if (ownerOptions.Any(k => k.Name is "EXT" or "EXTNAME"))
+                return Structure(owner).Find(name) is { } external ? ElementType(external) : null;
             if (owner.Members.TryGetValue(name, out var node)) return Resolve(node);
             var options = DeclarationKeywords(owner.Text, owner.Line);
             if (options.SingleOrDefault(k => k.Name == "LIKEREC")?.Arguments is { } record)
@@ -228,6 +256,7 @@ public static partial class RpgCompiler
                 }
                 return structure;
             }
+            if (name.Contains('.') && Target(name, null)?.ParameterStructure is { } nested) return nested;
             if (_values.TryGetValue(name, out var node))
             {
                 if (node.Kind != "constant" && DeclarationKeywords(node.Text, node.Line).FirstOrDefault()?.Name is "LIKEDS" or "LIKEREC")
@@ -312,15 +341,15 @@ public static partial class RpgCompiler
                 {
                     var options = DeclarationKeywords(node.Text, node.Line);
                     if (options.Count == 0 || options[0].Name is "EXTPGM" or "EXTPROC") { node.Resolved = true; return null; }
-                    if (options[0].Name is "LIKEDS" or "LIKEREC")
+                    if (options[0].Name is "LIKEDS" or "LIKEREC" or "LIKEFILE")
                     {
                         var scratch = new RpgProgram { Name = scope.Name, Library = scope.Library };
-                        DeclareNativeParameter(scratch, scope, node.Name, Keywords(options.Where(k => k.Name is "LIKEDS" or "LIKEREC" or "DIM")), node.Line, false);
+                        DeclareNativeParameter(scratch, scope, node.Name, Keywords(options.Where(k => k.Name is "LIKEDS" or "LIKEREC" or "LIKEFILE" or "DIM")), node.Line, false);
                         node.Value = scratch.Fields.Single();
                     }
                     else
                     {
-                        var retained = options.Take(1).Concat(options.Skip(1).Where(k => k.Name is "CCSID" or "DIM" or "ASCEND" or "DESCEND" or "CTDATA" or "PERRCD" or "EXTFMT" or "ALT" or "TEMPLATE"));
+                        var retained = options.Take(1).Concat(options.Skip(1).Where(k => k.Name is "CCSID" or "DIM" or "ASCEND" or "DESCEND" or "CTDATA" or "PERRCD" or "EXTFMT" or "ALT" or "TEMPLATE" or "NULLIND"));
                         var scratch = new RpgProgram { Name = scope.Name, Library = scope.Library };
                         scratch.CompileTimeData.AddRange(_program.CompileTimeData);
                         var current = node.Owner is { } owner ? new RpgDataStructure { Name = owner.Name, DeclarationLine = owner.Line } : null;
@@ -335,18 +364,68 @@ public static partial class RpgCompiler
             { throw new RpgCompileException(node.Line, error.Message); }
             finally { Leave(); }
         }
+        private IReadOnlyList<RpgDiskBinding> ForwardFiles()
+        {
+            if (_program.RecordLayoutsLookup is { } lookup) return lookup();
+            if (_parent is null) return _program.DeclarationDiskFiles;
+            if (_fileLayouts is not null) return _fileLayouts;
+            _cancellation.ThrowIfCancellationRequested();
+            var globals = _parent._program;
+            var metadata = new RpgProgram { Library = _program.Library, Name = _program.Name, NativeProcedureName = _program.NativeProcedureName, GlobalProgram = globals };
+            ImportGlobalSymbols(metadata, globals);
+            foreach (var file in RecordFiles(globals)) if (!metadata.DiskFiles.Any(f => f.Request.Name == file.Request.Name)) metadata.DiskFiles.Add(file);
+            var declarations = ParseWorkstationDeclarations(new(_source), metadata, _free, _cancellation, filesOnly: true);
+            foreach (var file in declarations)
+            {
+                _program.FileDeclarationLines[file.Name] = file.Line;
+                if (file.Unblocked) _program.UnblockedFiles.Add(file.Name);
+            }
+            var disks = declarations.Where(d => d.Disk).Select(d => d with { Keywords = FileKeywords(DeclarationKeywords(d.Keywords, d.Line).Where(k => k.Name is not ("INFDS" or "INFSR"))) }).ToArray();
+            BindDisks(metadata, disks, _diskResolver);
+            return _fileLayouts = metadata.DiskFiles.ToArray();
+        }
+
+        private IReadOnlyList<RpgWorkstationBinding> ForwardWorkstations()
+        {
+            if (_program.WorkstationLayoutsLookup is { } lookup) return lookup();
+            if (_parent is null) return _program.DeclarationWorkstations;
+            if (_displayLayouts is not null) return _displayLayouts;
+            _cancellation.ThrowIfCancellationRequested();
+            var globals = _parent._program;
+            var metadata = new RpgProgram { Library = _program.Library, Name = _program.Name, NativeProcedureName = _program.NativeProcedureName, GlobalProgram = globals };
+            ImportGlobalSymbols(metadata, globals);
+            foreach (var file in RecordWorkstations(globals)) if (!metadata.Workstations.Any(f => f.Request.Name == file.Request.Name)) metadata.Workstations.Add(file);
+            var declarations = ParseWorkstationDeclarations(new(_source), metadata, _free, _cancellation, filesOnly: true);
+            foreach (var file in declarations) _program.FileDeclarationLines[file.Name] = file.Line;
+            var displays = declarations.Where(d => !d.Disk).Select(d => d with { Keywords = FileKeywords(DeclarationKeywords(d.Keywords, d.Line).Where(k => k.Name is not ("INFDS" or "INFSR" or "INDDS"))) }).ToArray();
+            BindWorkstations(metadata, displays, _workstationResolver, metadataOnly: true);
+            return _displayLayouts = metadata.Workstations.ToArray();
+        }
+
         private RpgProgram Preview(int boundary)
         {
             var scope = new RpgProgram { Name = _program.Name, Library = _program.Library, NativeProcedureName = _program.NativeProcedureName,
                 GlobalProgram = _program.GlobalProgram ?? _parent?._program };
             if (_parent is not null) ImportGlobalSymbols(scope, _parent._program);
-            scope.RecordLayoutsLookup = _program.RecordLayoutsLookup ?? _parent?._program.RecordLayoutsLookup;
+            foreach (var file in _program.FileDeclarationLines) scope.FileDeclarationLines[file.Key] = file.Value;
+            scope.UnblockedFiles.UnionWith(_program.UnblockedFiles);
+            scope.WorkstationLayoutsLookup = () => { var files = ForwardWorkstations(); foreach (var file in _program.FileDeclarationLines) scope.FileDeclarationLines[file.Key] = file.Value; return files; };
+            scope.DeclarationWorkstations.AddRange(_program.DeclarationWorkstations.Where(f => !scope.DeclarationWorkstations.Contains(f)));
+            scope.RecordLayoutsLookup = () =>
+            {
+                var files = ForwardFiles();
+                foreach (var file in _program.FileDeclarationLines) scope.FileDeclarationLines[file.Key] = file.Value;
+                scope.UnblockedFiles.UnionWith(_program.UnblockedFiles);
+                return files;
+            };
             scope.DeclarationDiskFiles.AddRange(_program.DeclarationDiskFiles.Where(f => !scope.DeclarationDiskFiles.Contains(f)));
             scope.Fields.AddRange(_program.Fields.Where(f => !scope.Fields.Contains(f)));
             scope.DataStructures.AddRange(_program.DataStructures.Where(d => !scope.DataStructures.Contains(d)));
             scope.GlobalFields.UnionWith(_program.GlobalFields); scope.GlobalStructures.UnionWith(_program.GlobalStructures);
             foreach (var (name, length) in _program.DeclarationStructureLengths) scope.DeclarationStructureLengths[name] = length;
-            scope.ForwardTypeLookup = Target; scope.ForwardStructureLookup = Template; scope.DeclarationIdentityLookup = Identity;
+            scope.ForwardFileLookup = FileParameterType; scope.ForwardTypeLookup = Target; scope.ForwardStructureLookup = Template; scope.DeclarationIdentityLookup = Identity;
+            scope.NullControl = _program.NullControl;
+            scope.ExternalDescriptionLookup = _program.ExternalDescriptionLookup ?? _parent?._program.ExternalDescriptionLookup;
             scope.PreviewLayoutLookup = Target;
             scope.PreviewConstantLookup = name => ConstantBefore(name, boundary);
             if (_entry is { } entry && entry.Line < boundary)

@@ -102,7 +102,9 @@
         "TEXT",
         "MBR",
         "MAXMBRS",
-        "WAITRCD"
+        "WAITRCD",
+        "REUSEDLT",
+        "SIZE"
       ],
       "maxPositional": 0
     },
@@ -163,22 +165,49 @@
       "kind": "command",
       "category": "object",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "LIB",
+        "PGM",
+        "MODULE",
+        "ENTMOD",
+        "ACTGRP",
+        "BNDSRVPGM",
+        "BNDDIR",
+        "ALWUPD",
+        "ALWLIBUPD"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "CRTSRVPGM",
       "kind": "command",
       "category": "object",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "LIB",
+        "SRVPGM",
+        "MODULE",
+        "EXPORT",
+        "SRCFILE",
+        "SRCMBR",
+        "SRCSTMF",
+        "ACTGRP",
+        "BNDSRVPGM",
+        "BNDDIR",
+        "ALWUPD",
+        "ALWLIBUPD"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "CRTBNDCL",
@@ -207,7 +236,11 @@
         "SRCSTMF",
         "SRCFILE",
         "SRCMBR",
-        "ACTGRP"
+        "ACTGRP",
+        "BNDSRVPGM",
+        "BNDDIR",
+        "ALWUPD",
+        "ALWLIBUPD"
       ],
       "maxPositional": 0
     },
@@ -510,7 +543,8 @@
       "keywords": [
         "FILE",
         "TEXT",
-        "SRCDTALEN"
+        "SRCDTALEN",
+        "SIZE"
       ],
       "maxPositional": 0
     },
@@ -544,7 +578,7 @@
         "FILE",
         "MBR"
       ],
-      "maxPositional": 0
+      "maxPositional": 2
     },
     {
       "name": "RGZPFM",
@@ -570,9 +604,30 @@
       "keywords": [
         "FILE",
         "MAXMBRS",
-        "WAITRCD"
+        "WAITRCD",
+        "REUSEDLT",
+        "SIZE"
       ],
       "maxPositional": 0
+    },
+    {
+      "name": "CHGPFCST",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03",
+        "WP09-04"
+      ],
+      "keywords": [
+        "FILE",
+        "CST",
+        "STATE",
+        "CHECK"
+      ],
+      "maxPositional": 2
     },
     {
       "name": "CHGLF",
@@ -984,7 +1039,8 @@
       "keywords": [
         "JOB",
         "OUTQ",
-        "MSGQ"
+        "MSGQ",
+        "INQMSGRPY"
       ],
       "maxPositional": 0
     },
@@ -1005,7 +1061,8 @@
         "USER",
         "RTGDTA",
         "CURLIB",
-        "INLLIBL"
+        "INLLIBL",
+        "INQMSGRPY"
       ],
       "maxPositional": 0
     },
@@ -1752,11 +1809,19 @@
       "kind": "command",
       "category": "language",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "LIB",
+        "MODULE",
+        "SRCFILE",
+        "SRCMBR",
+        "SRCSTMF"
+      ],
+      "maxPositional": 0
     },
     {
       "name": "CRTBNDC",
@@ -1774,11 +1839,117 @@
       "kind": "command",
       "category": "language",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "COMMIT",
+        "NAMING",
+        "PROCESS",
+        "LIBOPT",
+        "LISTTYPE",
+        "REFRESH",
+        "ALWCPYDTA",
+        "DATFMT",
+        "DATSEP",
+        "TIMFMT",
+        "TIMSEP",
+        "DECPNT",
+        "SRTSEQ",
+        "LANGID",
+        "PGMLNG",
+        "SQLSTRDLM"
+      ],
+      "maxPositional": 6
+    },
+    {
+      "name": "CRTQMQRY",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03",
+        "WP09-08"
+      ],
+      "keywords": [
+        "QMQRY",
+        "SRCFILE",
+        "SRCMBR",
+        "TEXT",
+        "SRTSEQ",
+        "LANGID",
+        "AUT",
+        "REPLACE"
+      ],
+      "maxPositional": 3
+    },
+    {
+      "name": "RTVQMQRY",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03",
+        "WP09-08"
+      ],
+      "keywords": [
+        "QMQRY",
+        "SRCFILE",
+        "SRCMBR",
+        "ALWQRYDFN"
+      ],
+      "maxPositional": 3
+    },
+    {
+      "name": "STRQMQRY",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03",
+        "WP09-08"
+      ],
+      "keywords": [
+        "QMQRY",
+        "OUTPUT",
+        "QMFORM",
+        "OUTFILE",
+        "OUTMBR",
+        "DATETIME",
+        "PAGNBR",
+        "RDB",
+        "RDBCNNMTH",
+        "USER",
+        "PASSWORD",
+        "NAMING",
+        "ALWQRYDFN",
+        "SETVAR"
+      ],
+      "maxPositional": 2
+    },
+    {
+      "name": "DLTQMQRY",
+      "kind": "command",
+      "category": "language",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03",
+        "WP09-08"
+      ],
+      "keywords": [
+        "QMQRY"
+      ],
+      "maxPositional": 1
     },
     {
       "name": "STRQM",
@@ -1807,22 +1978,43 @@
       "kind": "command",
       "category": "language",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "SRCFILE",
+        "SRCMBR",
+        "COMMIT",
+        "NAMING",
+        "SRCSTMF",
+        "MARGINS",
+        "ERRLVL",
+        "DFTRDBCOL",
+        "PROCESS",
+        "OPTION",
+        "SECLVLTXT"
+      ],
+      "maxPositional": 4
     },
     {
       "name": "RUNSQL",
       "kind": "command",
       "category": "language",
       "origin": "IBM",
-      "status": "planned",
+      "status": "partial",
       "source": "commands",
       "requirements": [
         "WP08-03"
-      ]
+      ],
+      "keywords": [
+        "SQL",
+        "COMMIT",
+        "NAMING",
+        "DFTRDBCOL"
+      ],
+      "maxPositional": 3
     },
     {
       "name": "STRSEU",
@@ -3839,7 +4031,8 @@
         "USER",
         "RTGDTA",
         "CURLIB",
-        "INLLIBL"
+        "INLLIBL",
+        "INQMSGRPY"
       ],
       "maxPositional": 0
     },
@@ -4368,6 +4561,248 @@
       "requirements": [
         "WP15-02"
       ]
+    },
+    {
+      "name": "DSPMOD",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "MODULE"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPSRVPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "SRVPGM"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "CRTBNDDIR",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "BNDDIR",
+        "TEXT",
+        "AUT"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DLTBNDDIR",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "BNDDIR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "ADDBNDDIRE",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "BNDDIR",
+        "OBJ",
+        "POSITION"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "RMVBNDDIRE",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "BNDDIR",
+        "OBJ"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "DSPBNDDIR",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "BNDDIR"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "UPDPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "PGM",
+        "MODULE",
+        "RPLLIB",
+        "BNDSRVPGM",
+        "BNDDIR",
+        "ACTGRP",
+        "SRVPGMLIB"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "UPDSRVPGM",
+      "kind": "command",
+      "category": "object",
+      "origin": "IBM",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "status": "partial",
+      "keywords": [
+        "SRVPGM",
+        "MODULE",
+        "RPLLIB",
+        "BNDSRVPGM",
+        "BNDDIR",
+        "ACTGRP",
+        "SRVPGMLIB",
+        "EXPORT",
+        "SRCFILE",
+        "SRCMBR",
+        "SRCSTMF"
+      ],
+      "maxPositional": 0
+    },
+    {
+      "name": "INZPFM",
+      "kind": "command",
+      "category": "file",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "FILE",
+        "MBR",
+        "RECORDS",
+        "TOTRCDS"
+      ],
+      "maxPositional": 3
+    },
+    {
+      "name": "ADDRPYLE",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SEQNBR",
+        "MSGID",
+        "CMPDTA",
+        "RPY",
+        "DUMP",
+        "CCSID"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "CHGRPYLE",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SEQNBR",
+        "MSGID",
+        "CMPDTA",
+        "RPY",
+        "DUMP",
+        "CCSID"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "RMVRPYLE",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [
+        "SEQNBR"
+      ],
+      "maxPositional": 1
+    },
+    {
+      "name": "WRKRPYLE",
+      "kind": "command",
+      "category": "message",
+      "origin": "IBM",
+      "status": "partial",
+      "source": "commands",
+      "requirements": [
+        "WP08-03"
+      ],
+      "keywords": [],
+      "maxPositional": 0
     }
   ],
   "aliases": {

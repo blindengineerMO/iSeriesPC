@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Ipc.Sql</AssemblyName>
+    <RootNamespace>Ipc.Db.Sql</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ipc.Core/Ipc.Core.csproj" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+    <PackageReference Include="SQLitePCLRaw.provider.e_sqlite3" Version="3.0.5" />
+    <Compile Include="../Ipc.Db/Definitions/*.cs" Link="Definitions/%(Filename)%(Extension)" />
+    <Compile Include="../Ipc.Db/Sql/*.cs" Link="Sql/%(Filename)%(Extension)" />
+    <Compile Include="../Ipc.Db/Store/SqlExpressionBinding.cs" Link="Expressions/SqlExpressionBinding.cs" />
+    <Compile Include="../Ipc.Db/Store/SqlScalarFunctions.cs" Link="Expressions/SqlScalarFunctions.cs" />
+    <Compile Include="../Ipc.Services/Sqlite/DatabaseSortKeys.cs" Link="Sqlite/DatabaseSortKeys.cs" />
+  </ItemGroup>
+</Project>

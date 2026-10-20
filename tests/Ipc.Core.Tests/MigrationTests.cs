@@ -17,6 +17,39 @@ public sealed class MigrationTests : IDisposable
         return factory;
     }
 
+    [Fact]
+    public void Record_slot_upgrade_seeds_sparse_existing_members_and_rolls_back_failed_installation()
+    {
+        var factory = Factory(); new Migrator(factory, Migrator.Migrations.Take(31).ToArray()).MigrateToLatest();
+        using (var connection = factory.Open()) using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                INSERT INTO sys_objects(lib,name,type,owner,created,changed) VALUES('QGPL','OLD','*FILE','QSECOFR','before','before');
+                INSERT INTO sys_file_members(lib,name,type,mbr,created) VALUES('QGPL','OLD','*FILE','OLD','before');
+                CREATE TABLE "QGPL.OLD.OLD"(ID INTEGER,TEXT TEXT);
+                INSERT INTO "QGPL.OLD.OLD"(rowid,ID,TEXT) VALUES(3,13,'first'),(99,19,'last');
+                """; command.ExecuteNonQuery();
+        }
+        var history = Scalar(factory, "SELECT group_concat(checksum) FROM sys_migrations");
+        var failed = Migrator.Migrations[31] with { UpgradeData = (connection, transaction) => {
+            RecordSlotMigration.Apply(connection, transaction);
+            using var command = connection.CreateCommand(); command.Transaction = transaction;
+            command.CommandText = "SELECT * FROM missing_slot_upgrade"; command.ExecuteScalar();
+        }};
+        Assert.Throws<SqliteException>(() => new Migrator(factory, Migrator.Migrations.Take(31).Append(failed).ToArray()).MigrateToLatest());
+        Assert.Equal(31, new Migrator(factory).CurrentVersion()); Assert.Equal(history, Scalar(factory, "SELECT group_concat(checksum) FROM sys_migrations"));
+        Assert.Equal(0L, Scalar(factory, "SELECT count(*) FROM sqlite_schema WHERE name LIKE 'sys_record_%' OR name LIKE 'ipc_rrn_%'"));
+        new Migrator(factory).MigrateToLatest(); Assert.Equal(99L, Scalar(factory, "SELECT high_water FROM sys_record_slots"));
+        Assert.Equal(2L, Scalar(factory, "SELECT count(*) FROM sys_record_versions"));
+        using (var connection = factory.Open()) using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "DELETE FROM \"QGPL.OLD.OLD\" WHERE rowid=99; UPDATE \"QGPL.OLD.OLD\" SET rowid=105 WHERE rowid=3";
+            command.ExecuteNonQuery();
+        }
+        Assert.Equal(105L, Scalar(factory, "SELECT high_water FROM sys_record_slots"));
+        Assert.Equal("ok", Scalar(factory, "PRAGMA integrity_check"));
+    }
+
     [Theory]
     [InlineData(3)]
     [InlineData(4)]
@@ -46,6 +79,7 @@ public sealed class MigrationTests : IDisposable
     [InlineData(28)]
     [InlineData(29)]
     [InlineData(30)]
+    [InlineData(31)]
     public void Modern_catalog_upgrade_preserves_history_and_adds_new_features(int version)
     {
         var factory = Factory();

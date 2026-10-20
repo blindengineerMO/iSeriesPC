@@ -13,7 +13,7 @@ using Ipc.Session.Transport;
 
 namespace Ipc.Core.Tests;
 
-public sealed class ExternalProgramTests : IDisposable
+public sealed partial class ExternalProgramTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "ipc-external-test-" + Guid.NewGuid().ToString("N"));
     private readonly IpcSystem _system;
@@ -36,6 +36,15 @@ public sealed class ExternalProgramTests : IDisposable
         _system.ExternalPrograms.Register("QGPL", name, Runtime, new[] { Fixture, mode }.Concat(path is null ? Array.Empty<string>() : new[] { path }),
             new[] { Path.ChangeExtension(Fixture, ".runtimeconfig.json"), Path.ChangeExtension(Fixture, ".deps.json") }, timeout, protocol);
         return _system.Objects.GetRequired("QGPL", name, ObjectType.Program);
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(2)]
+    public void RPG_null_maps_reject_unsupported_process_protocols_before_side_effects(int protocol)
+    {
+        var path = Path.Combine(_directory, "null-map-effect.json"); Register("NULLTARGET", "effect", path: path, protocol: protocol);
+        ClExternalCallTests.Create(_system, "NULLCALL", "RPG", "**free\nctl-opt alwnull(*usrctl);\ndcl-pr TARGET extpgm('NULLTARGET');\nP int(10) options(*nullind);\nend-pr;\ndcl-s N int(10) nullind;\ncallp TARGET(N);");
+        var result = new CommandService(_system).Execute("CALL QGPL/NULLCALL"); Assert.True(result.IsError); Assert.Contains("null-map-aware", result.Message); Assert.False(File.Exists(path));
     }
 
     [Theory]
@@ -304,6 +313,139 @@ public sealed class ExternalProgramTests : IDisposable
         var source="**free\ndcl-f MODEL template extdesc('QGPL/RECFILE');\ncallp FILEEXT(MODEL);";
         var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","FILESRC",sourceWidth:240);files.SaveSourceMember("QGPL","FILESRC","FILECALL",source,null);
         var result=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/FILECALL) SRCFILE(QGPL/FILESRC)");Assert.True(result.IsError);Assert.Contains("TEMPLATE",result.Message);Assert.False(File.Exists(path));Assert.False(_system.Objects.Exists("QGPL","FILECALL",ObjectType.Program));
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(2)]
+    public void LIKEFILE_file_arguments_reject_before_external_process_side_effects(int protocol)
+    {
+        CreateRecordProcessFile();var path=Path.Combine(_directory,"file-parameter-effect.json");Register("FILEEXT","effect",path:path,protocol:protocol);
+        var source="**free\ndcl-f MODEL template block(*no) extdesc('QGPL/RECFILE');\ndcl-f COPY likefile(MODEL) extfile('QGPL/RECFILE');\ndcl-pr RUN extpgm('FILEEXT');\nF likefile(MODEL);\nend-pr;\ncallp RUN(COPY);";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","FILESRC",sourceWidth:240);files.SaveSourceMember("QGPL","FILESRC","FILECALL",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/FILECALL) SRCFILE(QGPL/FILESRC)");Assert.False(created.IsError,created.Message);
+        var result=new CommandService(_system).Execute("CALL QGPL/FILECALL");Assert.True(result.IsError);Assert.Contains("only between RPG",result.Message);Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData("rpg-aggregate-update","12")] [InlineData("rpg-aggregate-bad","3")]
+    public void Procedure_local_record_buffers_preserve_process_writeback_atomicity(string mode,string expected)
+    {
+        CreateRecordProcessFile();Register("LOCALCPP",mode,protocol:2);
+        var source="**free\ndcl-f MODEL qualified template block(*no) extdesc('QGPL/RECFILE');\ndcl-pr RUN extpgm('LOCALCPP');\nP likerec(MODEL.REC) options(*exact);\nN int(10);\nend-pr;\ncallp WORK();\nseton LR;\ndcl-proc WORK;\ndcl-f LOCAL likefile(MODEL) extfile('QGPL/RECFILE');\ndcl-pi *n end-pi;\ndcl-ds BUFFER likerec(LOCAL.REC) inz;\ndcl-s N int(10) inz(4);\neval BUFFER.A=3;\neval BUFFER.B=3;\neval BUFFER.C=3;\ncallp(e) RUN(BUFFER:N);\nsndpgmmsg %char(BUFFER.B);\nend-proc;";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","LOCALSRC",sourceWidth:240);files.SaveSourceMember("QGPL","LOCALSRC","LOCALCALL",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/LOCALCALL) SRCFILE(QGPL/LOCALSRC)");Assert.False(created.IsError,created.Message);files.RemoveMember("QGPL","LOCALSRC","LOCALCALL");
+        var result=new CommandService(_system).Execute("CALL QGPL/LOCALCALL");Assert.False(result.IsError,result.Message);Assert.EndsWith(expected,result.Message?.Trim());
+    }
+
+    [Fact]
+    public void Procedure_local_file_arguments_reject_before_external_process_side_effects()
+    {
+        CreateRecordProcessFile();var path=Path.Combine(_directory,"local-file-effect.json");Register("LOCALCPP","effect",path:path,protocol:2);
+        var source="**free\ndcl-f MODEL template block(*no) extdesc('QGPL/RECFILE');\ndcl-pr RUN extpgm('LOCALCPP');\nF likefile(MODEL);\nend-pr;\ncallp WORK();\nseton LR;\ndcl-proc WORK;\ndcl-f LOCAL likefile(MODEL) extfile('QGPL/RECFILE');\ndcl-pi *n end-pi;\ncallp RUN(LOCAL);\nend-proc;";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","LOCALSRC",sourceWidth:240);files.SaveSourceMember("QGPL","LOCALSRC","LOCALCALL",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/LOCALCALL) SRCFILE(QGPL/LOCALSRC)");Assert.False(created.IsError,created.Message);
+        var result=new CommandService(_system).Execute("CALL QGPL/LOCALCALL");Assert.True(result.IsError);Assert.Contains("only between RPG",result.Message);Assert.False(File.Exists(path));
+    }
+
+    private sealed class WorkstationBufferTerminal : Ipc.Session.IProgramTerminal
+    {
+        public Ipc.Dsp.PanelResponse Read(Ipc.Session.ProgramDisplay display,CancellationToken cancellationToken)
+            => throw new InvalidOperationException("The buffer process fixture performs no terminal input.");
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(2)]
+    public void Workstation_file_parameters_reject_before_external_process_side_effects(int protocol)
+    {
+        var path=Path.Combine(_directory,"workstation-file-effect.json");Register("WSFILEEXT","effect",path:path,protocol:protocol);
+        var dds=DisplayPanelTests.Dds()+DisplayPanelTests.Dds("REC",record:true)+DisplayPanelTests.Dds("TEXT",4,usage:'B',row:2,column:2);
+        new Ipc.Dsp.DisplayFileStore(_system.Connections).Create("QGPL","SCREEN",dds);
+        var source="**free\ndcl-f MODEL workstn template extdesc('QGPL/SCREEN');\ndcl-f COPY likefile(MODEL) usropn;\ndcl-pr RUN extpgm('WSFILEEXT');\nF likefile(MODEL);\nend-pr;\ncallp RUN(COPY);";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);files.CreateSourceFile("QGPL","WSSRC",sourceWidth:240);files.SaveSourceMember("QGPL","WSSRC","WSFILE",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/WSFILE) SRCFILE(QGPL/WSSRC)");Assert.False(created.IsError,created.Message);
+        var result=new CommandService(_system).Execute("CALL QGPL/WSFILE");Assert.True(result.IsError);Assert.Contains("only between RPG",result.Message);Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(37,false,false)] [InlineData(1208,false,false)] [InlineData(37,true,false)] [InlineData(1208,true,false)]
+    [InlineData(37,false,true)] [InlineData(1208,false,true)] [InlineData(37,true,true)] [InlineData(1208,true,true)]
+    public void Workstation_record_process_buffers_use_zoned_layout_and_atomic_writeback(int ccsid,bool malformed,bool copied)
+    {
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"),"WorkstationBuffer9!");
+        Register("WSBUFFER",malformed?"rpg-workstation-bad":"rpg-workstation-update",protocol:2);
+        var dds=DisplayPanelTests.Dds()+DisplayPanelTests.Dds("REC",record:true)+DisplayPanelTests.Dds("TEXT",4,usage:'B',row:2,column:2)+DisplayPanelTests.Dds("NUMBER",5,type:'Y',decimals:2,usage:'B',row:3,column:2);
+        new Ipc.Dsp.DisplayFileStore(_system.Connections).Create("QGPL","SCREEN",dds);
+        var definition=copied?"dcl-f MODEL workstn template extdesc('QGPL/SCREEN');\ndcl-f SCREEN likefile(MODEL) extfile(*extdesc);":"dcl-f SCREEN workstn extdesc('QGPL/SCREEN') extfile(*extdesc);";
+        var record=copied?"SCREEN.REC":"REC";
+        var source="**free\n"+definition+"\ndcl-pr RUN extpgm('WSBUFFER');\nP likerec("+record+":*all) options(*exact);\nN int(10);\nend-pr;\ndcl-ds BUFFER likerec(REC:*all) inz;\ndcl-s N int(10) inz(4);\neval BUFFER.TEXT='KEEP';\neval BUFFER.NUMBER=17.25;\ncallp(e) RUN(BUFFER:N);\nif BUFFER.TEXT='"+(malformed?"KEEP":"NEXT")+"' and BUFFER.NUMBER="+(malformed?"17.25":"20.50")+";\nsndpgmmsg 'WORKSTN PROCESS OK';\nendif;\nseton LR;";
+        var files=new Ipc.Db.Store.SqliteFileStore(_system.Connections,_system.Objects);
+        files.CreateSourceFile("QGPL","WSSRC",sourceWidth:240);files.SaveSourceMember("QGPL","WSSRC","WSCALL",source,null);
+        var created=new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/WSCALL) SRCFILE(QGPL/WSSRC)");Assert.False(created.IsError,created.Message);
+        files.RemoveMember("QGPL","WSSRC","WSCALL");
+        using var session=new Ipc.Session.ExecutionSession(_system,_system.Jobs.CreateInteractive("QSECOFR",ccsid:ccsid),CancellationToken.None,new WorkstationBufferTerminal());
+        var result=session.Execute("CALL QGPL/WSCALL");Assert.False(result.IsError,result.Message);Assert.Contains("WORKSTN PROCESS OK",result.Message);
+    }
+
+    [Theory]
+    [InlineData(37, false)] [InlineData(1208, false)] [InlineData(37, true)] [InlineData(1208, true)]
+    public void Procedure_local_workstation_buffers_preserve_process_writeback_atomicity(int ccsid, bool malformed)
+    {
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"), "LocalWorkstation9!");
+        Register("WSBUFFER", malformed ? "rpg-workstation-bad" : "rpg-workstation-update", protocol: 2);
+        var dds = DisplayPanelTests.Dds() + DisplayPanelTests.Dds("REC", record: true) + DisplayPanelTests.Dds("TEXT", 4, usage: 'B', row: 2, column: 2) + DisplayPanelTests.Dds("NUMBER", 5, type: 'Y', decimals: 2, usage: 'B', row: 3, column: 2);
+        new Ipc.Dsp.DisplayFileStore(_system.Connections).Create("QGPL", "SCREEN", dds);
+        var source = "**free\ndcl-f MODEL workstn qualified template extdesc('QGPL/SCREEN');\ndcl-pr RUN extpgm('WSBUFFER');\nP likerec(MODEL.REC:*all) options(*exact);\nN int(10);\nend-pr;\ncallp WORK();\nseton LR;\ndcl-proc WORK;\ndcl-f LOCAL likefile(MODEL) extfile(*extdesc);\ndcl-pi *n end-pi;\ndcl-ds BUFFER likerec(LOCAL.REC:*all) inz;\ndcl-s N int(10) inz(4);\neval BUFFER.TEXT='KEEP';\neval BUFFER.NUMBER=17.25;\ncallp(e) RUN(BUFFER:N);\nif BUFFER.TEXT='" + (malformed ? "KEEP" : "NEXT") + "' and BUFFER.NUMBER=" + (malformed ? "17.25" : "20.50") + ";\nsndpgmmsg 'LOCAL WORKSTN PROCESS OK';\nendif;\nend-proc;";
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections, _system.Objects);
+        files.CreateSourceFile("QGPL", "WSSRC", sourceWidth: 240); files.SaveSourceMember("QGPL", "WSSRC", "WSCALL", source, null);
+        var created = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/WSCALL) SRCFILE(QGPL/WSSRC)"); Assert.False(created.IsError, created.Message);
+        files.RemoveMember("QGPL", "WSSRC", "WSCALL");
+        using var session = new Ipc.Session.ExecutionSession(_system, _system.Jobs.CreateInteractive("QSECOFR", ccsid: ccsid), CancellationToken.None, new WorkstationBufferTerminal());
+        var result = session.Execute("CALL QGPL/WSCALL"); Assert.False(result.IsError, result.Message); Assert.Contains("LOCAL WORKSTN PROCESS OK", result.Message);
+    }
+
+    [Theory]
+    [InlineData(37, false)] [InlineData(1208, false)] [InlineData(37, true)] [InlineData(1208, true)]
+    public void Nested_workstation_buffers_preserve_process_writeback_atomicity(int ccsid, bool malformed)
+    {
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"), "LocalWorkstation9!");
+        Register("WSBUFFER", malformed ? "rpg-workstation-bad" : "rpg-workstation-update", protocol: 2);
+        var dds = DisplayPanelTests.Dds() + DisplayPanelTests.Dds("REC", record: true) + DisplayPanelTests.Dds("TEXT", 4, usage: 'B', row: 2, column: 2) + DisplayPanelTests.Dds("NUMBER", 5, type: 'Y', decimals: 2, usage: 'B', row: 3, column: 2);
+        new Ipc.Dsp.DisplayFileStore(_system.Connections).Create("QGPL", "SCREEN", dds);
+        var source = "**free\ndcl-f MODEL workstn qualified template extdesc('QGPL/SCREEN');\ndcl-pr RUN extpgm('WSBUFFER');\nP likerec(MODEL.REC:*all) options(*exact);\nN int(10);\nend-pr;\ncallp WORK();\nseton LR;\ndcl-proc WORK;\ndcl-f LOCAL likefile(MODEL) extfile(*extdesc);\ndcl-pi *n end-pi;\ndcl-ds BOX qualified inz;\nHEAD char(2);\nBUFFER likerec(LOCAL.REC:*all);\nTAIL char(2);\nend-ds;\ndcl-s N int(10) inz(4);\neval BOX.HEAD='AA';\neval BOX.TAIL='ZZ';\neval BOX.BUFFER.TEXT='KEEP';\neval BOX.BUFFER.NUMBER=17.25;\ncallp(e) RUN(BOX.BUFFER:N);\nif BOX.BUFFER.TEXT='" + (malformed ? "KEEP" : "NEXT") + "' and BOX.BUFFER.NUMBER=" + (malformed ? "17.25" : "20.50") + " and BOX.HEAD='AA' and BOX.TAIL='ZZ';\nsndpgmmsg 'NESTED WORKSTN PROCESS OK';\nendif;\nend-proc;";
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections, _system.Objects);
+        files.CreateSourceFile("QGPL", "WSSRC", sourceWidth: 240); files.SaveSourceMember("QGPL", "WSSRC", "WSCALL", source, null);
+        var created = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/WSCALL) SRCFILE(QGPL/WSSRC)"); Assert.False(created.IsError, created.Message);
+        files.RemoveMember("QGPL", "WSSRC", "WSCALL");
+        using var session = new Ipc.Session.ExecutionSession(_system, _system.Jobs.CreateInteractive("QSECOFR", ccsid: ccsid), CancellationToken.None, new WorkstationBufferTerminal());
+        var result = session.Execute("CALL QGPL/WSCALL"); Assert.False(result.IsError, result.Message); Assert.Contains("NESTED WORKSTN PROCESS OK", result.Message);
+    }
+
+    [Theory]
+    [InlineData(1)] [InlineData(2)]
+    public void Procedure_local_workstation_arguments_reject_before_external_process_side_effects(int protocol)
+    {
+        var path = Path.Combine(_directory, "local-workstation-effect.json"); Register("WSFILEEXT", "effect", path: path, protocol: protocol);
+        var dds = DisplayPanelTests.Dds() + DisplayPanelTests.Dds("REC", record: true) + DisplayPanelTests.Dds("TEXT", 4, usage: 'B', row: 2, column: 2);
+        new Ipc.Dsp.DisplayFileStore(_system.Connections).Create("QGPL", "SCREEN", dds);
+        var source = "**free\ndcl-f MODEL workstn template extdesc('QGPL/SCREEN');\ndcl-pr RUN extpgm('WSFILEEXT');\nF likefile(MODEL);\nend-pr;\ncallp WORK();\nseton LR;\ndcl-proc WORK;\ndcl-f LOCAL likefile(MODEL) usropn;\ndcl-pi *n end-pi;\ncallp RUN(LOCAL);\nend-proc;";
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections, _system.Objects);
+        files.CreateSourceFile("QGPL", "WSSRC", sourceWidth: 240); files.SaveSourceMember("QGPL", "WSSRC", "WSFILE", source, null);
+        var created = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/WSFILE) SRCFILE(QGPL/WSSRC)"); Assert.False(created.IsError, created.Message);
+        var result = new CommandService(_system).Execute("CALL QGPL/WSFILE"); Assert.True(result.IsError); Assert.Contains("only between RPG", result.Message); Assert.False(File.Exists(path));
+    }
+
+    [Theory]
+    [InlineData(37, false)] [InlineData(1208, false)] [InlineData(37, true)] [InlineData(1208, true)]
+    public void EXTNAME_process_buffers_survive_description_removal_and_preserve_atomic_writeback(int ccsid, bool malformed)
+    {
+        _system.Security.Profiles.SetPassword(_system.Security.Profiles.Get("QSECOFR"), "ExternalStructure9!");
+        CreateRecordProcessFile(); Register("EXTDSCPP", malformed ? "rpg-aggregate-bad" : "rpg-aggregate-update", protocol: 2);
+        var source = "**free\ndcl-ds MODEL extname('QGPL/RECFILE') qualified template;\nend-ds;\ndcl-pr RUN extpgm('EXTDSCPP');\nP likeds(MODEL) options(*exact);\nN int(10);\nend-pr;\ndcl-ds BOX qualified inz;\nHEAD char(2);\nBUFFER likeds(MODEL);\nTAIL char(2);\nend-ds;\ndcl-s N int(10) inz(4);\neval BOX.HEAD='AA';\neval BOX.TAIL='ZZ';\neval BOX.BUFFER.A=3;\neval BOX.BUFFER.B=3;\neval BOX.BUFFER.C=3;\ncallp(e) RUN(BOX.BUFFER:N);\nif BOX.BUFFER.B=" + (malformed ? "3" : "12") + " and BOX.HEAD='AA' and BOX.TAIL='ZZ';\nsndpgmmsg 'EXTNAME PROCESS OK';\nendif;\nseton LR;";
+        var files = new Ipc.Db.Store.SqliteFileStore(_system.Connections, _system.Objects); files.CreateSourceFile("QGPL", "EXTSRC", sourceWidth: 240); files.SaveSourceMember("QGPL", "EXTSRC", "EXTCALL", source, null);
+        var created = new CommandService(_system).Execute("CRTBNDRPG PGM(QGPL/EXTCALL) SRCFILE(QGPL/EXTSRC)"); Assert.False(created.IsError, created.Message);
+        files.RemoveMember("QGPL", "EXTSRC", "EXTCALL"); files.DeleteFile("QGPL", "RECFILE");
+        using var session = new Ipc.Session.ExecutionSession(_system, _system.Jobs.CreateInteractive("QSECOFR", ccsid: ccsid), CancellationToken.None, new WorkstationBufferTerminal());
+        var result = session.Execute("CALL QGPL/EXTCALL"); Assert.False(result.IsError, result.Message); Assert.Contains("EXTNAME PROCESS OK", result.Message);
     }
 
     [Fact]

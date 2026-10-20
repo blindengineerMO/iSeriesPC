@@ -33,14 +33,9 @@ public static partial class RpgCompiler
             if (subfield is not null) structure = program.DataStructures.Single(d => d.Elements.Contains(subfield));
             if (structure?.IsArray == true) return null;
         }
-        else if (expression is RpgMemberRef member)
-        {
-            var name = member.Target switch { RpgFieldRef root => root.Name, RpgDynamicIndexRef root => root.Name, RpgIndexedRef root => root.Name, _ => null };
-            structure = name is null ? null : program.FindDs(name);
-            if (structure is null || !structure.Qualified || structure.IsArray != (member.Target is RpgDynamicIndexRef or RpgIndexedRef)) return null;
-            subfield = structure.Find(member.Name);
-        }
-        return subfield is null ? null : new(subfield.Kind, subfield.Length, subfield.Decimals, subfield.IsArray,
+        else if (expression is RpgMemberRef && ExactActualType(program, expression) is { IsDataStructure: false } nested)
+            return new(nested.Kind, nested.Length, nested.Decimals, nested.IsArray, true, false, nested.ArrayDescending, Opaque: nested.OpaqueBytes, ReadOnly: nested.ReadOnlyParameter);
+        return subfield is null || subfield.NestedStructure is not null ? null : new(subfield.Kind, subfield.Length, subfield.Decimals, subfield.IsArray,
             structure!.NativeStorage, false, subfield.ArrayDescending, Opaque: subfield.OpaqueBytes, ReadOnly: subfield.ReadOnlyParameter);
     }
     private static bool LookupNumeric(RpgFieldKind kind) => kind is RpgFieldKind.Integer or RpgFieldKind.Packed or RpgFieldKind.Zoned or RpgFieldKind.Decimal;

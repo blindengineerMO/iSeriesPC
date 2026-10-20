@@ -28,6 +28,7 @@ public static class SystemValueNames
     public const string Ccsid = "QCCSID";
     public const string Date = "QDATE";
     public const string Time = "QTIME";
+    public const string DecimalFormat = "QDECFMT";
     public const string DateFormat = "QDATFMT";
     public const string DateSeparator = "QDATSEP";
     public const string TimeFormat = "QTIMEFMT";
@@ -87,6 +88,7 @@ public sealed class SystemValueRegistry
         V(SystemValueNames.Ccsid, "37", SystemValueType.Numeric, "Primary CCSID"),
         V(SystemValueNames.Date, now.ToString("yyyy-MM-dd"), SystemValueType.Date),
         V(SystemValueNames.Time, now.ToString("HH:mm:ss"), SystemValueType.Time),
+        V(SystemValueNames.DecimalFormat, " ", SystemValueType.Character, "Decimal format"),
         V(SystemValueNames.DateFormat, "*YMD", SystemValueType.Character, "Date format"),
         V(SystemValueNames.DateSeparator, "/", SystemValueType.Character, "Date separator"),
         V(SystemValueNames.TimeFormat, "*HMS", SystemValueType.Character, "Time format"),

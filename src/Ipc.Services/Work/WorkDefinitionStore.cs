@@ -10,7 +10,7 @@ namespace Ipc.Services.Work;
 
 public sealed record JobClassDefinition(string Library, string Name, int RunPriority = 50, int TimeSliceMilliseconds = 2000);
 public sealed record JobDescriptionDefinition(string Library, string Name, string JobQueue, int Priority = 9,
-    string? RunAs = null, string RoutingData = "QCMDB", string? CurrentLibrary = null, string LibraryMode = "CURRENT", IReadOnlyList<string>? Libraries = null);
+    string? RunAs = null, string RoutingData = "QCMDB", string? CurrentLibrary = null, string LibraryMode = "CURRENT", IReadOnlyList<string>? Libraries = null, string InquiryMessageReply = "*RQD");
 
 public sealed class WorkDefinitionStore(SqliteConnectionFactory factory)
 {
@@ -38,14 +38,14 @@ public sealed class WorkDefinitionStore(SqliteConnectionFactory factory)
         if (new SqliteObjectStore(factory).Get(library, name, ObjectType.JobDescription) is null) return null;
         using var connection = factory.Open(); using var transaction = connection.BeginTransaction(deferred: true);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "SELECT queue_lib||'/'||queue_name,priority,run_as,routing_data,current_library,library_mode FROM sys_job_descriptions WHERE library=$lib AND name=$name";
+        command.CommandText = "SELECT queue_lib||'/'||queue_name,priority,run_as,routing_data,current_library,library_mode,inquiry_reply FROM sys_job_descriptions WHERE library=$lib AND name=$name";
         Bind(command, library, name);
         JobDescriptionDefinition description;
         using (var reader = command.ExecuteReader())
         {
             if (!reader.Read()) return null;
             description = new(library, name, reader.GetString(0), reader.GetInt32(1), reader.IsDBNull(2) ? null : reader.GetString(2),
-                reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5));
+                reader.GetString(3), reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5), InquiryMessageReply:reader.GetString(6));
         }
         command.CommandText = "SELECT library FROM sys_jobd_libraries WHERE jobd_lib=$lib AND jobd_name=$name ORDER BY ordinal";
         var libraries = new List<string>();
@@ -73,7 +73,7 @@ public sealed class WorkDefinitionStore(SqliteConnectionFactory factory)
     public void PutJobDescription(JobDescriptionDefinition value, bool replace = false, string? owner = null)
     {
         var queue = QualifiedName.Parse(value.JobQueue.ToUpperInvariant(), "QUSRSYS");
-        if (value.Priority is < 0 or > 9 || value.RoutingData.Length > 80 || value.LibraryMode is not ("CURRENT" or "SYSVAL" or "EXPLICIT") ||
+        if (!Ipc.Services.Messages.InquiryReplyPolicy.Valid(value.InquiryMessageReply) || value.Priority is < 0 or > 9 || value.RoutingData.Length > 80 || value.LibraryMode is not ("CURRENT" or "SYSVAL" or "EXPLICIT") ||
             value.Libraries?.Count > 250 || value.Libraries?.Distinct().Count() != value.Libraries?.Count)
             throw Invalid("Invalid job-description priority, routing data or library list.");
         var descriptor = Descriptor(value.Library, value.Name, ObjectType.JobDescription, owner);
@@ -85,13 +85,13 @@ public sealed class WorkDefinitionStore(SqliteConnectionFactory factory)
         EnsureDescriptor(descriptor, connection, transaction);
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = """
-            INSERT INTO sys_job_descriptions(library,name,queue_lib,queue_name,priority,run_as,routing_data,current_library,library_mode)
-            VALUES($lib,$name,$qlib,$qname,$priority,$user,$routing,$current,$mode)
+            INSERT INTO sys_job_descriptions(library,name,queue_lib,queue_name,priority,run_as,routing_data,current_library,library_mode,inquiry_reply)
+            VALUES($lib,$name,$qlib,$qname,$priority,$user,$routing,$current,$mode,$inquiryreply)
             """ + (replace ? """
              ON CONFLICT(library,name) DO UPDATE SET queue_lib=excluded.queue_lib,queue_name=excluded.queue_name,priority=excluded.priority,
-               run_as=excluded.run_as,routing_data=excluded.routing_data,current_library=excluded.current_library,library_mode=excluded.library_mode
+               run_as=excluded.run_as,routing_data=excluded.routing_data,current_library=excluded.current_library,library_mode=excluded.library_mode,inquiry_reply=excluded.inquiry_reply
             """ : "");
-        Bind(command, value.Library, value.Name); command.Parameters.AddWithValue("$qlib", queue.Library); command.Parameters.AddWithValue("$qname", queue.Name.Value);
+        Bind(command, value.Library, value.Name); command.Parameters.AddWithValue("$inquiryreply",value.InquiryMessageReply); command.Parameters.AddWithValue("$qlib", queue.Library); command.Parameters.AddWithValue("$qname", queue.Name.Value);
         command.Parameters.AddWithValue("$priority", value.Priority); command.Parameters.AddWithValue("$user", (object?)value.RunAs ?? DBNull.Value);
         command.Parameters.AddWithValue("$routing", value.RoutingData); command.Parameters.AddWithValue("$current", (object?)value.CurrentLibrary ?? DBNull.Value);
         command.Parameters.AddWithValue("$mode", value.LibraryMode); command.ExecuteNonQuery();

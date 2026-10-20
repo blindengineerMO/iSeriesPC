@@ -189,7 +189,9 @@ public class IpcSystemTests
 
         Assert.True(system.Libraries.LibraryExists("QGPL"));
         Assert.Equal("40", system.SystemValues.Get(SystemValueNames.SecurityLevel).Value);
-        Assert.Equal(LibraryNames.SystemDefaults.Count + 13 + Ipc.Services.Work.BuiltinProgramService.Names.Count + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
+        Assert.Equal(LibraryNames.SystemDefaults.Count + 14 + Ipc.Services.Work.BuiltinProgramService.Names.Count + Ipc.Core.Menu.SystemMenus.All().Count + Ipc.Services.Commands.CommandDefinitionStore.BuiltinNames.Count + system.Security.Profiles.ListAll().Count, system.Objects.ObjectCount);
+        var description=new Ipc.Services.Messages.MessageDescriptionStore(system.Connections).GetDescription("QSYS","QCPFMSG","CPA5305");
+        Assert.Equal(99,description.Severity);Assert.Equal("0",description.DefaultReply);
         foreach (var api in Ipc.Services.Work.BuiltinProgramService.Names)
         {
             var program = system.Objects.GetRequired("QSYS", api, ObjectType.Program);

@@ -63,6 +63,14 @@
       },
       "ipc.core": {
         "type": "Project"
+      },
+      "ipc.sql": {
+        "type": "Project",
+        "dependencies": {
+          "Ipc.Core": "[1.0.0, )",
+          "Microsoft.Data.Sqlite": "[10.0.12, )",
+          "SQLitePCLRaw.provider.e_sqlite3": "[3.0.5, )"
+        }
       }
     }
   }

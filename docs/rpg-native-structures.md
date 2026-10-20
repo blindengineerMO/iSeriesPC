@@ -115,7 +115,7 @@ snapshots, before allocating copies or entering the host. API borrowing also
 checks its existing aggregate argument budget.
 
 [Data templates](rpg-templates.md) now retain metadata without runtime storage.
-Nested DS definitions, WORKSTN file templates and file parameters, EXTNAME/WORKSTN record layouts, ALIGN/pointers,
+Wider external record layouts, ALIGN/pointers,
 varying/null/unsigned/graphic types, additional declaration built-ins/forward references,
 additional date/time formats, general array functions/relations, native fixed
 D/C layouts and full ordinary CL/RPG entry-reference/prototype ABI remain open.
@@ -157,3 +157,18 @@ API queue mutation. Legacy/imported-field unification and the full ABI remain op
 
 [DISK LIKEREC record structures](rpg-record-structures.md) now supply native
 layouts, result operands and parameter/return types.
+
+[WORKSTN record buffers](rpg-workstation-records.md) and
+[WORKSTN file definitions](rpg-workstation-definitions.md) now provide display
+LIKEREC layouts, templates, qualified formats and LIKEFILE copies.
+
+[WORKSTN file parameters](rpg-workstation-parameters.md) extend borrowed file
+interfaces to caller-owned display state and feedback.
+
+[Nested native structures](rpg-nested-structures.md) now support inline and
+LIKEDS/LIKEREC children, shared storage views, forward types and nested record
+buffers. See that contract for supported operations and bounds.
+
+[Externally described structures](rpg-external-structures.md) add EXT/EXTNAME,
+EXTFLD/PREFIX, external defaults, compatible file-variable sharing and checked
+saved descriptions without opening runtime files.

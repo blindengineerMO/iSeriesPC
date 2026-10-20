@@ -316,9 +316,13 @@ public sealed class UserProfileStore
 
     public IReadOnlyList<string> EffectiveGroups(string name)
     {
+        new ServiceAuthorization(_factory).RequireProfileRead(name);
+        return ReadEffectiveGroups(name);
+    }
+    internal IReadOnlyList<string> ReadEffectiveGroups(string name)
+    {
         var groups = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        new ServiceAuthorization(_factory).RequireProfileRead(name);
         var current = TryGetForAuthentication(name)?.GroupProfile;
         while (current is not null && seen.Add(current))
         {
@@ -326,6 +330,14 @@ public sealed class UserProfileStore
             current = TryGetForAuthentication(current)?.GroupProfile;
         }
 
+        return groups;
+    }
+    internal static IReadOnlyList<string> ReadEffectiveGroups(Microsoft.Data.Sqlite.SqliteConnection connection, Microsoft.Data.Sqlite.SqliteTransaction? transaction, string name)
+    {
+        var groups = new List<string>(); var seen = new HashSet<string>(StringComparer.Ordinal);
+        var current = ReadForAuthentication(connection, transaction, name)?.GroupProfile;
+        while (current is not null && seen.Add(current))
+        { groups.Add(current); current = ReadForAuthentication(connection, transaction, current)?.GroupProfile; }
         return groups;
     }
 

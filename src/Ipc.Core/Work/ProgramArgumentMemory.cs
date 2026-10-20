@@ -17,7 +17,7 @@ public sealed class ProgramArgumentMemory
     public ProgramArgumentMemory(ProgramArgumentStorage storage, int ccsid, ProgramArgumentShape? shape,
         Func<int, int, ProgramBuffer> read, Action<int, ProgramBuffer> validate, Action<int, ProgramBuffer> write, bool readOnly = false, Action? check = null)
     {
-        if (storage.Owner is null || storage.Offset < 0 || storage.Length is < 0 or > 1048576 || (long)storage.Offset + storage.Length > int.MaxValue)
+        if (storage.Owner is null || storage.Offset < 0 || storage.Length is < 0 or > 16777216 || (long)storage.Offset + storage.Length > int.MaxValue)
             throw new ArgumentException("Invalid native argument memory range.", nameof(storage));
         Storage = storage; Ccsid = ccsid; Shape = shape; _read = read; _validate = validate; _write = write; IsReadOnly = readOnly; _check = check;
     }

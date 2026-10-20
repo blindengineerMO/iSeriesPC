@@ -78,7 +78,9 @@ public sealed record CommandDefinition
         if (HelpId is not null && (HelpPanelGroup is null || !ObjectName.IsValid(HelpId))) throw Invalid("Help ID requires a panel group and a valid module name.");
         foreach (var parameter in Parameters)
         {
-            if (!ObjectName.IsValid(parameter.Keyword) || parameter.Length is < 1 or > 4096 || parameter.Minimum is < 0 or > 256 || parameter.Maximum < Math.Max(1, parameter.Minimum) || parameter.Maximum > 256 ||
+            var maximumLength = parameter.Type == "*RAW" && Builtin == "RUNSQL" && parameter.Keyword == "SQL" ? 5000 :
+                parameter.Type == "*RAW" && Builtin == "STRQMQRY" && parameter.Keyword == "SETVAR" ? 8192 : 4096;
+            if (!ObjectName.IsValid(parameter.Keyword) || parameter.Length < 1 || parameter.Length > maximumLength || parameter.Minimum is < 0 or > 256 || parameter.Maximum < Math.Max(1, parameter.Minimum) || parameter.Maximum > 256 ||
                 parameter.Decimals is < 0 or > 28 || parameter.Decimals > parameter.Length || parameter.PromptOrder is < 0 or > 999 || parameter.Prompt is null || parameter.Prompt.Length > 256 || parameter.Help is null || parameter.Help.Length > 4096 ||
                 parameter.Values is null || parameter.Values.Count > 256 || parameter.SpecialValues is null || parameter.SpecialValues.Count > 256 || parameter.RangeMinimum > parameter.RangeMaximum || parameter.Prompt.Any(char.IsControl) || parameter.Help.Any(char.IsControl) ||
                 parameter.Values.Any(v => v is null || v.Length > 4096 || v.Any(char.IsControl)) || parameter.SpecialValues.Any(v => v.Key.Length > 4096 || v.Value is null || v.Value.Length > 4096 || v.Key.Any(char.IsControl) || v.Value.Any(char.IsControl)) || parameter.Default?.Length > 32768)
@@ -98,7 +100,7 @@ public sealed record CommandDefinition
     public CommandMetadata PromptMetadata(string name) => new(name, Parameters.Select((p, index) => (Parameter: p, Index: index))
         .OrderBy(pair => pair.Parameter.PromptOrder == 0 ? 1000 + pair.Index : pair.Parameter.PromptOrder)
         .Select(pair => { var p = pair.Parameter; return new CommandParameter(p.Keyword, p.Prompt.Length == 0 ? p.Keyword : p.Prompt,
-            p.Literal || p.Maximum == 1 && p.Type is "*CHAR" or "*PNAME", p.Secret, Math.Min(4096, Math.Max(p.Length, p.Maximum * (p.Length + 3) + 21)), pair.Index, p.Default); }).ToArray(), MaximumPositional, HelpPanelGroup is null ? null : new Ipc.Core.Menu.HelpRequest(HelpPanelGroup, HelpId ?? "GENERAL"), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ToJson()))));
+            p.Literal || p.Maximum == 1 && p.Type is "*CHAR" or "*PNAME", p.Secret, Builtin == "RUNSQL" && p.Keyword == "SQL" ? 5000 : Builtin == "STRQMQRY" && p.Keyword == "SETVAR" ? 8192 : Math.Min(4096, Math.Max(p.Length, p.Maximum * (p.Length + 3) + 21)), pair.Index, p.Default); }).ToArray(), MaximumPositional, HelpPanelGroup is null ? null : new Ipc.Core.Menu.HelpRequest(HelpPanelGroup, HelpId ?? "GENERAL"), Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(ToJson()))));
     public IReadOnlyList<string> Describe(string name) => new[] { name + " - " + Title, "Processing program: " + (ProcessingProgram ?? "built-in " + Builtin), "Accepted parameters: " + string.Join(", ", Parameters.Select(p => p.Keyword)) }
         .Concat(Parameters.Select(p => $"{p.Keyword}: {p.Prompt}; {p.Type}({p.Length},{p.Decimals}), {p.Minimum}..{p.Maximum} value(s)" + (p.Default is null ? "" : "; default " + (p.Secret ? "[hidden]" : p.Default)) + (p.Values.Count == 0 ? "" : "; choices " + (p.Secret ? "[hidden]" : string.Join(' ', p.Values))) + (p.Help.Length == 0 ? "" : "; " + p.Help))).ToArray();
     internal static CpfException Invalid(string text) => new("IPC0136", text);

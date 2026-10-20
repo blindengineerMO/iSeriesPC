@@ -60,6 +60,12 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
             throw new CpfException("IPC0201", "Authorization list is attached to objects; detach it before deletion.");
         if (HasNamedReferences(operation, type))
             throw new CpfException("IPC0201", "Object is referenced by a menu, profile, or routing entry.");
+        if (type == ObjectType.File)
+        {
+            if (SqlForeignCatalog.Files(connection,transaction).Any(file => file.Key != source && (file.Definition.SqlTable?.ForeignKeys ?? []).Any(item => item.Parent.Schema == source.Library && item.Parent.Name == source.Name.Value)))
+                throw new CpfException("IPC0201", "File has dependent referential constraints; remove them before native deletion.");
+            SqlForeignCatalog.NullHooks(connection,transaction,install:false,only:source);
+        }
         var tables = operation.Members().Select(member => $"{source.Library}.{source.Name}.{member}").ToArray();
         if (MemberTableDependencies.HasExternalReferences(connection, transaction, tables))
             throw new CpfException("IPC0201", "Member tables have external SQL dependents.");
@@ -100,11 +106,17 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
     public void RemoveFileMember(QualifiedName file, string member)
     {
         file = new Ipc.Services.Work.JobTemporaryLibrary(factory).Resolve(file, ObjectType.File);
-        new Ipc.Services.Security.ServiceAuthorization(factory).RequireObject(file.Library, file.Name.Value, ObjectType.File, AuthorityBit.ObjectManagement);
+        new Ipc.Services.Security.ServiceAuthorization(factory).RequireObject(file.Library, file.Name.Value, ObjectType.File, AuthorityBit.ObjectExist | AuthorityBit.ObjectOperate);
         if (!ObjectName.IsValid(member)) throw new ArgumentException("Invalid member name.", nameof(member));
+        var locks = new Ipc.Services.Work.JobLockStore(factory);
+        using var gate = locks.EnterRecordWrite(factory.ShutdownToken);
+        locks.RequireNoPersistentAllocation(new(file.Library, file.Name.Value, ObjectType.File));
+        if (factory.RecordTransactions.IsEnlisted(file))
+            throw Ipc.Services.Work.JobRecordTransactions.Invalid("RMVM requires ending the record unit first.");
+        using var referential = new SqlForeignMemberRemoval(factory);
         using var connection = factory.Open();
-        using var transaction = connection.BeginTransaction(deferred: false);
-        var descriptor = new SqliteObjectStore(factory).GetRequired(file.Library, file.Name.Value, ObjectType.File);
+        using var transaction = SqliteCancellation.BeginWrite(connection, factory.ShutdownToken);
+        var descriptor = Ipc.Services.Security.ObjectSigningService.Read(connection, transaction, file.Library, file.Name.Value, ObjectType.File);
         var table = $"{file.Library}.{file.Name}.{member}";
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -115,21 +127,38 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         if (Convert.ToInt64(command.ExecuteScalar()) == 0) return;
         if (descriptor.Attribute == "*LF")
         {
+            if (LogicalSqlIndex(connection, transaction, file)) throw new CpfException("IPC0138", "Remove an SQL index with DROP INDEX or DLTF; its member scope is managed by the base file.");
             LogicalPathCatalog.RemoveMember(connection, transaction, file, member);
             command.CommandText = "DELETE FROM sys_file_members WHERE lib=$lib AND name=$name AND type='*FILE' AND mbr=$member"; command.ExecuteNonQuery();
             command.CommandText = "UPDATE sys_objects SET changed=$now WHERE lib=$lib AND name=$name AND type='*FILE'";
             command.Parameters.AddWithValue("$now", DateTimeOffset.UtcNow.ToString("O")); command.ExecuteNonQuery();
+            new Ipc.Services.Security.ServiceAuthorization(factory).RequireBoundObject(connection, transaction, file.Library, file.Name.Value,
+                AuthorityBit.ObjectExist | AuthorityBit.ObjectOperate);
             transaction.Commit(); return;
         }
-        command.CommandText = "SELECT count(*) FROM sys_file_defs d,json_each(d.def,'$.logical.members') lm,json_each(lm.value) bm WHERE json_extract(d.def,'$.logical.sourceLibrary')=$lib AND json_extract(d.def,'$.logical.sourceFile')=$name AND bm.value=$member";
+        command.CommandText = "SELECT count(*) FROM sys_file_defs d,json_each(d.def,'$.logical.members') lm,json_each(lm.value) bm WHERE coalesce(json_extract(d.def,'$.sqlIndex'),0)<>1 AND json_extract(d.def,'$.logical.sourceLibrary')=$lib AND json_extract(d.def,'$.logical.sourceFile')=$name AND bm.value=$member";
         if (Convert.ToInt64(command.ExecuteScalar()) != 0) throw new CpfException("IPC0201", "Physical member is bound by a logical member; remove its bindings first.");
-        if (MemberTableDependencies.HasExternalReferences(connection, transaction, new[] { table }))
+        referential.Prepare(connection, transaction, file);
+        if (MemberTableDependencies.HasExternalReferences(connection, transaction, new[] { table },
+                (type, name, owner, sql) => SqlForeignCatalog.IsManagedSchema(connection, transaction, type, name, owner, sql)))
             throw new CpfException("IPC0201", "Member has SQL dependents.");
-        command.CommandText = $"DROP TABLE {Quote(table)}";
-        command.ExecuteNonQuery();
+        LogicalPathCatalog.DetachSqlIndexesFromMember(connection, transaction, file, member);
+        using (var foreignDdl = new SqlForeignDdlScope(connection))
+        {
+            command.CommandText = $"DROP TABLE {Quote(table)}";
+            SqliteCancellation.Run(connection, factory.ShutdownToken, command.ExecuteNonQuery);
+        }
         command.CommandText = "DELETE FROM sys_file_members WHERE lib=$lib AND name=$name AND type='*FILE' AND mbr=$member";
         command.ExecuteNonQuery();
+        referential.Complete(connection, transaction, file, member);
         transaction.Commit();
+    }
+
+    private static bool LogicalSqlIndex(SqliteConnection connection, SqliteTransaction transaction, QualifiedName file)
+    {
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "SELECT coalesce(json_extract(def,'$.sqlIndex'),0) FROM sys_file_defs WHERE lib=$lib AND name=$name AND type='*FILE'";
+        command.Parameters.AddWithValue("$lib", file.Library); command.Parameters.AddWithValue("$name", file.Name.Value); return Convert.ToInt64(command.ExecuteScalar()) == 1;
     }
 
     public void Relocate(QualifiedName source, string type, QualifiedName target, bool copy = false, string? newOwner = null)
@@ -168,7 +197,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         if (!copy && type is ObjectType.File or ObjectType.Library)
         {
             using var dependents = connection.CreateCommand(); dependents.Transaction = transaction;
-            dependents.CommandText = "SELECT lib,name FROM sys_file_defs WHERE json_extract(def,'$.logical.sourceLibrary')=$library AND ($all OR json_extract(def,'$.logical.sourceFile')=$file) ORDER BY lib,name LIMIT 4001";
+            dependents.CommandText = "SELECT lib,name FROM sys_file_defs WHERE (json_extract(def,'$.logical.sourceLibrary')=$library AND ($all OR json_extract(def,'$.logical.sourceFile')=$file)) OR EXISTS(SELECT 1 FROM json_each(def,'$.sqlView.sources') s WHERE json_extract(s.value,'$.library')=$library AND ($all OR json_extract(s.value,'$.name')=$file)) OR EXISTS(SELECT 1 FROM json_each(def,'$.sqlTable.foreignKeys') f WHERE json_extract(f.value,'$.parent.schema')=$library AND ($all OR json_extract(f.value,'$.parent.name')=$file)) ORDER BY lib,name LIMIT 4001";
             dependents.Parameters.AddWithValue("$library", type == ObjectType.Library ? source.Name.Value : source.Library);
             dependents.Parameters.AddWithValue("$file", source.Name.Value); dependents.Parameters.AddWithValue("$all", type == ObjectType.Library);
             var logicalFiles = new List<(string Library, string Name)>();
@@ -183,6 +212,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         }
         if (type == ObjectType.Library) RenameLibrary(connection, transaction, source, target, copy);
         else RelocateOne(connection, transaction, source, type, target, copy, newOwner);
+        if (type is ObjectType.File or ObjectType.Library) SqlForeignCatalog.ValidateBindings(connection,transaction);
         transaction.Commit();
     }
 
@@ -218,9 +248,17 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
         if (!copy && op.Number("SELECT count(*) FROM sys_object_dependencies WHERE source_type='*CMD' AND target_lib=$lib AND target_name=$name AND target_type=$type") > 0)
             throw new CpfException("IPC0201", "Object is bound by a command definition; remove or recompile its commands before relocation.");
         if (!copy) ValidateWorkOperation(op, type);
+        var sqlDefinition = type == ObjectType.File ? SqlConstraintCatalog.PrepareRelocation(connection, transaction, source, target, copy) : null;
+        if (type == ObjectType.File)
+        {
+            var related = SqlForeignCatalog.Files(connection,transaction).Where(file => file.Key == source && (file.Definition.SqlTable?.ForeignKeys?.Count ?? 0) != 0 ||
+                (file.Definition.SqlTable?.ForeignKeys ?? []).Any(item => item.Parent.Schema == source.Library && item.Parent.Name == source.Name.Value)).ToArray();
+            if (targetTemporary && related.Length != 0) throw new CpfException("SQL7008","A file with referential constraints cannot be placed in QTEMP.");
+            if (!copy) SqlForeignCatalog.NullHooks(connection,transaction,install:false);
+        }
         var tables = op.Members().Select(member =>
             (Source: $"{source.Library}.{source.Name}.{member}", Target: $"{target.Library}.{target.Name}.{member}")).ToArray();
-        if (copy) new MemberTableCopy(connection, transaction).Copy(tables);
+        if (copy) new MemberTableCopy(connection, transaction).Copy(tables, SqlConstraintCatalog.CheckCopySql(connection, transaction, source, target, sqlDefinition));
         else foreach (var table in tables) op.Run($"ALTER TABLE {Quote(table.Source)} RENAME TO {Quote(table.Target)}");
 
         if (copy)
@@ -238,7 +276,14 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 op.Run("INSERT INTO sys_user_spaces SELECT $targetLib,$targetName,space_type,(SELECT source FROM sys_objects WHERE lib=$targetLib AND name=$targetName AND type='*USRSPC'),initial_byte,auto_extend,transfer_size,aligned,domain,data FROM sys_user_spaces WHERE space_lib=$lib AND space_name=$name");
             }
             op.Run("INSERT INTO sys_file_defs SELECT $targetLib,$targetName,type,json_set(def,'$.name',$targetName) FROM sys_file_defs WHERE lib=$lib AND name=$name AND type=$type");
+            if (sqlDefinition is not null)
+            {
+                using var updateSql = connection.CreateCommand(); updateSql.Transaction = transaction;
+                updateSql.CommandText = "UPDATE sys_file_defs SET def=$def WHERE lib=$lib AND name=$name AND type='*FILE'";
+                updateSql.Parameters.AddWithValue("$def", sqlDefinition); updateSql.Parameters.AddWithValue("$lib", target.Library); updateSql.Parameters.AddWithValue("$name", target.Name.Value); updateSql.ExecuteNonQuery();
+            }
             op.Run("INSERT INTO sys_file_members SELECT $targetLib,$targetName,type,mbr,$now FROM sys_file_members WHERE lib=$lib AND name=$name AND type=$type");
+            if (type == ObjectType.File) RecordSlots.CopyState(connection, transaction, source.Library, source.Name.Value, target.Library, target.Name.Value);
             op.Run("INSERT INTO sys_authorities SELECT $targetLib,$targetName,type,holder,is_authl,bits FROM sys_authorities WHERE lib=$lib AND name=$name AND type=$type");
             op.Run("""
                 INSERT INTO sys_object_dependencies
@@ -258,7 +303,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 op.Run("INSERT INTO sys_classes SELECT $targetLib,$targetName,type,run_priority,time_slice_ms FROM sys_classes WHERE library=$lib AND name=$name");
             if (type == ObjectType.JobDescription)
             {
-                op.Run("INSERT INTO sys_job_descriptions(library,name,type,queue_lib,queue_name,priority,run_as,routing_data,current_library,library_mode) SELECT $targetLib,$targetName,type,queue_lib,queue_name,priority,run_as,routing_data,current_library,library_mode FROM sys_job_descriptions WHERE library=$lib AND name=$name");
+                op.Run("INSERT INTO sys_job_descriptions(library,name,type,queue_lib,queue_name,priority,run_as,routing_data,current_library,library_mode,inquiry_reply) SELECT $targetLib,$targetName,type,queue_lib,queue_name,priority,run_as,routing_data,current_library,library_mode,inquiry_reply FROM sys_job_descriptions WHERE library=$lib AND name=$name");
                 op.Run("INSERT INTO sys_jobd_libraries(jobd_lib,jobd_name,ordinal,library) SELECT $targetLib,$targetName,ordinal,library FROM sys_jobd_libraries WHERE jobd_lib=$lib AND jobd_name=$name");
             }
             if (type == ObjectType.AuthorizationList)
@@ -274,6 +319,7 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
             RelocateNamedReferences(op, type);
             if (type == ObjectType.File)
             {
+                SqlViewCatalog.RelocateSources(connection, transaction, source, target);
                 op.Run("UPDATE sys_objects SET changed=$now WHERE type='*FILE' AND (lib,name) IN (SELECT lib,name FROM sys_file_defs WHERE json_extract(def,'$.logical.sourceLibrary')=$lib AND json_extract(def,'$.logical.sourceFile')=$name)");
                 op.Run("UPDATE sys_file_defs SET def=json_set(def,'$.logical.sourceLibrary',$targetLib,'$.logical.sourceFile',$targetName) WHERE json_extract(def,'$.logical.sourceLibrary')=$lib AND json_extract(def,'$.logical.sourceFile')=$name");
             }
@@ -298,6 +344,12 @@ public sealed partial class ObjectCatalogOperations(SqliteConnectionFactory fact
                 op.Run("UPDATE sys_menus SET library=$targetLib,name=$targetName WHERE library=$lib AND name=$name");
                 op.Run("UPDATE sys_menu_options SET library=$targetLib,menu=$targetName WHERE library=$lib AND menu=$name");
             }
+        }
+        if (type == ObjectType.File)
+        {
+            if (!copy) SqlForeignCatalog.RelocateReferences(connection,transaction,source,target);
+            SqlForeignCatalog.NullHooks(connection,transaction,install:true,only:copy ? target : null);
+            SqlForeignCatalog.ValidateBindings(connection,transaction,checkRows:false);
         }
     }
 

@@ -9,7 +9,7 @@ public sealed partial class RpgRuntimeContext
     internal Func<string, IReadOnlyList<RpgExpr>, object?>? NativeFunction { get; set; }
     internal bool HasProcedureReturn { get; set; }
     internal object? ProcedureReturn { get; set; }
-    private readonly Dictionary<RpgDataStructure, (byte[] Bytes, object Owner)> _procedureStaticStorage = new();
+    private Dictionary<RpgDataStructure, (byte[] Bytes, object Owner)> _procedureStaticStorage = new();
     private long _procedureStaticBytes;
     internal RpgRuntimeContext ModuleContext => GlobalContext?.ModuleContext ?? this;
     private bool IsGlobalName(string name)

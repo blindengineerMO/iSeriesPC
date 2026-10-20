@@ -15,13 +15,14 @@ public sealed partial class CommandService
 {
     private void RegisterMessageCommands()
     {
-        foreach (var name in new[] { "CRTMSGQ", "DLTMSGQ", "SNDMSG", "SNDRPY", "DSPMSG", "RMVMSG" })
+        foreach (var name in new[] { "CRTMSGQ", "DLTMSGQ", "SNDMSG", "SNDRPY", "DSPMSG", "RMVMSG", "ADDRPYLE", "CHGRPYLE", "RMVRPYLE", "WRKRPYLE" })
             _catalog.Register(name, call => ExecuteMessageCommand(call, null));
         _catalog.Register("RCVMSG", _ => CommandResult.Error("RCVMSG requires a compiled CL variable frame."));
         _catalog.Register("SNDPGMMSG", _ => CommandResult.Error("SNDPGMMSG requires a compiled CL variable frame."));
     }
     private CommandResult ExecuteMessageCommand(CommandCall call, ClCommandContext? context)
     {
+        if(call.Name is "ADDRPYLE" or "CHGRPYLE" or "RMVRPYLE" or "WRKRPYLE")return ExecuteReplyList(call);
         var store = new MessageQueueStore(_system.Connections); var ccsid = _job?.Ccsid ?? _system.Config.Ccsid;
         string Text(string key, string fallback = "") => (context?.Resolve(call.GetOption(key) ?? fallback) ?? CommandParser.Unquote(call.GetOption(key) ?? fallback)).TrimEnd();
         string Choice(string key, string fallback = "") => Text(key, fallback).ToUpperInvariant();

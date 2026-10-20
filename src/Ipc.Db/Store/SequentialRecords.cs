@@ -33,6 +33,11 @@ public sealed partial class SqliteFileStore
         EnsureMember(library, name, member);
         var definition = GetDefinition(library, name)!;
         if (definition.Formats.Count != 1) throw LogicalError("Sequential cursor requires one record format.");
+        if (definition.SqlView is not null)
+        {
+            if (updateRead) throw LogicalError("SQL view update cursors require the remaining view update implementation.");
+            return OpenSqlViewCursor(library, name, definition, cancellationToken);
+        }
         var format = definition.PrimaryFormat;
         var sourceLibrary = definition.Logical?.SourceLibrary ?? library;
         var sourceName = definition.Logical?.SourceFile ?? name;
@@ -149,7 +154,8 @@ public sealed partial class SqliteFileStore
                     var rowid = CursorRowid(physicalColumns);
                     var relative = request.RecordNumber is null ? "" : " AND p." + Quote(rowid) +
                         (request.Action == DatabaseRecordCursor.Operation.Lower ? ">=" : request.Action == DatabaseRecordCursor.Operation.Upper ? ">" : "=") + "$relative";
-                    return $"SELECT {columns},p.{Quote(rowid)} AS __ipc_record_number__,{index} AS __ipc_member_order__,{JournalHooks.Image("p", physicalColumns)} AS __ipc_before_image__ FROM {Quote(table)} p WHERE ({predicate}){relative}";
+                    var incarnation = data.IsWorkspace ? "NULL" : RecordSlots.VersionExpression(sourceLibrary, sourceName, m, "p." + Quote(rowid));
+                    return $"SELECT {columns},p.{Quote(rowid)} AS __ipc_record_number__,{index} AS __ipc_member_order__,{JournalHooks.Image("p", physicalColumns)} AS __ipc_before_image__,{incarnation} AS __ipc_version__ FROM {Quote(table)} p WHERE ({predicate}){relative}";
                 });
                 var values = order.Select((term, index) => term.Expression + " AS __ipc_seek_" + index + "__");
                 var query = "SELECT * FROM (SELECT b.*," + string.Join(',', values) + " FROM (" + string.Join(" UNION ALL ", branches) + ") AS b)";
@@ -192,13 +198,13 @@ public sealed partial class SqliteFileStore
                     if (!reader.Read()) return null;
                     cancellationToken.ThrowIfCancellationRequested();
                     var offset = request.PositionOnly ? 0 : format.Fields.Count;
-                    var keyOffset = offset + (request.PositionOnly ? 2 : 3);
+                    var keyOffset = offset + (request.PositionOnly ? 2 : 4);
                     var matches = reader.GetBoolean(keyOffset + order.Count);
                     var valuesRead = request.PositionOnly || !matches ? new Dictionary<string, object?>() : ReadRow(reader, format);
                     var next = Enumerable.Range(keyOffset, order.Count).Select(index => reader.IsDBNull(index) ? null : reader.GetValue(index)).ToArray();
                     var sourceMember = reader.GetInt32(offset + 1);
                     return new(valuesRead, reader.GetInt64(offset), sourceMember, next, matches,
-                        request.PositionOnly || !matches ? null : reader.GetString(offset + 2), schemas[sourceMember]);
+                        request.PositionOnly || !matches ? null : reader.GetString(offset + 2), schemas[sourceMember], request.PositionOnly || !matches || reader.IsDBNull(offset + 3) ? null : reader.GetString(offset + 3));
                     });
                 }
                 catch (SqliteException error) when (error.SqliteErrorCode == 1) { throw LogicalError("Invalid stored file value or sequential query definition."); }

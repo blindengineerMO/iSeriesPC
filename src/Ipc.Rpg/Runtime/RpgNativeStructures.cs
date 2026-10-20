@@ -18,33 +18,45 @@ public sealed partial class RpgRuntimeContext
     internal sealed record NativeScalarBinding(ProgramArgument Reference, Func<byte[]> Read, Action<byte[]> Validate,
         Action<byte[]> Write, ProgramArgumentStorage Storage, ProgramArgumentMemory? Memory = null);
     internal sealed record NativeView(RpgDataStructure Structure, byte[] Bytes, int Offset, int Width,
-        RpgDsElement? Element, bool IsArray, int Count, int? ArrayStride = null, NativeScalarBinding? Binding = null)
+        RpgDsElement? Element, bool IsArray, int Count, int? ArrayStride = null, NativeScalarBinding? Binding = null, RpgDataStructure? NestedLayout = null, NativeView? Parent = null, RpgDsElement? Container = null)
     {
-        internal int UnitWidth => Element?.StorageLength ?? Structure.Length;
+        internal RpgDataStructure Layout => NestedLayout ?? Structure;
+        internal int UnitWidth => Element?.StorageLength ?? Layout.Length;
         internal int Stride => ArrayStride ?? (Element?.Stride is > 0 ? Element.Stride : UnitWidth);
         internal string Identity => Structure.Name + ":" + Offset + ":" + Width + ":" + Element?.Kind + ":" + Element?.Length + ":" + Element?.Decimals + ":" + Element?.OpaqueBytes + ":" + IsArray;
     }
 
     private void InitializeNativeStructures()
     {
+        var initialize = new List<RpgDataStructure>();
         foreach (var ds in _program.DataStructures.Where(d => d.NativeStorage && !d.IsTemplate))
         {
             if (_program.GlobalStructures.Contains(ds)) continue;
-            var isStatic = _program.IsNativeProcedure && ds.Elements.Any(e => _program.FindField(e.Name)?.StaticLocal == true);
+            var exported = ExportedStructure(ds);
+            if (exported && _exportStorage.Values.TryGetValue(ds, out var retained))
+            { _nativeStructures.Add(ds.Name, retained.Bytes); _nativeStorageOwners.Add(ds.Name, retained.Owner); continue; }
+            var isStatic = _program.IsNativeProcedure && (ds.StaticLocal || ds.Elements.Any(e => _program.FindField(e.Name)?.StaticLocal == true));
             if (isStatic && ModuleContext._procedureStaticStorage.TryGetValue(ds, out var saved))
             { _nativeStructures.Add(ds.Name, saved.Bytes); _nativeStorageOwners.Add(ds.Name, saved.Owner); continue; }
             if (isStatic && (long)ds.Length * ds.StorageCount > 16777216 - ModuleContext._procedureStaticBytes)
                 throw NativeFailure(202, "Procedure STATIC storage exceeds 16 MiB for the module activation.");
-            var bytes = Enumerable.Repeat(ds.IndicatorDataStructure ? NativeZero : NativeBlank, checked(ds.Length * ds.StorageCount)).ToArray();
-            _nativeStructures.Add(ds.Name, bytes);
-            _nativeStorageOwners.Add(ds.Name, new object());
+            byte[] bytes; object owner;
+            if (!_program.IsNativeProcedure && !exported && ds.BasedOn is null && _exportStorage.CycleValues.TryGetValue(ds, out var cycle))
+            { bytes = cycle.Bytes; owner = cycle.Owner; Array.Fill(bytes, ds.IndicatorDataStructure ? NativeZero : NativeBlank); }
+            else { bytes = Enumerable.Repeat(ds.IndicatorDataStructure ? NativeZero : NativeBlank, checked(ds.Length * ds.StorageCount)).ToArray(); owner = new object(); }
+            _nativeStructures.Add(ds.Name, bytes); _nativeStorageOwners.Add(ds.Name, owner);
+            if (ds.BasedOn is null) initialize.Add(ds);
+            if (isStatic) { ModuleContext._procedureStaticStorage.Add(ds, (bytes, owner)); ModuleContext._procedureStaticBytes += bytes.Length; }
+            if (exported) _exportStorage.Values.Add(ds, (bytes, owner));
+            else if (!_program.IsNativeProcedure && ds.BasedOn is null) _exportStorage.CycleValues.TryAdd(ds, (bytes, owner));
+        }
+        // All addresses exist before evaluating INZ(%ADDR(...)), including forward declarations.
+        foreach (var ds in initialize)
             for (var index = 0; index < ds.StorageCount; index++)
             {
                 _host.CancellationToken.ThrowIfCancellationRequested();
-                InitializeNativeFields(ds, bytes, index * ds.Length, false);
+                InitializeNativeFields(ds, _nativeStructures[ds.Name], index * ds.Length, false);
             }
-            if (isStatic) { ModuleContext._procedureStaticStorage.Add(ds, (bytes, _nativeStorageOwners[ds.Name])); ModuleContext._procedureStaticBytes += bytes.Length; }
-        }
         ValidateCompileTimeCharacterSequences();
     }
     internal ProgramArgumentStorage NativeStorageRange(NativeView view) => _program.GlobalStructures.Contains(view.Structure)
@@ -61,11 +73,25 @@ public sealed partial class RpgRuntimeContext
             return encoding;
         }
     }
-    private void InitializeNativeFields(RpgDataStructure ds, byte[] bytes, int offset, bool clear)
+    private void InitializeNativeFields(RpgDataStructure ds, byte[] bytes, int offset, bool clear, bool initializeAll = false)
     {
         foreach (var element in ds.Elements)
         {
-            if (!clear && !ds.InitializeSubfields && !element.HasInitialValue) continue;
+            if (element.NestedStructure is { } nested)
+            {
+                for (var index = 0; index < element.Dimension; index++)
+                    InitializeNativeFields(nested, bytes, offset + element.Offset + index * element.Stride, clear, (initializeAll || ds.InitializeSubfields) && !element.HasInitialValue);
+                continue;
+            }
+            if (!clear && element.ExternalDefaultInitialization && element.LikeType is RpgExternalField external)
+            {
+                var codec = new RpgDsElement { Name = element.Name, Kind = external.Kind, Length = external.Length, Decimals = external.Decimals,
+                    StorageLength = external.StorageLength, Stride = external.StorageLength };
+                var initial = element.InitialValue is null ? ClearValueFor(codec) : RpgExpressionParser.Parse(element.InitialValue).Eval(this);
+                WriteNative(new(ds, bytes, offset + element.Offset, external.StorageLength, codec, false, 1), initial); continue;
+            }
+            if (!clear && !initializeAll && !ds.InitializeSubfields && !element.HasInitialValue) continue;
+            if (!clear && DeferParameterAddress(ds, bytes, offset, element)) continue;
             var value = clear || element.InitialValue is null ? ClearValueFor(element) : RpgExpressionParser.Parse(element.InitialValue).Eval(this);
             for (var index = 0; index < element.Dimension; index++)
             {
@@ -79,22 +105,28 @@ public sealed partial class RpgRuntimeContext
         }
     }
 
-    internal bool TryNativeReference(RpgExpr expression, out NativeView view)
+    internal bool TryNativeReference(RpgExpr expression, out NativeView view, bool resolveBased = true)
+    {
+        if (!TryNativeReferenceCore(expression, out view, resolveBased)) return false;
+        if (resolveBased) view = BindBasedStorage(view);
+        return true;
+    }
+    private bool TryNativeReferenceCore(RpgExpr expression, out NativeView view, bool resolveBased)
     {
         view = null!;
         if (RpgCompiler.TemplateReference(_program, expression)) throw NativeFailure(105, "TEMPLATE definitions have no runtime storage.");
-        if (IsGlobalExpression(expression)) return GlobalContext!.TryNativeReference(expression, out view);
+        if (IsGlobalExpression(expression)) return GlobalContext!.TryNativeReference(expression, out view, resolveBased);
         if (expression is RpgAllElementsRef) throw NativeFailure(105, "A (*) data structure key requires SORTA or %LOOKUP.");
         if (expression is RpgBuiltin { Name: "SUBARR" } slice) { view = NativeSlice(slice.Arguments); return true; }
         if (expression is RpgFieldRef field)
         {
             if (_program.FindField(field.Name) is { IsTable: true })
-            { view = NativeIndex(TableStorage(field.Name), _nativeTableSelections.GetValueOrDefault(field.Name, 1)); return true; }
+            { view = NativeIndex(BindImportedData(field.Name, TableStorage(field.Name)), _nativeTableSelections.GetValueOrDefault(field.Name, 1)); return true; }
             if (_program.FindDs(field.Name) is { NativeStorage: true, Anonymous: false } ds && _nativeStructures.TryGetValue(ds.Name, out var bytes))
             {
                 view = new(ds, bytes, NativeOccurrenceOffset(ds), ds.IsMultipleOccurrence ? ds.Length : bytes.Length, null, ds.IsArray, ds.Dimension);
                 if (_nativeScalarBindings.TryGetValue(field.Name, out var aggregate) || _nativeDetachedBindings.TryGetValue(field.Name, out aggregate)) view = AttachNativeBinding(view, aggregate);
-                return true;
+                view = BindImportedData(field.Name, view); return true;
             }
             if (_program.FindDsElement(field.Name) is not { } element) return false;
             var owner = _program.DataStructures.First(d => d.Elements.Contains(element));
@@ -102,33 +134,39 @@ public sealed partial class RpgRuntimeContext
             if (owner.IsArray) throw NativeFailure(121, "A data structure array subfield requires an indexed, qualified structure.");
             var root = new NativeView(owner, bytes, NativeOccurrenceOffset(owner), owner.Length, null, false, 1);
             if (_nativeScalarBindings.TryGetValue(owner.Name, out var rootBinding) || _nativeDetachedBindings.TryGetValue(owner.Name, out rootBinding)) root = AttachNativeBinding(root, rootBinding);
+            root = BindImportedData(owner.Name, root);
             view = NativeMember(root, element.LocalName ?? element.Name);
             if (_nativeScalarBindings.TryGetValue(field.Name, out var binding) || _nativeDetachedBindings.TryGetValue(field.Name, out binding)) view = AttachNativeBinding(view, binding);
-            return true;
+            view = BindImportedData(field.Name, view); return true;
         }
         if (expression is RpgDynamicIndexRef tableIndex && _program.FindField(tableIndex.Name) is { IsTable: true } ||
             expression is RpgIndexedRef tableConstant && _program.FindField(tableConstant.Name) is { IsTable: true })
             throw NativeFailure(105, "A table name denotes its current element and cannot be indexed.");
-        if (expression is RpgDynamicIndexRef dynamic && TryNativeReference(new RpgFieldRef(dynamic.Name), out var indexed))
+        if (expression is RpgDynamicIndexRef dynamic && TryNativeReference(new RpgFieldRef(dynamic.Name), out var indexed, resolveBased))
         { view = NativeIndex(indexed, NativeSubscript(dynamic.Index)); return true; }
-        if (expression is RpgIndexedRef constant && TryNativeReference(new RpgFieldRef(constant.Name), out indexed))
+        if (expression is RpgIndexedRef constant && TryNativeReference(new RpgFieldRef(constant.Name), out indexed, resolveBased))
         { view = NativeIndex(indexed, constant.Index); return true; }
-        if (expression is RpgMemberRef member && TryNativeReference(member.Target, out var parent))
+        if (expression is RpgMemberRef member && TryNativeReference(member.Target, out var parent, resolveBased))
         {
-            if (!parent.Structure.Qualified) throw new RpgRuntimeException("A qualified subfield reference requires QUALIFIED on its structure.");
+            if (!parent.Layout.Qualified) throw new RpgRuntimeException("A qualified subfield reference requires QUALIFIED on its structure.");
             view = NativeMember(parent, member.Name); return true;
         }
-        if (expression is RpgElementRef subscript && TryNativeReference(subscript.Target, out parent))
+        if (expression is RpgElementRef subscript && TryNativeReference(subscript.Target, out parent, resolveBased))
         { view = NativeIndex(parent, NativeSubscript(subscript.Index)); return true; }
         return false;
     }
-    private NativeView NativeMember(NativeView parent, string name)
+    internal NativeView NativeMember(NativeView parent, string name)
     {
         if (parent.Element is not null) throw new RpgRuntimeException("Only a data structure has subfields.");
         if (parent.IsArray) throw NativeFailure(121, "Select a data structure array element before its subfield.");
-        var element = parent.Structure.Find(name) ?? throw new RpgRuntimeException("Unknown data structure subfield: " + name);
-        var view = new NativeView(parent.Structure, parent.Bytes, parent.Offset + element.Offset, checked(element.StorageLength * element.Dimension), element, element.IsArray, element.Dimension);
-        return BindNativeSubview(parent, view, element.Offset, view.Width, ViewShape(view));
+        var element = parent.Layout.Find(name) ?? throw new RpgRuntimeException("Unknown data structure subfield: " + name);
+        return NativeMember(parent, element);
+    }
+    private NativeView NativeMember(NativeView parent, RpgDsElement element)
+    {
+        var view = new NativeView(parent.Structure, parent.Bytes, parent.Offset + element.Offset, checked(element.StorageLength * element.Dimension),
+            element.NestedStructure is null ? element : null, element.IsArray, element.Dimension, ArrayStride: element.Stride, NestedLayout: element.NestedStructure ?? parent.NestedLayout, Parent: parent, Container: element);
+        return BindNativeSubview(parent, view, element.Offset, checked((view.Count - 1) * view.Stride + view.UnitWidth), ViewShape(view));
     }
     private NativeView NativeIndex(NativeView parent, long index)
     {
@@ -136,7 +174,7 @@ public sealed partial class RpgRuntimeContext
         var delta = (index - 1) * parent.Stride;
         if (delta > int.MaxValue - parent.Offset) throw NativeFailure(105, "Native parameter address exceeds its actual storage.");
         var view = parent with { Offset = parent.Offset + (int)delta, Width = parent.UnitWidth, IsArray = false, Count = 1, Binding = null };
-        return BindNativeSubview(parent, view, (int)delta, parent.Stride, parent.Binding?.Memory?.Shape is { } shape ? shape with { Dimension = 1 } : null);
+        return BindNativeSubview(parent, view, (int)delta, Math.Min(view.UnitWidth, parent.Stride), parent.Binding?.Memory?.Shape is { } shape ? shape with { Dimension = 1 } : null);
     }
     public object? ReadNativeReference(RpgExpr expression) => TryNativeReference(expression, out var view)
         ? ReadNative(view) : throw new RpgRuntimeException("Qualified reference requires a native data structure.");
@@ -170,6 +208,8 @@ public sealed partial class RpgRuntimeContext
         try
         {
             var data = view.Bytes.AsSpan(view.Offset, view.Width).ToArray();
+            if (e.Kind == RpgFieldKind.DataPointer) return RpgDataAddress.Decode(data);
+            if (e.Kind == RpgFieldKind.ProcedurePointer) return new RpgProcedureAddress(new Guid(data));
             if (e.Kind == RpgFieldKind.Character) return NativeEncoding.GetString(data);
             if (e.Kind == RpgFieldKind.Integer && e.StorageLength == 1) return (long)unchecked((sbyte)data[0]);
             return new RecordCodec(NativeCcsid).ReadValue(data, NativeField(e));
@@ -200,6 +240,21 @@ public sealed partial class RpgRuntimeContext
         var result = Enumerable.Repeat(NativeBlank, view.Width).ToArray(); var e = view.Element;
         try
         {
+            if (e?.Kind == RpgFieldKind.DataPointer && !view.IsArray)
+            {
+                if (strict && value is ProgramBuffer rawData && rawData.Length == 16 && rawData.Ccsid == NativeCcsid) return rawData.ToArray();
+                var pointer = DataAddress(value);
+                if (pointer.ReadOnly) throw NativeFailure(105, "The address of a CONST parameter can only be compared.");
+                return pointer.Bytes();
+            }
+            if (e?.Kind == RpgFieldKind.ProcedurePointer && !view.IsArray)
+            {
+                if (strict && value is ProgramBuffer rawPointer && rawPointer.Length == 16 && rawPointer.Ccsid == NativeCcsid) return rawPointer.ToArray();
+                if (value is RpgNullAddress) value = RpgProcedureAddress.Null;
+                if (value is not RpgProcedureAddress pointer) throw NativeFailure(105, "Procedure pointers require a procedure address or *NULL.");
+                return pointer.Value.ToByteArray();
+            }
+            if (value is RpgProcedureAddress or RpgDataAddress) throw NativeFailure(105, "A pointer address requires matching pointer storage.");
             if (e is null || view.IsArray || e.OpaqueBytes || e.Kind == RpgFieldKind.Character)
             {
                 byte[] source;
@@ -295,8 +350,9 @@ public sealed partial class RpgRuntimeContext
         if (!TryNativeReference(RpgExpressionParser.Parse(operand), out var view)) return false;
         if (allOccurrences)
         {
-            if (view.Element is not null || !view.Structure.IsMultipleOccurrence) throw new RpgRuntimeException("CLEAR *ALL requires a multiple-occurrence data structure.");
+            if (view.Element is not null || !view.Layout.IsMultipleOccurrence) throw new RpgRuntimeException("CLEAR *ALL requires a multiple-occurrence data structure.");
             view = view with { Offset = 0, Width = view.Bytes.Length, Count = view.Structure.Occurrences };
+            if (view.Structure.BasedOn is not null) view = BindBasedStorage(view with { Binding = null });
         }
         if (view.Element is { } e)
         {
@@ -306,11 +362,11 @@ public sealed partial class RpgRuntimeContext
         {
             EnsureNativeWritable(view);
             // Prepare a private image, then publish the entire CLEAR atomically.
-            var bytes = Enumerable.Repeat(view.Structure.IndicatorDataStructure ? NativeZero : NativeBlank, view.Width).ToArray();
+            var bytes = Enumerable.Repeat(view.Layout.IndicatorDataStructure ? NativeZero : NativeBlank, view.Width).ToArray();
             for (var i = 0; i < view.Count; i++)
             {
                 _host.CancellationToken.ThrowIfCancellationRequested();
-                InitializeNativeFields(view.Structure, bytes, i * view.Structure.Length, true);
+                InitializeNativeFields(view.Layout, bytes, i * view.Layout.Length, true);
             }
             _host.CancellationToken.ThrowIfCancellationRequested();
             view.Binding?.Validate(bytes);

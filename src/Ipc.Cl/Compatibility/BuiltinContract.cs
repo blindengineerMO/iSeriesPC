@@ -58,7 +58,8 @@ public static class BuiltinContract
         {
             var keyword = k.GetString()!;
             var secret = keyword.Contains("PASSWORD", StringComparison.Ordinal) || keyword is "TOKEN" or "CODE" or "SECRET";
-            return new Ipc.Cl.Commands.CommandParameter(keyword, keyword, keyword is "TEXT" or "MSG" or "RPY" || secret, secret);
+            var maximum = name == "RUNSQL" && keyword == "SQL" ? 5000 : name == "STRQMQRY" && keyword == "SETVAR" ? 8192 : 1024;
+            return new Ipc.Cl.Commands.CommandParameter(keyword, keyword, keyword is "TEXT" or "MSG" or "RPY" or "SQL" || secret, secret, maximum);
         }).ToArray();
         return new(name, parameters, entry.GetProperty("maxPositional").GetInt32());
     }

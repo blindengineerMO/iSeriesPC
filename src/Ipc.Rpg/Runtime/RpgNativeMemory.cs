@@ -12,13 +12,13 @@ public sealed partial class RpgRuntimeContext
     { "Integer" => shape.ElementLength switch { 3 => 1, 5 => 2, 10 => 4, _ => 8 }, "Packed" => (shape.ElementLength + 2) / 2, _ => shape.ElementLength };
     private static ProgramArgumentShape ViewShape(NativeView view) => view.Element is { } element
         ? new(element.Kind.ToString(), element.Length, element.Decimals, view.IsArray ? view.Count : 1, false, element.OpaqueBytes)
-        : new("*DS", view.Structure.Length, 0, view.IsArray ? view.Count : 1, true, true);
+        : new("*DS", view.Layout.Length, 0, view.IsArray ? view.Count : 1, true, true);
 
     internal ProgramArgumentMemory NativeMemory(NativeView view)
     {
         if (_program.GlobalStructures.Contains(view.Structure)) return GlobalContext!.NativeMemory(view);
         if (view.Binding?.Memory is { } existing) return view.Element?.ReadOnlyParameter == true || view.Structure.ReadOnlyParameter || view.Binding.Reference.IsReadOnly
-            ? existing.Scoped(() => { }, readOnly: true) : existing;
+            ? RegisterNativeAddress(view, existing.Scoped(() => { }, readOnly: true)) : RegisterNativeAddress(view, existing);
         if (view.IsArray && view.Stride != view.UnitWidth) throw new CpfException("CPF3C3A", "A noncontiguous argument has no single byte address.");
         ProgramBuffer Read(int offset, int length)
         {
@@ -27,10 +27,10 @@ public sealed partial class RpgRuntimeContext
                 : new(NativeBuffer(view).ToArray().AsSpan(offset, length), NativeCcsid);
         }
         byte[] Merge(int offset, ProgramBuffer value) { var bytes = NativeBuffer(view).ToArray(); value.ToArray().CopyTo(bytes, offset); return bytes; }
-        return new(NativeStorageRange(view), NativeCcsid, ViewShape(view), Read,
+        return RegisterNativeAddress(view, new(NativeStorageRange(view), NativeCcsid, ViewShape(view), Read,
             (offset, value) => { _ = NormalizeNative(view, new ProgramBuffer(Merge(offset, value), NativeCcsid), strict: true); },
             (offset, value) => WriteNativeBytes(view, Merge(offset, value)),
-            view.Element?.ReadOnlyParameter == true || view.Structure.ReadOnlyParameter || view.Binding?.Reference.IsReadOnly == true);
+            view.Element?.ReadOnlyParameter == true || view.Structure.ReadOnlyParameter || view.Binding?.Reference.IsReadOnly == true));
     }
 
     internal ProgramArgumentMemory ArgumentMemory(ProgramArgument argument, RpgField formal)
@@ -85,7 +85,7 @@ public sealed partial class RpgRuntimeContext
                 memory.Slice(checked(index * view.Stride), view.Stride).Read(0, view.UnitWidth).ToArray().CopyTo(result, index * view.UnitWidth);
             return result;
         }
-        catch (CpfException error) when (error.MessageId == "CPF3C3A") { throw NativeFailure(105, error.Message); }
+        catch (CpfException error) when (error.MessageId == "CPF3C3A") { throw NativeFailure(view.Structure.BasedOn is null ? 105 : 222, error.Message); }
     }
     private static void ValidateNativeMemory(NativeView view, ProgramArgumentMemory memory, byte[] bytes)
     {
@@ -110,7 +110,7 @@ public sealed partial class RpgRuntimeContext
     {
         var end = view.IsArray ? (long)(view.Count - 1) * view.Stride + view.UnitWidth : view.Width;
         if (end > memory.Capacity || view.IsArray && view.Stride < view.UnitWidth)
-            throw NativeFailure(105, "Native parameter access exceeds the actual argument storage.");
+            throw NativeFailure(view.Structure.BasedOn is null ? 105 : 222, "Native parameter access exceeds the actual argument storage.");
     }
 
     internal void EnsureArgumentStorage(NativeView view)

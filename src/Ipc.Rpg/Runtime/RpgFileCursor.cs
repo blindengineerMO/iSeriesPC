@@ -76,12 +76,18 @@ public sealed class RpgFileCursor : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         (_writer ?? throw new RpgRuntimeException("WRITE requires declared output access.")).Write(values);
     }
+    public void WriteRelative(long number, IReadOnlyDictionary<string, object?> values)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        (_writer ?? throw new RpgRuntimeException("WRITE requires declared output access.")).WriteRelative(number, values);
+    }
     public bool HasUpdateLock => _live?.HasUpdateLock ?? false;
     public void Unlock()
     {
         if (!IsUpdateRead) throw new RpgRuntimeException("UNLOCK requires an update cursor.");
         RecordCursor().Unlock();
     }
+    public long? PositionedRecordNumber => _live?.PositionedRecordNumber;
     public long? CurrentRecordNumber => _live?.CurrentRecordNumber;
     public void RebindCancellation(CancellationToken cancellationToken)
     {

@@ -156,29 +156,37 @@ public sealed class AuthorityEngine
     public AuthorityBit ComputeEffective(
         UserProfile user, IReadOnlyList<string> groups, ObjectDescriptor descriptor)
     {
-        if (SecurityLevel <= 20 || (user.SpecialAuthorities & SpecialAuthority.AllObject) != 0)
-            return Authorities.AllBits;
         using var connection = _factory.Open();
-        var personal = ProfileAuthority(connection, user.Name, descriptor);
+        return ComputeEffective(connection, null, user, groups, descriptor);
+    }
+    internal AuthorityBit ComputeEffective(Microsoft.Data.Sqlite.SqliteConnection connection, Microsoft.Data.Sqlite.SqliteTransaction? transaction,
+        UserProfile user, IReadOnlyList<string> groups, ObjectDescriptor descriptor)
+    {
+        using var level = connection.CreateCommand(); level.Transaction = transaction;
+        level.CommandText = "SELECT value FROM sys_sysvals WHERE name='QSECURITY'";
+        var security = int.TryParse(level.ExecuteScalar() as string, out var parsed) ? parsed : 40;
+        if (security <= 20 || (user.SpecialAuthorities & SpecialAuthority.AllObject) != 0)
+            return Authorities.AllBits;
+        var personal = ProfileAuthority(connection, user.Name, descriptor, transaction);
         if (personal is { } individual) return individual;
         AuthorityBit? groupBits = null;
         foreach (var group in groups.Distinct(StringComparer.Ordinal))
         {
-            using var special = connection.CreateCommand();
+            using var special = connection.CreateCommand(); special.Transaction = transaction;
             special.CommandText = "SELECT special_auth FROM sys_profiles WHERE name=$name";
             special.Parameters.AddWithValue("$name", group);
             var groupSpecial = (SpecialAuthority)Convert.ToInt32(special.ExecuteScalar());
             if ((groupSpecial & SpecialAuthority.AllObject) != 0) return Authorities.AllBits;
-            var authority = ProfileAuthority(connection, group, descriptor);
+            var authority = ProfileAuthority(connection, group, descriptor, transaction);
             if (authority is { } found) groupBits = (groupBits ?? AuthorityBit.None) | found;
         }
         if (groupBits is { } combined) return combined;
         if (descriptor.UseAuthorizationListPublicAuthority)
         {
             var result = AuthorityBit.None;
-            foreach (var attachment in Attachments(connection, descriptor))
+            foreach (var attachment in Attachments(connection, descriptor, transaction))
             {
-                var list = GetDescriptor("QSYS", attachment.Name, ObjectType.AuthorizationList);
+                var list = ReadDescriptor(connection, transaction, "QSYS", attachment.Name, ObjectType.AuthorizationList);
                 if (list is not null) result |= list.PublicAuthority & attachment.Mask;
             }
             return result;
@@ -189,25 +197,29 @@ public sealed class AuthorityEngine
     internal AuthorityBit AdoptedAuthority(string owner, ObjectDescriptor descriptor)
     {
         using var connection = _factory.Open();
-        using var special = connection.CreateCommand();
+        return AdoptedAuthority(connection, null, owner, descriptor);
+    }
+    internal AuthorityBit AdoptedAuthority(Microsoft.Data.Sqlite.SqliteConnection connection, Microsoft.Data.Sqlite.SqliteTransaction? transaction, string owner, ObjectDescriptor descriptor)
+    {
+        using var special = connection.CreateCommand(); special.Transaction = transaction;
         special.CommandText = "SELECT special_auth FROM sys_profiles WHERE name=$name";
         special.Parameters.AddWithValue("$name", owner);
         if (special.ExecuteScalar() is not long bits) return AuthorityBit.None;
         if (((SpecialAuthority)bits & SpecialAuthority.AllObject) != 0) return Authorities.AllBits;
         // Adopted authority includes the owner's individual authority, never its groups/public fallback.
-        return ProfileAuthority(connection, owner, descriptor) ?? AuthorityBit.None;
+        return ProfileAuthority(connection, owner, descriptor, transaction) ?? AuthorityBit.None;
     }
 
     private static AuthorityBit? ProfileAuthority(Microsoft.Data.Sqlite.SqliteConnection connection,
-        string profile, ObjectDescriptor descriptor)
+        string profile, ObjectDescriptor descriptor, Microsoft.Data.Sqlite.SqliteTransaction? transaction = null)
     {
-        var direct = PrivateAuthority(connection, descriptor, profile);
+        var direct = PrivateAuthority(connection, descriptor, profile, transaction);
         if (direct is not null) return direct;
         if (descriptor.Owner == profile) return Authorities.AllBits;
         AuthorityBit? result = null;
-        foreach (var attachment in Attachments(connection, descriptor))
+        foreach (var attachment in Attachments(connection, descriptor, transaction))
         {
-            using var member = connection.CreateCommand();
+            using var member = connection.CreateCommand(); member.Transaction = transaction;
             member.CommandText = "SELECT bits FROM sys_authl_members WHERE authl=$list AND holder=$profile";
             member.Parameters.AddWithValue("$list", attachment.Name);
             member.Parameters.AddWithValue("$profile", profile);
@@ -215,7 +227,7 @@ public sealed class AuthorityEngine
                 result = (result ?? AuthorityBit.None) | ((AuthorityBit)bits & attachment.Mask);
             else
             {
-                using var owner = connection.CreateCommand();
+                using var owner = connection.CreateCommand(); owner.Transaction = transaction;
                 owner.CommandText = "SELECT owner FROM sys_objects WHERE lib='QSYS' AND name=$list AND type='*AUTL'";
                 owner.Parameters.AddWithValue("$list", attachment.Name);
                 if (owner.ExecuteScalar() as string == profile) result = (result ?? AuthorityBit.None) | attachment.Mask;
@@ -225,9 +237,9 @@ public sealed class AuthorityEngine
     }
 
     private static AuthorityBit? PrivateAuthority(Microsoft.Data.Sqlite.SqliteConnection connection,
-        ObjectDescriptor descriptor, string holder)
+        ObjectDescriptor descriptor, string holder, Microsoft.Data.Sqlite.SqliteTransaction? transaction = null)
     {
-        using var command = connection.CreateCommand();
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT bits FROM sys_authorities WHERE lib=$lib AND name=$name AND type=$type AND holder=$holder AND is_authl=0";
         command.Parameters.AddWithValue("$lib", descriptor.Library);
         command.Parameters.AddWithValue("$name", descriptor.Name);
@@ -237,9 +249,9 @@ public sealed class AuthorityEngine
     }
 
     private static List<(string Name, AuthorityBit Mask)> Attachments(Microsoft.Data.Sqlite.SqliteConnection connection,
-        ObjectDescriptor descriptor)
+        ObjectDescriptor descriptor, Microsoft.Data.Sqlite.SqliteTransaction? transaction = null)
     {
-        using var command = connection.CreateCommand();
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = "SELECT holder,bits FROM sys_authorities WHERE lib=$lib AND name=$name AND type=$type AND is_authl=1 ORDER BY holder";
         command.Parameters.AddWithValue("$lib", descriptor.Library);
         command.Parameters.AddWithValue("$name", descriptor.Name);
@@ -248,6 +260,14 @@ public sealed class AuthorityEngine
         var result = new List<(string, AuthorityBit)>();
         while (reader.Read()) result.Add((reader.GetString(0), (AuthorityBit)reader.GetInt32(1)));
         return result;
+    }
+
+    private static ObjectDescriptor? ReadDescriptor(Microsoft.Data.Sqlite.SqliteConnection connection, Microsoft.Data.Sqlite.SqliteTransaction? transaction, string library, string name, string type)
+    {
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "SELECT * FROM sys_objects WHERE lib=$lib AND name=$name AND type=$type";
+        command.Parameters.AddWithValue("$lib", library); command.Parameters.AddWithValue("$name", name); command.Parameters.AddWithValue("$type", type);
+        using var reader = command.ExecuteReader(); return reader.Read() ? SqliteObjectStore.ReadDescriptor(reader) : null;
     }
 
     public bool CanExecute(

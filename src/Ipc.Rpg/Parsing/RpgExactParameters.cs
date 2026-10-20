@@ -6,6 +6,14 @@ public static partial class RpgCompiler
 {
     internal static RpgField? ExactActualType(RpgProgram program, RpgExpr expression)
     {
+        if (expression is RpgBuiltin { Name: "ADDR" or "ALLOC" or "REALLOC" or "PADDR" } address)
+        {
+            RpgExpr? array = address is { Name: "ADDR", Arguments.Count: 1 } ? address.Arguments[0] switch
+            { RpgAllElementsRef all => all.Target, RpgMemberRef { Target: RpgAllElementsRef all } => all.Target, _ => null } : null;
+            var source = array is null ? null : ExactActualType(program, array);
+            return new RpgField { Name = address.Name, Kind = address.Name == "PADDR" ? RpgFieldKind.ProcedurePointer : RpgFieldKind.DataPointer,
+                Length = 16, IsArray = source?.IsArray == true, Dimension = source?.Dimension ?? 1 };
+        }
         if (expression is RpgBuiltin builtin && builtin.Name is "DATE" or "TIME" or "TIMESTAMP" or "FLOAT")
             return new RpgField { Name = builtin.Name, Kind = builtin.Name switch { "DATE" => RpgFieldKind.Date, "TIME" => RpgFieldKind.Time,
                 "TIMESTAMP" => RpgFieldKind.Timestamp, _ => RpgFieldKind.Float }, Length = builtin.Name switch { "DATE" => 10, "TIME" or "FLOAT" => 8, _ => 26 } };
@@ -22,17 +30,18 @@ public static partial class RpgCompiler
         {
             var (array, _) = FixedLookupTarget(expression);
             return ExactActualType(program, array) is { IsArray: true } type ? new RpgField { Name = type.Name, Kind = type.Kind, Length = type.Length,
-                LikeType = type.LikeType, DeclaredLike = type.DeclaredLike, Decimals = type.Decimals, IsDataStructure = type.IsDataStructure, ParameterStructure = type.ParameterStructure, OpaqueBytes = type.OpaqueBytes } : null;
+                LikeType = type.LikeType, DeclaredLike = type.DeclaredLike, Decimals = type.Decimals, IsDataStructure = type.IsDataStructure, ParameterStructure = type.ParameterStructure, ReadOnlyParameter = type.ReadOnlyParameter, NullCapable = type.NullCapable, OpaqueBytes = type.OpaqueBytes } : null;
         }
-        if (expression is RpgMemberRef member && ExactActualType(program, member.Target)?.ParameterStructure is { } owner && owner.Find(member.Name) is { } subfield)
-            return ElementType(subfield);
+        if (expression is RpgMemberRef member && ExactActualType(program, member.Target) is { IsArray: false, ParameterStructure: { } owner } ownerType && owner.Find(member.Name) is { } subfield)
+            return ElementType(subfield, ownerType.ReadOnlyParameter || owner.ReadOnlyParameter);
         return null;
     }
 
     private static RpgField StructureType(RpgDataStructure structure) => new() { Name = structure.Name, Kind = RpgFieldKind.Character,
-        Length = structure.Length, IsDataStructure = true, OpaqueBytes = true, ParameterStructure = structure, IsArray = structure.IsArray, Dimension = structure.Dimension, LikeType = structure.LikeType };
-    private static RpgField ElementType(RpgDsElement element) => new() { Name = element.Name, Kind = element.Kind, Length = element.Length,
-        LikeType = element.LikeType, DeclaredLike = element.DeclaredLike, Decimals = element.Decimals, IsArray = element.IsArray, Dimension = element.Dimension, ArrayDescending = element.ArrayDescending, OpaqueBytes = element.OpaqueBytes };
+        Length = structure.Length, IsDataStructure = true, OpaqueBytes = true, ParameterStructure = structure, ReadOnlyParameter = structure.ReadOnlyParameter, IsArray = structure.IsArray, Dimension = structure.Dimension, LikeType = structure.LikeType };
+    private static RpgField ElementType(RpgDsElement element, bool readOnly = false) => new() { Name = element.Name, Kind = element.Kind, Length = element.Length,
+        IsDataStructure = element.NestedStructure is not null, ParameterStructure = element.NestedStructure,
+        NullCapable = element.NullCapable, ReadOnlyParameter = readOnly || element.ReadOnlyParameter, LikeType = element.LikeType, DeclaredLike = element.DeclaredLike, Decimals = element.Decimals, IsArray = element.IsArray, Dimension = element.Dimension, ArrayDescending = element.ArrayDescending, OpaqueBytes = element.OpaqueBytes };
 
     internal static string? ExactTypeError(RpgField actual, RpgField formal)
     {
@@ -42,7 +51,7 @@ public static partial class RpgCompiler
         if (formal.IsDataStructure)
         {
             if (actual.ParameterStructure is not { } a || formal.ParameterStructure is not { } f ||
-                !ReferenceEquals(a.TypeOrigin ?? a.LikeType, f.TypeOrigin ?? f.LikeType)) return error;
+                !ReferenceEquals(a.TypeOrigin ?? a.LikeType, f.TypeOrigin ?? f.LikeType) || a.RecordOrigin?.NullMap != f.RecordOrigin?.NullMap) return error;
             return null;
         }
         var copy = formal.ReadOnlyParameter || formal.ValueParameter;

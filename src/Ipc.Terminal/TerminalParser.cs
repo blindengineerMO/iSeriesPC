@@ -24,7 +24,7 @@ public sealed class TerminalParser
         if (ch == '\u001b') { EndEscape(); _state = State.Escape; _escape.Append(ch); return output; }
         if (_state == State.Plain)
         {
-            var key = _paste && ch is '\r' or '\n' or '\t' ? new KeyPress(AidKey.None, Character: ' ') : KeyTranslator.Translate(ch.ToString(), ch);
+            var key = _paste && ch is '\r' or '\n' or '\t' ? new KeyPress(AidKey.None, Character: ' ', PasteCharacter: ch) : KeyTranslator.Translate(ch.ToString(), ch);
             if (key is { } plain && (!_paste || plain.Aid == AidKey.None && plain.Character != '\0')) output.Add(plain);
             return output;
         }

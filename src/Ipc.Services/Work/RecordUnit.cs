@@ -172,7 +172,7 @@ public sealed partial class JobRecordTransactions
         internal void Publish(CancellationToken cancellationToken)
         {
             ObjectDisposedException.ThrowIf(_disposed, this); if (_operation) throw Invalid("Finish the current record statement before commit.");
-            cancellationToken.ThrowIfCancellationRequested();
+            RequireNoQuerySnapshots(); cancellationToken.ThrowIfCancellationRequested();
             if (_published) { Reset(); return; }
             var cursorPositions = CaptureCursorPositions();
             if (PendingCount() == 0) { Reset(); AcceptCursorPositions(cursorPositions); return; }
@@ -201,7 +201,7 @@ public sealed partial class JobRecordTransactions
                     var triggers = new List<(string Name, string Sql)>(); using (var reader = command.ExecuteReader()) while (reader.Read()) triggers.Add((reader.GetString(0), reader.GetString(1)));
                     foreach (var trigger in triggers)
                     {
-                        if (JournalHooks.OwnsTrigger(live, transaction, trigger.Name)) continue;
+                        if (JournalHooks.OwnsTrigger(live, transaction, trigger.Name) || RecordSlots.OwnsTrigger(live, transaction, trigger.Name)) continue;
                         saved.Add(trigger.Sql); Run(live, transaction, "DROP TRIGGER " + Quote(trigger.Name));
                     }
                     // Older captures did not have the commitment-before-image switch.

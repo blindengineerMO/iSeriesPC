@@ -10,7 +10,13 @@ namespace Ipc.Rpg.Model;
 public sealed record RpgSubfileBinding(string Record, string RelativeRecord);
 public sealed record RpgRecordRename(string External, string Name);
 public sealed record RpgWorkstationRequest(string Name, string DescriptionFile, string RuntimeFile, bool Input, bool Output, bool UserOpen,
-    IReadOnlyList<RpgSubfileBinding> Subfiles, IReadOnlyList<RpgRecordRename> Renames, string Prefix = "");
+    IReadOnlyList<RpgSubfileBinding> Subfiles, IReadOnlyList<RpgRecordRename> Renames, string Prefix = "",
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool IsTemplate = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Qualified = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LikeFile = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool IsParameter = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Procedure = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Static = false);
 public sealed record RpgDisplayField(string External, string Name, RpgFieldKind Kind, int Length, int Decimals, bool Input, bool Output, bool Opaque = false);
 public sealed record RpgDisplayRecord(string External, string Name, IReadOnlyList<RpgDisplayField> Fields, bool Subfile,
     bool MessageSubfile, string? ControlFor, int Capacity = 0);
@@ -24,21 +30,24 @@ public sealed record RpgWorkstationLayout(string DescriptionFile, string Signatu
     public static string SignatureFor(IReadOnlyList<RpgDisplayRecord> records, bool indicatorArea)
         => Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { records, indicatorArea })));
 }
-public sealed record RpgWorkstationBinding(RpgWorkstationRequest Request, RpgWorkstationLayout Layout);
+public sealed record RpgWorkstationBinding(RpgWorkstationRequest Request, RpgWorkstationLayout Layout,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Family = null);
 
-public sealed record RpgWorkstationBindings(int Version, string TextHash, IReadOnlyList<RpgWorkstationBinding> Files)
+public sealed partial record RpgWorkstationBindings(int Version, string TextHash, IReadOnlyList<RpgWorkstationBinding> Files)
 {
     public const string AttributeName = "ipc.rpg.workstations";
     private static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow, MaxDepth = 24, Converters = { new JsonStringEnumConverter() } };
     public static string Serialize(RpgProgram program)
     {
-        foreach (var file in program.Workstations) Validate(file);
-        var version = program.Workstations.Any(f => f.Layout.IndicatorArea is not null) ? 2 : 1;
-        if (version == 2 && program.Workstations.Any(f => f.Layout.IndicatorArea is null)) throw Invalid();
-        var json = JsonSerializer.Serialize(new RpgWorkstationBindings(version, Hash(program.Source!.Text), program.Workstations), Json);
-        if (Encoding.UTF8.GetByteCount(json) > 1048576) throw Invalid();
-        return json;
+        var files = ProgramFiles(program);
+        foreach (var file in files) Validate(file);
+        ValidateFamilies(files);
+        var version = files.Any(f => f.Request.Procedure is not null) ? 5 : files.Any(f => f.Request.IsParameter) ? 4 : files.Any(Extended) ? 3 : files.Any(f => f.Layout.IndicatorArea is not null) ? 2 : 1;
+        if (version == 2 && files.Any(f => f.Layout.IndicatorArea is null)) throw Invalid();
+        var buffer = new BoundedMetadata();
+        using (var writer = new Utf8JsonWriter(buffer)) JsonSerializer.Serialize(writer, new RpgWorkstationBindings(version, Hash(program.Source!.Text), files), Json);
+        return Encoding.UTF8.GetString(buffer.Written);
     }
     public static RpgWorkstationBindings Restore(string text, string json)
     {
@@ -54,20 +63,21 @@ public sealed record RpgWorkstationBindings(int Version, string TextHash, IReadO
                 else if (reader.TokenType == JsonTokenType.PropertyName && !objects.Peek().Add(reader.GetString()!)) throw Invalid();
             }
             var result = JsonSerializer.Deserialize<RpgWorkstationBindings>(json, Json) ?? throw Invalid();
-            if (result.Version is not (1 or 2) || result.TextHash != Hash(text) || result.Files is null || result.Files.Count > 16 ||
-                result.Files.Any(f => f is null || f.Request is null) || result.Files.Select(f => f.Request.Name).Distinct().Count() != result.Files.Count) throw Invalid();
+            if (result.Version is not (1 or 2 or 3 or 4 or 5) || result.TextHash != Hash(text) || result.Files is null || result.Files.Count > 4112 ||
+                result.Files.Any(f => f is null || f.Request is null) || result.Files.Select(f => (f.Request.Procedure, f.Request.Name)).Distinct().Count() != result.Files.Count) throw Invalid();
             foreach (var file in result.Files)
             {
                 Validate(file);
-                if (result.Version == 1 && file.Layout.IndicatorArea is not null || result.Version == 2 && file.Layout.IndicatorArea is null) throw Invalid();
+                if (result.Version == 1 && file.Layout.IndicatorArea is not null || result.Version == 2 && file.Layout.IndicatorArea is null || result.Version < 3 && Extended(file) || result.Version < 4 && file.Request.IsParameter || result.Version < 5 && (file.Request.Procedure is not null || file.Request.Static)) throw Invalid();
             }
+            ValidateFamilies(result.Files);
             return result;
         }
         catch (Exception error) when (error is JsonException or ArgumentException) { throw Invalid(); }
     }
     public RpgWorkstationLayout Resolve(RpgWorkstationRequest request)
     {
-        var file = Files.SingleOrDefault(f => f.Request.Name == request.Name) ?? throw Invalid();
+        var file = Files.SingleOrDefault(f => f.Request.Name == request.Name && f.Request.Procedure == request.Procedure) ?? throw Invalid();
         if (JsonSerializer.Serialize(file.Request, Json) != JsonSerializer.Serialize(request, Json)) throw Invalid();
         return file.Layout;
     }
@@ -78,23 +88,28 @@ public sealed record RpgWorkstationBindings(int Version, string TextHash, IReadO
     public static void Validate(RpgWorkstationBinding file)
     {
         var request = file.Request; var layout = file.Layout;
-        if (request is null || !Name(request.Name) || !FileName(request.DescriptionFile) || request.RuntimeFile != "*EXTDESC" && !FileName(request.RuntimeFile) ||
+        if (request is null || request.Procedure is not null && !Name(request.Procedure) || request.Static && (request.Procedure is null || request.IsTemplate || request.IsParameter) ||
+            !Name(request.Name) || !FileName(request.DescriptionFile) || request.RuntimeFile != "*EXTDESC" && !FileName(request.RuntimeFile) ||
             !request.Input && !request.Output || request.Prefix is null || request.Prefix.Length > 64 || request.Prefix.Length > 0 && !Name(request.Prefix) ||
             request.Subfiles is null || request.Renames is null || request.Subfiles.Count > 256 || request.Renames.Count > 256 ||
-            request.Subfiles.Any(s => s is null || !Name(s.Record) || !Name(s.RelativeRecord)) || request.Subfiles.Select(s => s.Record).Distinct().Count() != request.Subfiles.Count ||
+            request.Subfiles.Any(s => s is null || !Name(s.Record) || (request.IsTemplate || request.IsParameter ? s.RelativeRecord != "" : !Name(s.RelativeRecord))) || request.Subfiles.Select(s => s.Record).Distinct().Count() != request.Subfiles.Count ||
             request.Renames.Any(r => r is null || !ObjectName.IsValid(r.External) || !Name(r.Name)) || request.Renames.Select(r => r.External).Distinct().Count() != request.Renames.Count ||
             request.Renames.Select(r => r.Name).Distinct().Count() != request.Renames.Count || layout is null || !FileName(layout.DescriptionFile) || !layout.DescriptionFile.Contains('/') ||
             layout.Signature is not { Length: 64 } || layout.Signature.Any(c => !char.IsAsciiHexDigit(c)) || layout.Records is null || layout.Records.Count is < 1 or > 256) throw Invalid();
-        if (layout.Records.Any(r => r is null || !ObjectName.IsValid(r.External) || !Name(r.Name) || r.Fields is null || r.Fields.Count > 1024 ||
-            r.Fields.Any(f => f is null || !ObjectName.IsValid(f.External) || !Name(f.Name) ||
+        if (request.IsParameter && (request.IsTemplate || !request.Qualified || !request.UserOpen || request.LikeFile is null) ||
+            request.LikeFile is not null && (!Name(request.LikeFile) || request.LikeFile == request.Name || !request.Qualified || file.Family is null) ||
+            request.LikeFile is null && file.Family is not null || request.IsTemplate && request.UserOpen) throw Invalid();
+        if (layout.Records.Any(r => r is null || !ObjectName.IsValid(r.External) || !RecordNameValid(request, r.Name) ||
+            r.Name != RecordName(request, request.Renames.SingleOrDefault(n => n.External == r.External)?.Name ?? r.External) || r.Fields is null || r.Fields.Count > 1024 ||
+            r.Fields.Any(f => f is null || !ObjectName.IsValid(f.External) || !Name(f.Name) || f.Name != request.Prefix + f.External ||
                 f.Kind is not (RpgFieldKind.Character or RpgFieldKind.Packed or RpgFieldKind.Date or RpgFieldKind.Time or RpgFieldKind.Timestamp) ||
                 f.Length is < 1 or > 3563 || f.Decimals < 0 || f.Decimals > 28 || f.Kind == RpgFieldKind.Packed && (f.Length > 29 || f.Decimals > f.Length) ||
                 f.Kind != RpgFieldKind.Packed && f.Decimals != 0 || f.Opaque && (f.Kind != RpgFieldKind.Character || f.Length != 4)) ||
             r.Fields.Select(f => f.Name).Distinct().Count() != r.Fields.Count || r.MessageSubfile && !r.Subfile || r.Capacity is < 0 or > 9999 ||
             r.Subfile && r.Capacity < 1 || r.ControlFor is not null && !layout.Records.Any(s => s.Name == r.ControlFor && s.Subfile)) ||
             layout.Records.Select(r => r.Name).Distinct().Count() != layout.Records.Count || layout.Records.Select(r => r.External).Distinct().Count() != layout.Records.Count ||
-            request.Subfiles.Any(s => !layout.Records.Any(r => r.Name == s.Record && r.Subfile)) ||
-            layout.Records.Any(r => r.Subfile && !request.Subfiles.Any(s => s.Record == r.Name)) ||
+            request.Subfiles.Any(s => !layout.Records.Any(r => r.Name == RecordName(request, s.Record) && r.Subfile)) ||
+            layout.Records.Any(r => r.Subfile && !request.Subfiles.Any(s => RecordName(request, s.Record) == r.Name)) ||
             layout.Signature != (layout.IndicatorArea is { } area ? RpgWorkstationLayout.SignatureFor(layout.Records, area) : RpgWorkstationLayout.SignatureFor(layout.Records))) throw Invalid();
     }
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));

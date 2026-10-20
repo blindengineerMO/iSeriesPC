@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Ipc.Core.Objects;
 using Ipc.Core.Work;
 using Ipc.Services.Sqlite;
+using Ipc.Services.Security;
 using Microsoft.Data.Sqlite;
 
 namespace Ipc.Services.Work;
@@ -24,6 +25,8 @@ public sealed partial class JournalStore
         QualifiedName? firstReceiver = null, QualifiedName? lastReceiver = null, CancellationToken cancellationToken = default,
         JournalRecoveryErrorPolicy errorPolicy = JournalRecoveryErrorPolicy.Atomic, bool honorCommitBoundaries = true)
     {
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, factory.ShutdownToken);
+        cancellationToken = lifetime.Token;
         if (factory.RecordTransactions.HasCurrentDefinition) throw Invalid("End the executing job's commitment definition before journal recovery.");
         Require(journalName, ObjectType.Journal, Authorities.UseBits | AuthorityBit.Add);
         if (files.Count is < 1 or > 300) throw Invalid("Recovery requires 1–300 physical file/member selections.");
@@ -33,12 +36,15 @@ public sealed partial class JournalStore
         foreach (var file in files) Require(file.File, ObjectType.File, fileAuthority);
         using var allocations = AllocateRecoveryFiles(files, cancellationToken);
         using var connection = factory.Open();
-        // Native apply/remove bypasses triggers. FK actions must also not replay twice:
+        // Native apply/remove bypasses application/journal triggers; internal slot identity
+        // capture must remain active. FK actions must also not replay twice:
         // recover the explicitly selected dependent records, then check all constraints.
         Pragma(connection, "PRAGMA foreign_keys=OFF");
         try
         {
             using var transaction = BeginWrite(connection, cancellationToken);
+            var authorization = new ServiceAuthorization(factory);
+            if (Ipc.Services.Events.OperationIdentity.Current?.Job is { } job) new JobDataAreaStore(factory).RequireOwner(job);
             var journal = InspectCore(connection, transaction, journalName);
             var first = ReceiverCore(connection, transaction, firstReceiver ?? journal.Receiver);
             var last = ReceiverCore(connection, transaction, lastReceiver ?? journal.Receiver);
@@ -51,7 +57,7 @@ public sealed partial class JournalStore
             query.CommandText = "SELECT library,name FROM sys_journal_receivers WHERE journal_id=$journal AND chain BETWEEN $first AND $last ORDER BY chain LIMIT 2046";
             var receivers = new List<QualifiedName>(); using (var reader = query.ExecuteReader()) while (reader.Read()) receivers.Add(new(reader.GetString(0), reader.GetString(1)));
             if (receivers.Count > 2045 || receivers.Count != highChain - lowChain + 1) throw Invalid("Receiver chain is incomplete or exceeds the 2045-receiver limit.");
-            foreach (var receiver in receivers) Require(receiver, ObjectType.JournalReceiver, Authorities.UseBits);
+            foreach (var receiver in receivers) authorization.RequireBoundObject(connection, transaction, receiver.Library, receiver.Name.Value, Authorities.UseBits, objectType: ObjectType.JournalReceiver);
             const string range = " FROM sys_journal_entries e JOIN sys_journal_receivers r ON r.id=e.receiver_id AND r.journal_id=e.journal_id WHERE e.journal_id=$journal AND r.chain BETWEEN $first AND $last";
             query.CommandText = "SELECT min(e.sequence),max(e.sequence)" + range;
             long minimum, maximum;
@@ -78,7 +84,7 @@ public sealed partial class JournalStore
             {
                 cancellationToken.ThrowIfCancellationRequested(); JobExecutionBudget.Checkpoint();
                 query.Parameters.AddWithValue("$cursor", cursor);
-                query.CommandText = "SELECT e.sequence,e.version,e.code,e.entry_type,e.binding_id,e.member,e.record_number,e.schema_description,e.before_image,e.after_image,e.commit_cycle" + range +
+                query.CommandText = "SELECT e.sequence,e.version,e.code,e.entry_type,e.binding_id,e.member,e.record_number,e.schema_description,e.before_image,e.after_image,e.commit_cycle,e.user_data" + range +
                     (boundary is null ? "" : remove ? " AND e.sequence>$boundary" : " AND e.sequence<$boundary") +
                     (remove ? " AND e.sequence BETWEEN $low AND $cursor ORDER BY e.sequence DESC LIMIT 1" : " AND e.sequence BETWEEN $cursor AND $high ORDER BY e.sequence ASC LIMIT 1");
                 if (boundary is not null && !query.Parameters.Contains("$boundary")) query.Parameters.AddWithValue("$boundary", boundary.StoppedBeforeSequence);
@@ -90,8 +96,12 @@ public sealed partial class JournalStore
                         throw Invalid("Journal sequence and record numbers must be stored as integers.");
                     if (!reader.IsDBNull(10) && reader.GetFieldType(10) != typeof(string)) throw Invalid("Commitment cycle identity requires text storage.");
                     string? Text(int index) => reader.IsDBNull(index) ? null : reader.GetString(index);
+                    byte[]? data = null;
+                    if (reader.GetString(2) == "F" && reader.GetString(3) == "IZ" && !reader.IsDBNull(11) &&
+                        reader.GetFieldType(11) == typeof(byte[]) && reader.GetBytes(11, 0, null, 0, 0) <= MaximumEntryBytes)
+                        data = (byte[])reader.GetValue(11);
                     entry = new(reader.GetInt64(0), reader.GetInt32(1), reader.GetString(2), reader.GetString(3), Text(4), Text(5),
-                        reader.IsDBNull(6) ? null : reader.GetInt64(6), Text(7), Text(8), Text(9), Text(10));
+                        reader.IsDBNull(6) ? null : reader.GetInt64(6), Text(7), Text(8), Text(9), Text(10), data);
                 }
                 query.Parameters.RemoveAt("$cursor");
                 cycles.Validate(entry, honorCommitBoundaries);
@@ -102,7 +112,9 @@ public sealed partial class JournalStore
                     using var savepoint = Command(connection, transaction, "SAVEPOINT ipc_recovery_entry"); savepoint.ExecuteNonQuery();
                     try
                     {
-                        if (entry.Version != 1 || entry.Code != "R" || entry.Type is not ("PT" or "UP" or "UB" or "DL")) throw Invalid("Unsupported record or prior recovery boundary.");
+                        var initialization = entry.Code == "F" && entry.Type == "IZ";
+                        if (entry.Version != 1 || !initialization && (entry.Code != "R" || entry.Type is not ("PT" or "UP" or "UB" or "DL")))
+                            throw Invalid("Unsupported record or prior recovery boundary.");
                         ValidateUpdatePair(connection, transaction, journal.Id, entry, low, high);
                         if (remove && entry.Type == "UP" && entry.Before is null) throw Invalid("Update has no before-image.");
                         if (remove ? entry.Type != "UP" : entry.Type != "UB")
@@ -122,7 +134,9 @@ public sealed partial class JournalStore
                                 partner.Parameters.AddWithValue("$cycle", (object?)entry.CommitCycle ?? DBNull.Value);
                                 change = entry with { After = partner.ExecuteScalar() as string };
                             }
-                            member.ValidateSchema(entry.Schema); member.Apply(connection, transaction, change, remove, errorPolicy == JournalRecoveryErrorPolicy.Atomic);
+                            member.ValidateSchema(entry.Schema);
+                            if (initialization) member.ApplyInitialization(connection, transaction, entry, remove, errorPolicy == JournalRecoveryErrorPolicy.Atomic, cancellationToken);
+                            else member.Apply(connection, transaction, change, remove, errorPolicy == JournalRecoveryErrorPolicy.Atomic);
                             member.Changes++; if (member.FirstSequence == 0) member.FirstSequence = entry.Sequence; member.LastSequence = entry.Sequence;
                             changes++; if (firstChanged == 0) firstChanged = entry.Sequence; lastChanged = entry.Sequence;
                         }
@@ -152,16 +166,16 @@ public sealed partial class JournalStore
                     reachedBoundary is not null && incomplete.Contains((member.Target.Binding, member.Member)));
                 using var touch = Command(connection, transaction, "UPDATE sys_objects SET changed=ipc_journal_timestamp() WHERE lib=$library AND name=$name AND type='*FILE'"); Bind(touch, member.Target.File); touch.ExecuteNonQuery();
             }
-            Require(journalName, ObjectType.Journal, Authorities.UseBits | AuthorityBit.Add);
-            foreach (var file in files) Require(file.File, ObjectType.File, fileAuthority);
-            foreach (var receiver in receivers) Require(receiver, ObjectType.JournalReceiver, Authorities.UseBits);
+            authorization.RequireBoundObject(connection, transaction, journalName.Library, journalName.Name.Value, Authorities.UseBits | AuthorityBit.Add, objectType: ObjectType.Journal);
+            foreach (var file in files) authorization.RequireBoundObject(connection, transaction, file.File.Library, file.File.Name.Value, fileAuthority);
+            foreach (var receiver in receivers) authorization.RequireBoundObject(connection, transaction, receiver.Library, receiver.Name.Value, Authorities.UseBits, objectType: ObjectType.JournalReceiver);
             if (reachedBoundary is not null) RecoveryBoundaryEvent(connection, transaction, journalName, reachedBoundary, remove, changes);
             cancellationToken.ThrowIfCancellationRequested(); transaction.Commit(); return new(changes, firstChanged, lastChanged, failures.Count == 0 ? null : failures, reachedBoundary is null ? null : [reachedBoundary]);
         }
         finally { Pragma(connection, "PRAGMA foreign_keys=ON"); }
     }
     private static void Pragma(SqliteConnection connection, string sql) { using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
-    private sealed record RecoveryEntry(long Sequence, int Version, string Code, string Type, string? Binding, string? Member, long? Rrn, string? Schema, string? Before, string? After, string? CommitCycle);
+    private sealed record RecoveryEntry(long Sequence, int Version, string Code, string Type, string? Binding, string? Member, long? Rrn, string? Schema, string? Before, string? After, string? CommitCycle, byte[]? Data = null);
     private static void ValidateUpdatePair(SqliteConnection connection, SqliteTransaction transaction, string journal, RecoveryEntry entry, long low, long high)
     {
         if (entry.Type != "UB" && !(entry.Type == "UP" && entry.Before is not null)) return;
@@ -216,7 +230,7 @@ public sealed partial class JournalStore
             return new(file.File, binding, members, definition);
         }
     }
-    private sealed class RecoveryMember(RecoveryTarget target, string member, IReadOnlyList<JournalColumn> columns, string rowid)
+    private sealed partial class RecoveryMember(RecoveryTarget target, string member, IReadOnlyList<JournalColumn> columns, string rowid)
     {
         internal RecoveryTarget Target => target;
         internal string Member => member;
@@ -254,6 +268,7 @@ public sealed partial class JournalStore
         {
             using var command = Command(connection, transaction, "SELECT name,sql FROM sqlite_schema WHERE type='trigger' AND tbl_name=$table ORDER BY rowid"); command.Parameters.AddWithValue("$table", Table);
             using (var reader = command.ExecuteReader()) while (reader.Read()) _triggers.Add((reader.GetString(0), reader.GetString(1)));
+            _triggers.RemoveAll(trigger => RecordSlots.OwnsTrigger(connection, transaction, trigger.Name));
             foreach (var trigger in _triggers) { command.CommandText = "DROP TRIGGER " + JournalHooks.Quote(trigger.Name); command.ExecuteNonQuery(); }
         }
         internal void RestoreTriggers(SqliteConnection connection, SqliteTransaction transaction)

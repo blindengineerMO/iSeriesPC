@@ -19,6 +19,7 @@ public sealed class ProgramArgument
     public bool IsOmitted { get; init; }
     public ProgramArgumentShape? Shape { get; init; }
     public ProgramArgumentMemory? Memory { get; init; }
+    public ProgramArgumentNullMap? NullMap { get; init; }
     public bool HasBuffer => _buffer is not null;
     public ProgramArgumentStorage? Storage { get; }
     public ProgramArgument(Func<object?> read, Action<object?> write, Func<object?, object?> normalize,

@@ -100,6 +100,10 @@ public sealed class ExecutionSession : IDisposable
         using var identity = OperationIdentity.Enter(Job.UserProfile ?? Job.Key.User, Job.Key);
         if (completion == JobCompletion.Abnormal && CancellationToken.IsCancellationRequested)
         { outcome ??= JobExecutionState.Cancelled; message = _runtime.CancellationReason ?? message; }
+        // This host-owned session already identifies its captured job. Stop its
+        // query resources before catalog authorization/cleanup can wait behind
+        // the work that is being ended. Catalog changes still authorize below.
+        using var queryResources = _system.Connections.CloseJobRuntimeResources(Job.Key);
         _system.Jobs.CompleteHostedSession(Job.Key, completion, message, outcome);
         _runtime.Dispose();
         _ended = true;

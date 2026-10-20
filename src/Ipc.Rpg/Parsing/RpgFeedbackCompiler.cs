@@ -33,6 +33,8 @@ public static partial class RpgCompiler
             if (feedback.Length != 1 || ds is not { NativeStorage: true, IsTemplate: false, Anonymous: false, IsArray: false, ProgramStatus: false, IsMultipleOccurrence: false } ||
                 program.FileInformation.Any(f => f.Structure == ds.Name))
                 throw new RpgCompileException(declaration.Line, "INFDS requires a unique, named scalar native data structure for each file.");
+            if (program.IsNativeProcedure && (program.GlobalStructures.Contains(ds) || ds.StaticLocal != declaration.Static))
+                throw new RpgCompileException(declaration.Line, "A local INFDS must be in the same procedure and have the same STATIC storage as its file.");
             if (ds.ExplicitLength && ds.Length < 80) throw new RpgCompileException(ds.DeclarationLine, "An explicit INFDS LEN must be at least 80 bytes.");
             // Later native feedback areas need separate device/open contracts; do not return invented values.
             if (ds.Length > 80) throw new RpgCompileException(ds.DeclarationLine, "INFDS currently supports the 80-byte file feedback area only.");

@@ -120,7 +120,7 @@ public sealed partial class RpgDiskFileTests : IDisposable
     [InlineData("disk(80)")]
     [InlineData("keyed(*char:10)")]
     [InlineData("commit")]
-    [InlineData("recno(ID)")]
+    [InlineData("recno(TEXT)")]
     [InlineData("extfile(DATA)")]
     [InlineData("extdesc('QGPL/DATA') extdesc('QGPL/DATA')")]
     [InlineData("keyed disk")]
@@ -143,11 +143,11 @@ public sealed partial class RpgDiskFileTests : IDisposable
         var error = Assert.Throws<RpgCompileException>(() => Parse("**free\ndcl-f DATA;\n" + operation)); Assert.Equal(3, error.Location!.Line);
     }
     [Fact]
-    public void KEYED_requires_keys_and_null_capable_external_fields_fail_explicitly()
+    public void KEYED_requires_keys_and_nullable_descriptions_compile_without_null_rows()
     {
         Data("PLAIN", keyed: false); Data("NULLABLE", nullable: true);
         Assert.Throws<RpgCompileException>(() => Parse("**free\ndcl-f PLAIN keyed;\nread PLAIN;"));
-        Assert.Contains("null-capable", Assert.Throws<RpgCompileException>(() => Parse("**free\ndcl-f NULLABLE;\nread NULLABLE;")).Message);
+        Assert.Single(Parse("**free\ndcl-f NULLABLE;\nread NULLABLE;").DiskFiles);
     }
     [Fact]
     public void External_fields_cannot_alias_incompatible_scalars_or_other_record_names()

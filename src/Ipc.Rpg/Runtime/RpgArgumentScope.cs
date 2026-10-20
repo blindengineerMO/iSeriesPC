@@ -59,6 +59,13 @@ internal sealed class RpgArgumentScope : IDisposable
         {
             var expression = expressions[index];
             var formal = formals?[index];
+            if (formal?.IsFileParameter == true)
+            {
+                if (expression is RpgOmittedArgument && formal.OmitParameter) arguments.Add(ProgramArgument.Omitted());
+                else if (values[index] is RpgFileReference reference) arguments.Add(context.BorrowFile(reference, CheckActive));
+                else throw Bad("A LIKEFILE argument requires a file reference.");
+                continue;
+            }
             if (preparedArguments?.Invoke(index) is { } prepared)
             {
                 bytes += prepared.ToBuffer()?.Length ?? prepared.Length;
@@ -166,7 +173,7 @@ internal sealed class RpgArgumentScope : IDisposable
                     }
                     var type = kind switch { RpgFieldKind.Character => "*CHAR", RpgFieldKind.Packed => "*DEC", RpgFieldKind.Zoned => "*ZONED",
                         RpgFieldKind.Integer => "*INT", RpgFieldKind.Float => "*FLT", RpgFieldKind.Indicator => "*LGL",
-                        RpgFieldKind.Date => "*DATE", RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", _ => throw Bad("Unsupported native argument type.") };
+                        RpgFieldKind.Date => "*DATE", RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", RpgFieldKind.ProcedurePointer => "*PROCPTR", RpgFieldKind.DataPointer => "*PTR", _ => throw Bad("Unsupported native argument type.") };
                     reference = new(() => { CheckActive(); return raw ? context.NativeBuffer(native) : context.ReadNative(native); },
                         value => { CheckActive(); RpgRuntimeContext.WriteNativeBytes(native, ((ProgramBuffer)value!).ToArray()); }, NormalizeNative,
                         type, precision, decimals, () => { CheckActive(); return context.NativeBuffer(native); }, constant: entry?.Constant, storage: context.NativeStorageRange(native))
@@ -310,6 +317,20 @@ internal sealed class RpgArgumentScope : IDisposable
         if (formals is not null)
             for (var index = 0; index < arguments.Count; index++)
                 if (formals[index].ReadOnlyParameter && arguments[index] is ProgramArgument { IsReadOnly: false } argument) arguments[index] = ReadOnly(argument);
+        if (formals is not null)
+            for (var index = 0; index < arguments.Count; index++)
+                if (formals[index].NullMapParameter && arguments[index] is ProgramArgument { IsOmitted: false } cell)
+                {
+                    var view = capturedNative?.Invoke(index);
+                    if (view is null && capturedNative is null) context.TryNativeArgument(expressions[index], out view);
+                    if (view is null) throw Bad("OPTIONS(*NULLIND) requires a captured variable.");
+                    var map = context.CaptureNullArgument(view, formals[index]).Scoped(CheckActive, cell.IsReadOnly || formals[index].ReadOnlyParameter);
+                    bytes += map.Count; if (bytes > 1048576) throw Bad("Native data and null maps exceed 1 MiB.");
+                    arguments[index] = new ProgramArgument(() => { CheckActive(); return cell.Value; }, value => { CheckActive(); cell.Value = value; },
+                        value => { CheckActive(); return cell.NormalizeReturnedValue(value); }, cell.Type, cell.Length, cell.Decimals,
+                        () => { CheckActive(); return cell.ToBuffer(); }, cell.Constant, cell.Storage)
+                        { IsReadOnly = cell.IsReadOnly, Shape = cell.Shape, Memory = cell.Memory, NullMap = map };
+                }
         Arguments = arguments.AsReadOnly();
 
         ProgramArgument ReadOnly(ProgramArgument argument)
@@ -393,6 +414,7 @@ internal sealed class RpgArgumentScope : IDisposable
     }
     internal static void ValidateNativeFormal(RpgField field)
     {
+        if (field.IsFileParameter) return;
         var valid = !field.Varying && field.Kind switch
         {
             RpgFieldKind.Character => field.Length >= 1 && field.Length <= (field.IsDataStructure ? 1048576 : 32767) && field.Decimals == 0,
@@ -403,6 +425,7 @@ internal sealed class RpgArgumentScope : IDisposable
             RpgFieldKind.Date => field.Length == 10 && field.Decimals == 0,
             RpgFieldKind.Time => field.Length == 8 && field.Decimals == 0,
             RpgFieldKind.Timestamp => field.Length == 26 && field.Decimals == 0,
+            RpgFieldKind.ProcedurePointer or RpgFieldKind.DataPointer => field.Length == 16 && field.Decimals == 0,
             _ => false
         };
         if (!valid || field.IsArray && field.Dimension is < 1 or > 32767 || (long)RpgRuntimeContext.ParameterUnitBytes(field) * (field.IsArray ? field.Dimension : 1) > 1048576)

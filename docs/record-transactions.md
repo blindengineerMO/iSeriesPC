@@ -249,7 +249,7 @@ producing unit ends.
 
 Remaining work includes native locking/isolation and open flags, command and
 compiled RPG commitment operations, activation groups, SQL translation/defaults,
-global RRN and key coordination, pending/rollback journal visibility, native
+global pending RRN and key coordination, pending/rollback journal visibility, native
 interleaved/rollback cycle recovery and partial save state, savepoints, notification, private resources, whole-member storage budgets
 and release performance targets. C08 and C11 remain open and must be accepted
 together.
@@ -272,3 +272,17 @@ connection inside the callback. Import/replay uses the checked
 then restores enforcement and authorizes execution again. Temporary triggers are
 not part of the private workspace contract. These engine mechanisms implement the
 local workspace; they do not establish IBM isolation compatibility.
+
+Ordinary live record writes now maintain [durable slots and incarnation tokens](record-slots.md).
+Publication updates those tokens atomically with the live records. The private
+workspace retains its existing allocator and before-image/lock checks; this does
+not establish native commitment RRN reservation or reuse semantics.
+
+The shared [typed SQL query service](sql-queries.md) now reads pending record data
+through demand-loaded members. Query preparation finishes its synchronous unit
+operation, anchors an independent read-only WAL snapshot and releases the unit
+gate before returning a cursor. Sequential fetch/dispose may then move between
+threads while later record statements retain separate snapshots. Commit, rollback
+and end require these SQL cursors closed. Job end and factory shutdown cancel
+and close them before workspace deletion, including readers on another factory
+attached to the same catalog. Native hold/isolation policy remains open.

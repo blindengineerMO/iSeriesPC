@@ -17,7 +17,36 @@ The verified original baseline is 223 passing tests; package completion requires
 the additional acceptance criteria in the plan.
 
 Latest [completion checkpoint](docs/completion-progress.md): 36/106 checklist items
-complete, 5167 tests passing, and real sign-on/display PTY acceptance passing.
+complete, 7659 tests passing, and real sign-on/display PTY acceptance passing.
+RPG [RECNO feedback and relative WRITE](docs/rpg-recno.md) now support numeric
+record positions and directed output into allocated deleted slots.
+Job [inquiry policies and the system reply list](docs/inquiry-replies.md) now
+provide durable automatic default/list replies through the shared message queues.
+[Member-full operator recovery](docs/operator-capacity.md) now grants durable
+capacity and retries ordinary file/RPG writes and atomic copies.
+[SQL tables and RUNSQL](docs/sql-tables.md) now share the catalog, typed constraints,
+record storage and CL/RPG file I/O. [ALTER TABLE](docs/sql-alter-tables.md) adds
+atomic column/key changes and dependent view/index rebinding.
+[CHECK constraints](docs/sql-check-constraints.md) now share typed predicates across
+SQL, native records, RPG, copies and private record workspaces.
+[Searched SQL mutations](docs/sql-mutations.md) add atomic UPDATE/DELETE, exact
+arithmetic and selected-record locks.
+[Referential integrity](docs/sql-foreign-keys-progress.md) is in progress.
+[RUNSQLSTM scripts](docs/sql-scripts.md) now process members and UTF-8 streams,
+with mixed CL, syntax checking and located job-log diagnostics.
+The shared [typed SELECT service](docs/sql-queries.md) adds joins, grouping,
+exact aggregates, parameters and bounded query cursors with job cleanup.
+[STRSQL](docs/sql-interactive.md) now provides statement entry, paged results,
+saved sessions and interactive CL return through the same services.
+[Query-management objects](docs/query-management.md) now save SQL source, run
+native SETVAR fragments, prompt for missing values and display paged results.
+[Query output files](docs/sql-query-output.md) now support typed PF creation,
+replacement, append and CL/RPG reads through the shared record services.
+[SQL indexes](docs/sql-indexes.md) now create maintained keyed logical files,
+with unique/null rules, external record layouts and shared object lifecycle.
+[SQL views](docs/sql-views.md) now store bound typed queries, including nested
+joins/aggregates, owner-checked access, atomic replacement, CL/RPG input and
+single-source SQL writes with LOCAL/CASCADED CHECK OPTION.
 The C11 [journal foundation](docs/journals.md) now supplies durable receivers,
 rotation, entry display, atomic PF/source capture, and forward/reverse recovery
 with native partial-error policies. Audit hooks, save/restore and
@@ -51,6 +80,21 @@ immediate and cancellable indefinite record waits for declared update files.
 [Numeric file statuses and MONITOR](docs/rpg-file-status.md) now handle E/ER
 precedence, record contention, preserved input fields and nested numeric handlers.
 Full status/INFDS/PSDS and ILE exception coverage remain open.
+[Native null values](docs/rpg-null-values.md) add ALWNULL modes, separate NULLIND
+state, nullable database input/output and key searches with saved descriptions.
+[Named indicators and external maps](docs/rpg-null-maps.md) now share live IND
+storage across native scalars, structures, arrays and record I/O.
+[Null-map parameters](docs/rpg-null-parameters.md) now share live indicators
+across native procedures and stored RPG calls.
+[Process protocol 3](docs/rpg-process-null-maps.md) carries validated null-map
+sidebands alongside data; process aliases, aggregate indicators and broader
+native ABI acceptance remain open.
+[Right-adjusted assignment](docs/rpg-right-assignment.md) now supports native
+fields, structures, array expressions and bounded borrowed substrings while
+preserving null indicators.
+[Corresponding-field assignment](docs/rpg-corresponding-assignment.md) now moves
+compatible fields and null flags through nested structures, arrays and record
+buffers, with source-order overlays and numeric half adjustment.
 [Native free-form data structures](docs/rpg-native-structures.md) now provide byte
 layouts, qualified fields/arrays, shared overlays and borrowed API receivers.
 [Native INFDS/PSDS feedback](docs/rpg-feedback-structures.md) now supplies common
@@ -80,6 +124,20 @@ system API and external-process calls.
 [Native local procedures](docs/rpg-local-procedures.md) add P/DCL-PROC, linked
 scalar interfaces and returns, VALUE copies, recursion, automatic/STATIC locals
 and shared module storage and file positions.
+[Static module binding](docs/rpg-module-binding.md) adds CRTRPGMOD/CRTPGM/DSPMOD,
+captured exports, isolated module globals and activation-owned file resources.
+[Service programs](docs/rpg-service-definitions.md) add CRTSRVPGM/DSPSRVPGM,
+binder export/signature levels and dynamic BNDSRVPGM references from CRTPGM and
+CRTBNDRPG. Services share activation-owned globals/files across programs, with
+signature/interface checks and live authority/signing. [Binding directories and service dependencies](docs/rpg-binding-directories.md)
+add ordered provider discovery, atomic entry updates and transitive activation
+checks. [Source binding references and updates](docs/rpg-program-updates.md)
+add BNDDIR controls, module replacement and service rebinding with atomic
+publication and retained activation versions. [Deferred activation](docs/rpg-deferred-activation.md)
+adds per-provider *IMMED/*DEFER modes with first-use validation. [Update policies](docs/rpg-update-policies.md)
+add named group changes and fixed or runtime *LIBL service relocation.
+[Data imports/exports](docs/rpg-data-binding.md) share bytes and null maps with
+exporter-owned initialization and activation lifetimes. Wider binder/ABI contracts and independent native acceptance remain open.
 [Native aggregate parameters](docs/rpg-aggregate-parameters.md) add fixed arrays
 and LIKEDS structure interfaces, live element/subfield aliases, CONST inputs,
 private VALUE copies and formal prefixes that preserve caller tails.
@@ -87,8 +145,24 @@ private VALUE copies and formal prefixes that preserve caller tails.
 results, default array tails and RTNPARM parameter positions/counts.
 [DISK file definitions](docs/rpg-file-definitions.md) add metadata-only templates,
 LIKEFILE copies, qualified records and checked saved file families.
+[DISK file parameters](docs/rpg-file-parameters.md) share caller file state across
+local procedures and saved RPG programs, including caller-owned error handling.
+[Procedure-local DISK files](docs/rpg-local-files.md) add automatic and STATIC
+file lifetimes, local feedback, error handlers and saved scope metadata.
+[WORKSTN file definitions](docs/rpg-workstation-definitions.md) add templates,
+LIKEFILE copies, qualified formats and checked saved display families.
+[WORKSTN file parameters](docs/rpg-workstation-parameters.md) share caller display
+state, RRN/indicator bindings and error handling across RPG calls.
+[Procedure-local WORKSTN files](docs/rpg-local-workstations.md) add automatic and
+STATIC display lifetimes, local buffers, feedback and scoped saved metadata.
+[WORKSTN record structures](docs/rpg-workstation-records.md) add LIKEREC extracts,
+EXFMT/read/write/subfile buffers and checked zoned display numerics.
 [Record structures](docs/rpg-record-structures.md) add DISK LIKEREC layouts,
 checked result buffers, key structures and native parameter/return interfaces.
+[Externally described structures](docs/rpg-external-structures.md) add EXT/EXTNAME,
+EXTFLD/PREFIX mappings, external defaults and source-bound description snapshots.
+[Nested native structures](docs/rpg-nested-structures.md) add inline and LIKEDS/
+LIKEREC children, shared storage views, nested record buffers and forward types.
 [Data templates](docs/rpg-templates.md) retain layouts and defaults without
 allocating runtime storage, with checked metadata-only uses.
 [Forward LIKEDS templates](docs/rpg-forward-structures.md) add later structure

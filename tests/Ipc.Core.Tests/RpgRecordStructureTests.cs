@@ -30,7 +30,7 @@ public sealed partial class RpgDiskFileTests
     }
 
     [Theory]
-    [InlineData("*bad")] [InlineData("*null")] [InlineData("*input:*null")]
+    [InlineData("*bad")] [InlineData("*null:*null")] [InlineData("*input:*null:*null")]
     public void LIKEREC_rejects_unimplemented_or_unknown_extract_types(string extract)
         => Assert.Throws<RpgCompileException>(()=>Parse("**free\ndcl-f DATA;\ndcl-ds BUFFER likerec(ROW:"+extract+");\nseton LR;"));
 

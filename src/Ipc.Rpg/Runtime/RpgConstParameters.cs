@@ -6,7 +6,7 @@ namespace Ipc.Rpg.Runtime;
 public sealed partial class RpgRuntimeContext
 {
     private bool _entryParametersProtected;
-    internal void BeginEntryBinding() { _entryParametersProtected = false; _unpassedParameters.Clear(); _omittedParameters.Clear(); _nativeDetachedBindings.Clear(); InSubprocedure = false; }
+    internal void BeginEntryBinding() { _entryParametersProtected = false; _unpassedParameters.Clear(); _omittedParameters.Clear(); _nativeDetachedBindings.Clear(); _borrowedNullMaps.Clear(); InSubprocedure = false; }
     internal void ProtectEntryParameters() => _entryParametersProtected = true;
     private void EnsureNativeWritable(NativeView view)
     {
@@ -48,7 +48,7 @@ public sealed partial class RpgRuntimeContext
         image = image with { Bytes = bytes };
         var type = formal.Kind switch { RpgFieldKind.Character => "*CHAR", RpgFieldKind.Packed => "*DEC", RpgFieldKind.Zoned => "*ZONED",
             RpgFieldKind.Integer => "*INT", RpgFieldKind.Float => "*FLT", RpgFieldKind.Indicator => "*LGL", RpgFieldKind.Date => "*DATE",
-            RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", _ => throw NativeFailure(105, "Unsupported CONST type.") };
+            RpgFieldKind.Time => "*TIME", RpgFieldKind.Timestamp => "*TIMESTAMP", RpgFieldKind.ProcedurePointer => "*PROCPTR", RpgFieldKind.DataPointer => "*PTR", _ => throw NativeFailure(105, "Unsupported CONST type.") };
         ProgramBuffer Buffer() => new(bytes, NativeCcsid);
         object? Normalize(object? updated) => new ProgramBuffer(NormalizeArgumentImage(image, updated, strict: true), NativeCcsid);
         return new(() => formal.OpaqueBytes ? Buffer() : ReadNative(image with { Bytes = bytes }), updated => bytes = ((ProgramBuffer)updated!).ToArray(),

@@ -21,6 +21,8 @@ public sealed partial class SqliteFileStore
     {
         private readonly RecordOperation? _operation;
         private readonly IDisposable? _recordLocks;
+        private readonly List<ForeignCascadeLocks> _cascades = [];
+        public bool IsWorkspace => _operation is not null;
         public SqliteConnection Connection { get; }
         public SqliteTransaction? Transaction { get; }
         public RecordDataScope(Ipc.Services.Sqlite.SqliteConnectionFactory factory, QualifiedName file, bool write, CancellationToken cancellationToken, IReadOnlyList<string>? members)
@@ -40,8 +42,9 @@ public sealed partial class SqliteFileStore
             catch { _recordLocks?.Dispose(); throw; }
         }
         public void Prepare(SqliteCommand command) => _operation?.Prepare(command);
+        internal void AddCascadeLocks(ForeignCascadeLocks? locks) { if (locks is not null) _cascades.Add(locks); }
         public void Complete()
-        { if (_operation is not null) _operation.Complete(); else Transaction?.Commit(); }
+        { foreach (var locks in _cascades) locks.Validate(); if (_operation is not null) _operation.Complete(); else Transaction?.Commit(); }
         public void Dispose()
         {
             try
@@ -49,7 +52,7 @@ public sealed partial class SqliteFileStore
                 if (_operation is not null) _operation.Dispose();
                 else { try { Transaction?.Dispose(); } finally { Connection.Dispose(); } }
             }
-            finally { _recordLocks?.Dispose(); }
+            finally { try { foreach (var locks in _cascades.AsEnumerable().Reverse()) locks.Dispose(); } finally { _recordLocks?.Dispose(); } }
         }
     }
 }

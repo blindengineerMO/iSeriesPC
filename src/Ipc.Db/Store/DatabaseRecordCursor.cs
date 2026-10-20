@@ -14,7 +14,7 @@ public sealed class DatabaseRecordCursor : IDisposable
         internal bool Reverse => Action is Operation.Prior or Operation.PriorEqual;
         internal bool PositionOnly => Action is Operation.Lower or Operation.Upper;
     }
-    internal sealed record Row(IReadOnlyDictionary<string, object?> Values, long Number, int Member, object?[] Position, bool Matches = true, string? Image = null, string? Schema = null);
+    internal sealed record Row(IReadOnlyDictionary<string, object?> Values, long Number, int Member, object?[] Position, bool Matches = true, string? Image = null, string? Schema = null, string? Version = null);
     private enum Placement { Beginning, OnRecord, BeforeRecord, End, EqualEnd, EqualBeginning, Invalid, AfterRecord }
     private sealed record Position(object?[]? Values, Placement Place);
     private readonly Func<Request, Row?> _read;
@@ -48,6 +48,7 @@ public sealed class DatabaseRecordCursor : IDisposable
     public bool AtEnd => _place is Placement.End or Placement.EqualEnd;
     public bool AtBeginning => _place is Placement.Beginning or Placement.EqualBeginning;
     public IReadOnlyDictionary<string, object?>? Current => _place == Placement.OnRecord ? _current?.Values : null;
+    public long? PositionedRecordNumber => _position is { Length: > 0 } && _place is Placement.OnRecord or Placement.BeforeRecord or Placement.AfterRecord ? Convert.ToInt64(_position[^1]) : null;
     public long? CurrentRecordNumber => _place == Placement.OnRecord ? _current?.Number : null;
     public bool IsUpdateRead => _unlock is not null;
     public bool HasUpdateLock => !_disposed && (_locked?.Invoke() ?? false);

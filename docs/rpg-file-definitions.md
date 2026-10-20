@@ -49,6 +49,14 @@ Native fixed LIKEFILE definitions use blank file attributes and a LIKEFILE
 keyword, including continuation lines. Standard native C-spec result fields
 supply record buffers. Both supported native F/D column origins are covered.
 
+Simple file prefixes accept an RPG name (`PREFIX(P_)`) or an uppercase character
+literal (`PREFIX('P_')`) for DISK and WORKSTN declarations. Names normalize to
+uppercase; lowercase or invalid characters inside a literal report the file
+declaration location. Saved programs retain the imported field names after source
+removal. IBM documents both forms in its
+[PREFIX reference](https://www.ibm.com/docs/en/i/7.4.0?topic=keywords-prefixprefixnbr-char-replaced).
+Qualified prefixes containing a period and replacement counts remain open.
+
 ## Record buffers and persistence
 
 LIKEREC buffers derived from any member of a file family can serve related
@@ -85,8 +93,31 @@ real terminal compile/call acceptance.
 The behavior follows IBM's
 [LIKEFILE rules](https://www.ibm.com/docs/en/i/7.6.0?topic=filename-rules-likefile-keyword)
 and [IBM i 7.6 RPG Reference](https://www.ibm.com/docs/en/ssw_ibm_i_76/pdf/sc092508.pdf),
-printed pages 421–426 and 434. File parameters defined with LIKEFILE, local file
-instances, WORKSTN templates/copies and result structures, blocked I/O, broader
+printed pages 421–426 and 434. [LIKEFILE file parameters](rpg-file-parameters.md)
+now share caller state across RPG calls. [Procedure-local DISK files](rpg-local-files.md)
+add automatic and STATIC instances. [WORKSTN result structures](rpg-workstation-records.md) support global display buffers.
+[WORKSTN file definitions](rpg-workstation-definitions.md) add templates/copies
+and qualified display records. Local WORKSTN files, blocked I/O, broader
 external/member options and ILE binding remain open. Independent native-system
 golden acceptance remains open. C09 remains partial; checklist 36 complete /
 70 open.
+
+Verification (2026-10-18): all 5208 solution tests pass with zero
+failures/skips, including 41 new cases: 38 file-definition/metadata/integration
+cases and three external-process cases. All 1031 final focused checks, locked
+restore, a Release build with zero warnings/errors, final RPGFILES terminal
+acceptance, generated inventory, local links and whitespace checks pass.
+Full-suite wall time is 8m24s; no performance target is claimed.
+
+[WORKSTN file parameters](rpg-workstation-parameters.md) share caller-owned
+display state across local procedures and saved RPG programs.
+
+[Nested native structures](rpg-nested-structures.md) now support inline and
+LIKEDS/LIKEREC children, shared storage views, forward types and nested record
+buffers. See that contract for supported operations and bounds.
+
+Nullable DISK fields, native null indicators and nullable key searches now use
+[ALWNULL modes](rpg-null-values.md). Formal/aggregate null maps remain open.
+
+Named variables and external indicator structures now use
+[named null maps](rpg-null-maps.md). Parameter maps remain open.
